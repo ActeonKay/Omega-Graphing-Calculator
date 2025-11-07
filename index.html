@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Full-screen Canvas Line</title>
+  <style>
+    html, body { height: 100%; margin: 0; }
+    canvas { display: block; width: 100%; height: 100%; }
+
+    #controls {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      display: flex;
+      gap: 10px;
+    }
+    button {
+      font-size: 20px;
+      padding: 10px 15px;
+      border: none;
+      border-radius: 8px;
+      background-color: #eee;
+      color: #333;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    button:hover {
+      background-color: #555;
+    }
+    #equationBox {
+      position: fixed;
+      top: 50px;
+      left: 0;
+      width: 300px;
+      height: calc(100% - 100px);
+      background: rgba(50,50,50,0.9);
+      color: white;
+      padding: 10px;
+      overflow-y: auto;
+      transform: translateX(0%);
+      transition: transform 0.3s;
+    }
+    #equationBox.open {
+      transform: translateX(0);
+    }
+    #equationBox h3 {
+      margin-top: 0;
+    }
+    .equation-row {
+      display: flex;
+      gap: 5px;
+      margin-bottom: 5px;
+    }
+    .equation-row input {
+      flex: 1;
+      padding: 5px;
+      border-radius: 4px;
+      border: none;
+    }
+    .equation-row button {
+      padding: 5px 10px;
+      font-size: 14px;
+    }
+    #toggleBox {
+      position: fixed;
+      top: 22px;
+      left: 0;
+      padding: 5px 10px;
+      background: #333;
+      color: white;
+      cursor: pointer;
+      border-radius: 0 4px 4px 0;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+
+  <div id="controls">
+    <button id="zoomIn">+</button>
+    <button id="zoomOut">−</button>
+  </div>
+
+  <!--<div id="toggleBox">Equations</div>
+  <div id="equationBox">
+    <h3>Equations</h3>
+    <div id="equationList"></div>
+    <button id="addEquation">Add Equation</button>
+  </div>-->
+
+  <script>
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
+
+    let scaleFactor = 3;
+    let offsetX = 0;
+    let offsetY = 0;
+    let isDragging = false;
+    let lastMouseX = 0;
+    let lastMouseY = 0;
+
+    function update() {
+        resize();
+        draw();
+        drawGrid();
+    }
+
+    // Handle high-DPI screens and resizing so the line is crisp and always stretches corner-to-corner
+    function resize() {
+      const dpr = window.devicePixelRatio || 1;
+      // set the internal pixel size
+      canvas.width = Math.floor(window.innerWidth * dpr);
+      canvas.height = Math.floor(window.innerHeight * dpr);
+      // keep CSS size as full window
+      canvas.style.width = window.innerWidth + 'px';
+      canvas.style.height = window.innerHeight + 'px';
+      // scale drawing operations so 1 unit = 1 CSS pixel
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    function draw() {
+      // clear
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      //ctx.rect(10,10, 150,100);
+      //ctx.stroke();
+
+      drawRect(0,0,window.innerWidth,window.innerHeight);
+
+      //draw a line from top-left (0,0) to bottom-right (window width, window height)
+      //ctx.beginPath();
+      //ctx.moveTo(0, 0);
+      //ctx.lineTo(window.innerWidth, window.innerHeight); // coordinates in CSS pixels after setTransform
+      //ctx.lineWidth = 2; // in CSS pixels
+      //ctx.strokeStyle = '#000';
+      //ctx.stroke();
+    }
+
+    function toGraphCoordsX(x){
+        return ((x-window.innerWidth/2)*(3/window.innerWidth)-offsetX)*scaleFactor;
+    }
+
+    function toGraphCoordsY(y){
+        return -((y-window.innerHeight/2)*(3/window.innerWidth)-offsetY)*scaleFactor;
+    }
+
+    function toScreenCoordsX(x) {
+        return ((x/scaleFactor)+offsetX)*(window.innerWidth/3)+window.innerWidth/2;
+    }
+
+    function toScreenCoordsY(y) {
+        return (-(y/scaleFactor)+offsetY)*(window.innerWidth/3)+window.innerHeight/2;
+    }
+    
+    function evalAt(screenx,screeny){
+        x=toGraphCoordsX(screenx);
+        y=toGraphCoordsY(screeny);
+        return (x*x)+(y*y)-(1*1);
+        //return Math.cos(x)-Math.cos(y);
+    }
+
+    function drawRect(x, y, width, height, depth=0) {
+
+        if(depth<5){
+            drawRect(x,y,width/2,height/2,depth+1);
+            drawRect(x,y+height/2,width/2,height/2,depth+1);
+            drawRect(x+width/2,y,width/2,height/2,depth+1);
+            drawRect(x+width/2,y+height/2,width/2,height/2,depth+1);
+            return;
+        }
+
+        if(width<10 || height<10){
+            plotRect(x,y,width,height);
+            //ctx.rect(x,y,width,height);
+            //ctx.stroke();
+            return;
+        }
+
+        plotRect(x,y,width,height);
+
+        //if undefined at all corners, draw
+        //if ~linear, draw
+        //something about f(x) passing through 0?
+
+        //otherwise subdivide
+        //ctx.rect(x,y,width,height);
+        //ctx.stroke();
+
+        //ctx.rect(x,y,width,height);
+        //ctx.stroke();
+        return;
+    }
+
+    function plotRect(x,y,w,h){
+
+        // Evaluate function at four corners
+        const v00 = evalAt(x, y);     // top-left
+        const v10 = evalAt(x+w, y);     // top-right
+        const v01 = evalAt(x, y+h);     // bottom-left
+        const v11 = evalAt(x+w, y+h);     // bottom-right
+
+        // Determine binary state for each corner: 1 if positive, 0 if negative
+        const s00 = v00 > 0 ? 1 : 0;
+        const s10 = v10 > 0 ? 1 : 0;
+        const s01 = v01 > 0 ? 1 : 0;
+        const s11 = v11 > 0 ? 1 : 0;
+
+        // Build case index (top-left, top-right, bottom-right, bottom-left)
+        const index = (s00 << 3) | (s10 << 2) | (s11 << 1) | s01;
+
+        // For simplicity, compute intersections along edges (assuming linear variation)
+        const interp = (a, b, va, vb) => {
+            const t = va / (va - vb);
+            return a + t * (b - a);
+        };
+
+        ctx.beginPath();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = 'red';
+
+        // Calculate intersections relative to translated square
+      switch (index) {
+        case 1: case 14:
+          ctx.moveTo(x, interp(y + h, y, v01, v00));
+          ctx.lineTo(interp(x, x + w, v01, v11), y + h);
+          break;
+        case 2: case 13:
+          ctx.moveTo(interp(x, x + w, v01, v11), y + h);
+          ctx.lineTo(x + w, interp(y + h, y, v11, v10));
+          break;
+        case 3: case 12:
+          ctx.moveTo(x, interp(y + h, y, v01, v00));
+          ctx.lineTo(x + w, interp(y + h, y, v11, v10));
+          break;
+        case 4: case 11:
+          ctx.moveTo(x + w, interp(y + h, y, v11, v10));
+          ctx.lineTo(interp(x, x + w, v00, v10), y);
+          break;
+        case 5: case 10:
+          ctx.moveTo(x, interp(y + h, y, v01, v00));
+          ctx.lineTo(interp(x, x + w, v00, v10), y);
+          ctx.moveTo(interp(x, x + w, v01, v11), y + h);
+          ctx.lineTo(x + w, interp(y + h, y, v11, v10));
+          break;
+        case 6: case 9:
+          ctx.moveTo(interp(x, x + w, v00, v10), y);
+          ctx.lineTo(interp(x, x + w, v01, v11), y + h);
+          break;
+        case 7: case 8:
+          ctx.moveTo(interp(x, x + w, v00, v10), y);
+          ctx.lineTo(x, interp(y + h, y, v01, v00));
+          break;
+        default:
+          break;
+        }
+
+        ctx.stroke();
+    }
+
+    function drawHorizontalGridline(y) {
+        if(y < window.innerHeight && y>0){
+            ctx.moveTo(0,y);
+            ctx.lineTo(window.innerWidth,y);
+        }
+    }
+
+    function drawVerticalGridline(x) {
+        if(x < window.innerWidth && x>0){
+            ctx.moveTo(x,0);
+            ctx.lineTo(x,window.innerHeight);
+        }
+    }
+
+    function majorGridScaleToNiceMultiple(scale){
+        scaleMagnitude = Math.log10(scale);
+        scaleToRoundedRatio = scale / Math.pow(10,Math.floor(scaleMagnitude));
+        if(scaleToRoundedRatio > 5){
+            //scalefactor is 5x more than floored magnitude
+            //const minorGridScale = Math.pow(10, Math.floor(scaleMagnitude));
+            return Math.pow(10, Math.floor(scaleMagnitude))*5;
+        }
+
+        if(scaleToRoundedRatio > 2){
+            //const minorGridScale = Math.pow(10, Math.floor(scaleMagnitude))/2;
+            return Math.pow(10, Math.floor(scaleMagnitude))*2;
+        }
+
+        //const minorGridScale = Math.pow(10, Math.floor(scaleMagnitude))/5;
+        return Math.pow(10, Math.floor(scaleMagnitude));
+    }
+
+    function minorGridScaleToNiceMultiple(scale){
+        scaleMagnitude = Math.log10(scale);
+        scaleToRoundedRatio = scale / Math.pow(10,Math.floor(scaleMagnitude));
+        if(scaleToRoundedRatio > 5){
+            //scalefactor is 5x more than floored magnitude
+            return Math.pow(10, Math.floor(scaleMagnitude));
+            //return Math.pow(10, Math.floor(scaleMagnitude))*5;
+        }
+
+        if(scaleToRoundedRatio > 2){
+            return Math.pow(10, Math.floor(scaleMagnitude))/2;
+            //return Math.pow(10, Math.floor(scaleMagnitude))*2;
+        }
+
+        return Math.pow(10, Math.floor(scaleMagnitude))/5;
+        //return Math.pow(10, Math.floor(scaleMagnitude));
+    }
+
+    function drawGrid() {
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = "#ccc";
+
+        //Find visible graph coordinate bounds
+        const graphLeft   = toGraphCoordsX(0);
+        const graphRight  = toGraphCoordsX(window.innerWidth);
+        const graphTop    = toGraphCoordsY(0);
+        const graphBottom = toGraphCoordsY(window.innerHeight);
+
+        //Compute grid spacing in graph units
+        let scaleMagnitude = Math.log10(scaleFactor);
+
+        /*if(Math.pow(10,(scaleMagnitude % 1)) > 5){
+            scaleMagnitude = Math.floor(scaleMagnitude) * Math.log10(5);
+        }*/
+
+        const xAxis = toScreenCoordsY(0);
+        const yAxis = toScreenCoordsX(0);
+
+        //MINOR GRID LINES ----------
+        ctx.lineWidth = 0.5;
+
+        const minorGridScale = minorGridScaleToNiceMultiple(scaleFactor/2);
+
+        const startXMinor = Math.floor(graphLeft / minorGridScale) * minorGridScale;
+        const endXMinor   = Math.ceil(graphRight / minorGridScale) * minorGridScale;
+        const startYMinor = Math.floor(graphBottom / minorGridScale) * minorGridScale;
+        const endYMinor   = Math.ceil(graphTop / minorGridScale) * minorGridScale;
+
+        //Draw minor vertical grid lines
+        ctx.beginPath();
+        for (let gx = startXMinor; gx <= endXMinor; gx += minorGridScale) {
+            const sx = toScreenCoordsX(gx);
+            ctx.moveTo(sx, 0);
+            ctx.lineTo(sx, window.innerHeight);
+        }
+        ctx.stroke();
+
+        //Draw minor horizontal grid lines
+        ctx.beginPath();
+        for (let gy = startYMinor; gy <= endYMinor; gy += minorGridScale) {
+            const sy = toScreenCoordsY(gy);
+            ctx.moveTo(0, sy);
+            ctx.lineTo(window.innerWidth, sy);
+        }
+        ctx.stroke();
+
+        //MAJOR GRID LINES ----------
+        ctx.lineWidth = 1;
+        
+        const majorGridScale = majorGridScaleToNiceMultiple(scaleFactor/2);
+
+        const startX = Math.floor(graphLeft / majorGridScale) * majorGridScale;
+        const endX   = Math.ceil(graphRight / majorGridScale) * majorGridScale;
+        const startY = Math.floor(graphBottom / majorGridScale) * majorGridScale;
+        const endY   = Math.ceil(graphTop / majorGridScale) * majorGridScale;
+
+        labelY = xAxis - 8;
+        if(labelY < 20) labelY = 20 ;
+        if(labelY > window.innerHeight - 10) labelY = window.innerHeight - 10;
+
+        labelX = yAxis + 4;
+        if(labelX < 10){ labelX = 10};
+        if(labelX + 20 > window.innerWidth) labelX = window.innerWidth-20;
+
+        ctx.beginPath();
+        ctx.font = "20px Arial";
+
+        //Draw vertical grid lines
+        for (let gx = startX; gx <= endX; gx += majorGridScale) {
+            const sx = toScreenCoordsX(gx);
+            ctx.moveTo(sx, 0);
+            ctx.lineTo(sx, window.innerHeight);
+
+            text = Math.round(gx*1_000_000)/1_000_000;
+
+            ctx.fillText(text, sx+4, labelY);
+        }
+
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.font = "20px Arial";
+
+        //Draw horizontal grid lines
+        for (let gy = startY; gy <= endY; gy += majorGridScale) {
+            const sy = toScreenCoordsY(gy);
+            ctx.moveTo(0, sy);
+            ctx.lineTo(window.innerWidth, sy);
+
+            text = Math.round(gy*1_000_000)/1_000_000;
+
+            ctx.fillText(text, labelX, sy-8);
+        }
+
+        ctx.stroke();
+
+        //Optionally, draw the main axes thicker
+
+        ctx.beginPath();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "#000";
+        
+
+        if (yAxis > 0 && yAxis < window.innerWidth) {
+            ctx.moveTo(yAxis, 0);
+            ctx.lineTo(yAxis, window.innerHeight);
+        }else{
+
+        }
+
+        if (xAxis > 0 && xAxis < window.innerHeight) {
+            ctx.moveTo(0, xAxis);
+            ctx.lineTo(window.innerWidth, xAxis);
+        }
+
+        ctx.stroke();
+    }
+
+    // Dragging (panning) functionality
+    canvas.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      lastMouseX = e.clientX;
+      lastMouseY = e.clientY;
+      canvas.style.cursor = 'grabbing';
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      const dx = e.clientX - lastMouseX;
+      const dy = e.clientY - lastMouseY;
+      offsetX += (dx*(3/window.innerWidth)*1);
+      offsetY += (dy*(3/window.innerWidth)*1);
+      lastMouseX = e.clientX;
+      lastMouseY = e.clientY;
+      update();
+    });
+
+    canvas.addEventListener('mouseup', () => {
+      isDragging = false;
+      canvas.style.cursor = 'grab';
+    });
+
+    canvas.addEventListener('mouseleave', () => {
+      isDragging = false;
+      canvas.style.cursor = 'grab';
+    });
+
+    window.addEventListener('resize', update, { passive: true });
+    resize();
+    draw();
+    drawGrid();
+
+    document.getElementById('zoomIn').addEventListener('click', () => {
+        scaleFactor /= 1.4142135;
+        offsetX *= 1.4142135;
+        offsetY *= 1.4142135;
+        //console.log('Zoom changed to' + scaleFactor);
+        draw();
+        drawGrid();
+    });
+
+    document.getElementById('zoomOut').addEventListener('click', () => {
+        scaleFactor *= 1.4142135;
+        offsetX /= 1.4142135;
+        offsetY /= 1.4142135;
+        //console.log('Zoom changed to' + scaleFactor);
+        draw();
+        drawGrid();
+    });
+
+  </script>
+</body>
+</html>
