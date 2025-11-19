@@ -15,6 +15,22 @@
       display: flex;
       gap: 10px;
     }
+
+    #stats {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      display: flex;
+      gap: 10px;
+      border: none;
+      padding: 10px 15px;
+      border-radius: 2px;
+      background-color: #eee;
+      color: #333;
+      font-size: 15px;
+      font-family: Tahoma, Geneva, Verdana, sans-serif;
+    }
+
     button {
       font-size: 20px;
       padding: 10px 15px;
@@ -77,6 +93,10 @@
 <body>
   <canvas id="c"></canvas>
 
+  <div id="stats">
+    <p id="fps"></p>
+  </div>
+
   <div id="controls">
     <button id="zoomIn">+</button>
     <button id="zoomOut">−</button>
@@ -93,6 +113,47 @@
     const canvas = document.getElementById('c');
     const ctx = canvas.getContext('2d');
 
+    const fpsDisplay = document.getElementById('fps');
+
+    const validOperators = ["+", "-", "*", "/", "^", "<", "<=", ">", ">=", "=", "!=", "&&", "||", "!", "u-"];
+    const validFunctions = [
+        "sin", "cos", "tan", 
+        "arcsin","arccos","arctan",
+        "csc","sec","cot",
+        "arccsc","arcsec","arccot",
+        "sinh","cosh","tanh",
+        "arcsinh","arccosh","arctanh",
+        "csch","sech","coth",
+        "arccsch","arcsech","arccoth",
+        "gd","lam","abs","sign","mod",
+        "floor","ceil","round","trunc",
+        "min","max","avg","median",
+        "exp","ln","log","logn",
+        "sqrt","cbrt","nthroot",
+        "sinc","gamma","zeta","digamma","polygamma",
+        "Ei","Ti","Li","erf",
+        "fresnelS","fresnelC","Si","Ci",
+        "dawsonP","dawsonM","Ai",
+        "sum","integral",
+        "not","or","and","xor","bool"
+    ];
+    const validConstants = [
+        "pi","eunum","eucon",
+        "egrav","sc",
+        "grav", "NA", "gascon",
+        "bmc","sbc","culuk","epzo","muzo","speli","plcon",
+        "elcharge","elmas","prmas","numas","uam",
+        "radfer"
+    ];
+
+    const alphanumRegex = /^[a-zA-Z0-9]+$/;
+    const operatorRegex = /^[\+\-\*\/\^\%\!\=\<\>\&\|]$/;
+    const bracketRegex = /^[\(\)\[\]]{1}$/;
+
+    let equation = "";
+    let tokens = [];
+    let postfix = [];
+
     let scaleFactor = 3;
     let offsetX = 0;
     let offsetY = 0;
@@ -100,10 +161,217 @@
     let lastMouseX = 0;
     let lastMouseY = 0;
 
+    function isNumber(string){
+        if(typeof string != "string") return false;
+        return !isNaN(string) && !isNaN(parseFloat(string));
+        //return !isNaN(string);
+    }
+
+    function isOperator(string){
+        if(typeof string != "string") return false;
+        return operatorRegex.test(string);
+    }
+
+    function isBracket(string){
+        if(typeof string != "string") return false;
+        return bracketRegex.test(string);
+    }
+
+    function isPrefixOfElementIn(s, elements) {
+        return elements.some(fn => fn.startsWith(s) && fn.length > s.length);
+    }
+
+    function isPrefixOfStringToken(string){
+        if (string.length == 0) return true;
+
+        //default constants
+        //user-made constants
+        //default functions
+        if(isPrefixOfElementIn(string, validFunctions)){
+            return true;
+        }
+        //user-made functions
+        //default variables
+        //user-made variables
+
+        return false;
+    }
+
+    function isStringToken(string){
+        if(string == "x" || string == "y") return true;
+        //constants
+        if(validFunctions.includes(string)) return true;
+        //variables
+        return false;
+    }
+
+    function tokenizeExpression(string){
+        tokens = [];
+
+        let tokenState = 0; //0) unknown 1) number 2) operator 3) literal/func/var 4) string
+        let token = "";
+        let char = "";
+
+        for (let index = 0; index < string.length; index++) {
+            char = string.charAt(index);
+
+            if(/\s/.test(char)){
+                if(token.length > 0){
+                    tokens.push(token);
+                    tokenState = 0;
+                    token = "";
+                }
+
+                char = "";
+                continue;
+            }
+
+            console.log(char + ", " + tokenState + " -> " + token);
+
+            if(char == "\""){
+                if(tokenState == 4){
+                    tokens.push(token);
+                    //meta
+                    tokenState = 0;
+                    token = "";
+                }else{
+                    if(token.length > 0){
+                        tokens.push(token);
+                        //meta
+                    }
+                    tokenState = 4;
+                    token = "";
+                }
+
+                continue;
+            }
+
+            if(tokenState == 4){
+                token = token.concat(char);
+
+                continue;
+            }
+
+            if(isNumber(char) || isNumber(token + char)){
+                if(tokenState == 1 || tokenState == 0){
+                    tokenState = 1;
+                    token = token.concat(char);
+                }else{
+                    tokens.push(token);
+                    //meta
+                    tokenState = 1;
+                    token = char;
+                }
+
+                continue;
+            }
+
+            if(isOperator(char)){
+                if(tokenState == 2 || tokenState == 0){
+                    if(isPrefixOfElementIn(token+char,validOperators)){
+                        token = token.concat(char);
+                        tokenState = 2;
+                    }else if(validOperators.includes(token + char)){
+                        tokens.push(token+char);
+                        //meta
+                        tokenState = 0;
+                        token = "";
+                    }else if(validOperators.includes(token)){
+                        tokens.push(token);
+
+                        tokenState = 2;
+                        token = char;
+                    }else{
+                        //error
+                        console.error("Unknown operator token: " + token);
+                    }
+                }else{
+                    tokens.push(token);
+                    //meta
+                    tokenState = 2;
+                    token = char;
+                }
+
+                continue;
+            }
+
+            if(isBracket(char) || char == ","){
+                if(token.length > 0){
+                    tokens.push(token);
+                    token = "";
+                    //meta
+                }
+                
+                tokens.push(char);
+                //meta
+
+                tokenState = 0;
+                continue;
+            }
+            
+            if(alphanumRegex.test(char)){
+                if(tokenState == 3 || tokenState == 0){
+                    if(isPrefixOfStringToken(token+char)){
+                        token = token.concat(char);
+                        tokenState = 3;
+                    }else if(isStringToken(token+char)){
+                        tokens.push(token+char);
+                        tokenState = 0;
+                        token = "";
+                    }else if(isStringToken(token)){
+                        tokens.push(token);
+                        tokenState = 3;
+                        token = char;
+                    }else{
+                        //error
+                        console.error("Unknown string token: " + token);
+                    }
+
+                    continue;
+                }else{
+                    tokens.push(token);
+                    //meta
+                    tokenState = 3;
+                    token = char;
+                }
+
+                continue;
+            }
+
+            //error
+            console.error(char + " is not a valid character");
+            return false;
+        }
+
+        if(token.length > 0){
+            tokens.push(token);
+            //meta
+        }
+
+        tokenState = 0;
+
+        //specific token typesetting
+        //implicit operations
+        //typecast data
+
+        console.log(tokens);
+
+        return true;
+    }
+
+    function compileExpression(tokenList){
+        let outputs = [];
+        let operators = [];
+
+        tokenList.forEach(token => {
+            //get meta
+            //...
+        });
+    }
+
     function update() {
         resize();
         draw();
-        drawGrid();
     }
 
     // Handle high-DPI screens and resizing so the line is crisp and always stretches corner-to-corner
@@ -120,21 +388,31 @@
     }
 
     function draw() {
-      // clear
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // clear
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      //ctx.rect(10,10, 150,100);
-      //ctx.stroke();
+        //start timer
+        var start = window.performance.now();
 
-      drawRect(0,0,window.innerWidth,window.innerHeight);
+        //ctx.rect(10,10, 150,100);
+        //ctx.stroke();
 
-      //draw a line from top-left (0,0) to bottom-right (window width, window height)
-      //ctx.beginPath();
-      //ctx.moveTo(0, 0);
-      //ctx.lineTo(window.innerWidth, window.innerHeight); // coordinates in CSS pixels after setTransform
-      //ctx.lineWidth = 2; // in CSS pixels
-      //ctx.strokeStyle = '#000';
-      //ctx.stroke();
+        drawGrid();
+
+        drawRect(0,0,window.innerWidth,window.innerHeight);
+
+        //draw a line from top-left (0,0) to bottom-right (window width, window height)
+        //ctx.beginPath();
+        //ctx.moveTo(0, 0);
+        //ctx.lineTo(window.innerWidth, window.innerHeight); // coordinates in CSS pixels after setTransform
+        //ctx.lineWidth = 2; // in CSS pixels
+        //ctx.strokeStyle = '#000';
+        //ctx.stroke();
+
+        var end = window.performance.now();
+        var time = end - start;
+
+        fpsDisplay.innerHTML = "FPS: " + Math.floor(1000/time);
     }
 
     function toGraphCoordsX(x){
@@ -152,12 +430,48 @@
     function toScreenCoordsY(y) {
         return (-(y/scaleFactor)+offsetY)*(window.innerWidth/3)+window.innerHeight/2;
     }
-    
+
+    function evaluate(tokenlist, screenx, screeny){
+        x = toGraphCoordsX(screenx);
+        y = toGraphCoordsY(screeny);
+
+        
+    }
+
     function evalAt(screenx,screeny){
         x=toGraphCoordsX(screenx);
         y=toGraphCoordsY(screeny);
-        return (x*x)+(y*y)-(1*1);
+
+        //eval
+        //return (x*x)+(y*y)-(1*1);
+
+        //y=tan(x)
+        return Math.tan(x)-y;
+        //return Math.pow(x,3)-y;
+
         //return Math.cos(x)-Math.cos(y);
+    }
+
+    //first derivative of the eval function (f'(x))
+    //ideally, when f(x) is compiled, f'(x) will be found by symbolically differentiating f(x)
+    function evalChangeAt(screenx,screeny){
+        x=toGraphCoordsX(screenx);
+        y=toGraphCoordsY(screeny);
+
+        //dy      2
+        //-- = sec (x)
+        //dx
+        return Math.pow(Math.cos(x),-2);
+    }
+
+    function evalChangeChangeAt(screenx,screeny){
+        x=toGraphCoordsX(screenx);
+        y=toGraphCoordsY(screeny);
+
+        // d^2y       2
+        // ---- = 2sec (x)tan(x)
+        // dx^2
+        return 2*Math.pow(Math.cos(x),-2)*Math.tan(x);
     }
 
     function drawRect(x, y, width, height, depth=0) {
@@ -171,13 +485,19 @@
         }
 
         if(width<10 || height<10){
-            plotRect(x,y,width,height);
+            plotRect(x,y,width,height,true);
             //ctx.rect(x,y,width,height);
             //ctx.stroke();
             return;
         }
 
-        plotRect(x,y,width,height);
+        if(plotRect(x,y,width,height)){
+            drawRect(x,y,width/2,height/2,depth+1);
+            drawRect(x,y+height/2,width/2,height/2,depth+1);
+            drawRect(x+width/2,y,width/2,height/2,depth+1);
+            drawRect(x+width/2,y+height/2,width/2,height/2,depth+1);
+            return;
+        }
 
         //if undefined at all corners, draw
         //if ~linear, draw
@@ -192,13 +512,57 @@
         return;
     }
 
-    function plotRect(x,y,w,h){
+    function plotRect(x,y,w,h,forcePlot=false){
 
         // Evaluate function at four corners
-        const v00 = evalAt(x, y);     // top-left
+        const v00 = evalAt(x, y);       // top-left
         const v10 = evalAt(x+w, y);     // top-right
         const v01 = evalAt(x, y+h);     // bottom-left
-        const v11 = evalAt(x+w, y+h);     // bottom-right
+        const v11 = evalAt(x+w, y+h);   // bottom-right
+
+        //ideal process
+        //evalAt is called once, and evaluates all four corners at once
+        //detects discontinuities across each edge by managing each operation serarately
+        //may also be faster to eval 4 values at once instead of each one individually
+
+        if(
+            v00 == undefined && 
+            v01 == undefined && 
+            v10 == undefined && 
+            v11 == undefined
+        ){
+            return false;
+        }
+
+        //check if is far out of bounds (0-line does not come close to this box)
+        //f(x) \neq 0
+
+
+        u = evalChangeAt(x+w/2,y+h/2);
+        a = Math.abs(evalChangeChangeAt(x+w/2,y+h/2));
+
+        t=w/200;
+        s = u*t+0.5*a*Math.pow(t,2);
+
+        //s=ut+0.5at^2
+
+        //decent detection of 0-line being out-of-bounds but doesn't do asymptotes well
+        max=Math.abs(s)*scaleFactor;
+        
+        if(
+            (Math.abs(v00)>max ||
+            Math.abs(v01)>max ||
+            Math.abs(v10)>max ||
+            Math.abs(v11)>max) &&
+            a < 10
+        ){
+            return false;
+        }
+
+
+        /*if(Math.pow(a,1) > 32*w/scaleFactor && !forcePlot){
+            return true;
+        }*/
 
         // Determine binary state for each corner: 1 if positive, 0 if negative
         const s00 = v00 > 0 ? 1 : 0;
@@ -254,6 +618,8 @@
         default:
           break;
         }
+
+        //ctx.rect(x,y,w,h);
 
         ctx.stroke();
     }
@@ -358,7 +724,7 @@
 
         //MAJOR GRID LINES ----------
         ctx.lineWidth = 1;
-        
+
         const majorGridScale = majorGridScaleToNiceMultiple(scaleFactor/2);
 
         const startX = Math.floor(graphLeft / majorGridScale) * majorGridScale;
@@ -375,7 +741,7 @@
         if(labelX + 20 > window.innerWidth) labelX = window.innerWidth-20;
 
         ctx.beginPath();
-        ctx.font = "20px Arial";
+        ctx.font = "15px Tahoma";
 
         //Draw vertical grid lines
         for (let gx = startX; gx <= endX; gx += majorGridScale) {
@@ -391,7 +757,7 @@
         ctx.stroke();
 
         ctx.beginPath();
-        ctx.font = "20px Arial";
+        ctx.font = "15px Tahoma";
 
         //Draw horizontal grid lines
         for (let gy = startY; gy <= endY; gy += majorGridScale) {
@@ -408,8 +774,9 @@
 
         //Optionally, draw the main axes thicker
 
+        //CARDINAL GRID LINES
         ctx.beginPath();
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 1.5;
         ctx.strokeStyle = "#000";
         
 
@@ -458,9 +825,52 @@
     });
 
     window.addEventListener('resize', update, { passive: true });
+
+    canvas.addEventListener('wheel', (e) => {
+        e.preventDefault(); // prevent page scroll
+
+        const zoomSpeed = 1.07; // how fast to zoom
+        const mouseGraphX = toGraphCoordsX(e.offsetX);
+        const mouseGraphY = toGraphCoordsY(e.offsetY);
+
+        if (e.deltaY < 0) {
+            // scroll up = zoom in
+            scaleFactor *= zoomSpeed;
+            offsetX /= zoomSpeed;
+            offsetY /= zoomSpeed;
+        } else {
+            // scroll down = zoom out
+            scaleFactor /= zoomSpeed;
+            offsetX *= zoomSpeed;
+            offsetY *= zoomSpeed;
+        }
+
+        // Optional: zoom centered on mouse position
+        // Adjust offsets so the point under the mouse stays fixed in screen space
+        /*const newMouseScreenX = toScreenCoordsX(mouseGraphX);
+        const newMouseScreenY = toScreenCoordsY(mouseGraphY);
+        offsetX += e.offsetX - newMouseScreenX;
+        offsetY += e.offsetY - newMouseScreenY;*/
+
+        draw();
+    }, { passive: false });
+
     resize();
     draw();
-    drawGrid();
+    tokenizeExpression("sin(cosx)+tany");
+    tokenizeExpression("-x+y^3");
+    tokenizeExpression("(x)(y)");
+    tokenizeExpression("2+-3");
+    tokenizeExpression("x(y-1)ln(x)")
+    tokenizeExpression("2!^2!+sinx^2")
+    /*if(tokenizeExpression("-lnx+3")){
+        console.log("Successful");
+    }else{
+        console.log("Error")
+    }*/
+    /*tokens.forEach(element => {
+        console.log(element);
+    });*/
 
     document.getElementById('zoomIn').addEventListener('click', () => {
         scaleFactor /= 1.4142135;
@@ -468,7 +878,6 @@
         offsetY *= 1.4142135;
         //console.log('Zoom changed to' + scaleFactor);
         draw();
-        drawGrid();
     });
 
     document.getElementById('zoomOut').addEventListener('click', () => {
@@ -477,7 +886,6 @@
         offsetY /= 1.4142135;
         //console.log('Zoom changed to' + scaleFactor);
         draw();
-        drawGrid();
     });
 
   </script>
