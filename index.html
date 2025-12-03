@@ -109,13 +109,42 @@
     <button id="addEquation">Add Equation</button>
   </div>-->
 
+  <script type="module">
+    import { 
+        evaluateExpressionSimple,
+        tokenizeExpression2, 
+        compileExpression, 
+        evaluateExpression,
+        getTokenizedExpressions, 
+        getTokenizedExpressionMetas, 
+        getCompiledExpressions//,
+        //getCompiledExpressionMetas
+    } from "./evaluator.js";
+
+    document.addEventListener("DOMContentLoaded", () => {
+        console.log("module test");
+
+        console.log(evaluateExpressionSimple("5-3"));
+        //console.log(evaluateExpressionSimple("5+(8-3)^2"));
+        //console.log(evaluateExpressionSimple("8-4+5"));
+
+
+    });
+    
+  </script>
+
   <script>
+    
+
+    console.log("Expressions: ");
+    //console.log(getExpressions());
+
     const canvas = document.getElementById('c');
     const ctx = canvas.getContext('2d');
 
     const fpsDisplay = document.getElementById('fps');
 
-    const validOperators = ["+", "-", "*", "/", "^", "<", "<=", ">", ">=", "=", "!=", "&&", "||", "!", "u-"];
+    /*const validOperators = ["+", "-", "*", "/", "^", "<", "<=", ">", ">=", "=", "!=", "&&", "||", "!", "u-"];
     const validFunctions = [
         "sin", "cos", "tan", 
         "arcsin","arccos","arctan",
@@ -148,7 +177,7 @@
 
     const alphanumRegex = /^[a-zA-Z0-9]+$/;
     const operatorRegex = /^[\+\-\*\/\^\%\!\=\<\>\&\|]$/;
-    const bracketRegex = /^[\(\)\[\]]{1}$/;
+    const bracketRegex = /^[\(\)\[\]]{1}$/;*/
 
     let equation = "";
     let tokens = [];
@@ -161,7 +190,7 @@
     let lastMouseX = 0;
     let lastMouseY = 0;
 
-    function isNumber(string){
+    /*function isNumber(string){
         if(typeof string != "string") return false;
         return !isNaN(string) && !isNaN(parseFloat(string));
         //return !isNaN(string);
@@ -367,7 +396,7 @@
             //get meta
             //...
         });
-    }
+    }*/
 
     function update() {
         resize();
@@ -435,7 +464,7 @@
         x = toGraphCoordsX(screenx);
         y = toGraphCoordsY(screeny);
 
-        
+        //...
     }
 
     function evalAt(screenx,screeny){
@@ -857,7 +886,10 @@
 
     resize();
     draw();
-    tokenizeExpression("sin(cosx)+tany");
+
+    /*tokenizeExpression("sin(cosx)+tany");
+    console.log(getExpressions());
+
     tokenizeExpression("-x+y^3");
     tokenizeExpression("(x)(y)");
     tokenizeExpression("2+-3");
