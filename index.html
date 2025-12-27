@@ -98,6 +98,7 @@
   </div>
 
   <div id="controls">
+    <pre id="expDisplay">No loaded expression</pre>
     <button id="zoomIn">+</button>
     <button id="zoomOut">−</button>
   </div>
@@ -112,291 +113,42 @@
   <script type="module">
     import { 
         evaluateExpressionSimple,
-        tokenizeExpression2, 
-        compileExpression, 
+        
         evaluateExpression,
         getTokenizedExpressions, 
         getTokenizedExpressionMetas, 
         getCompiledExpressions//,
         //getCompiledExpressionMetas
     } from "./evaluator.js";
-
-    document.addEventListener("DOMContentLoaded", () => {
-        console.log("module test");
-
-        console.log(evaluateExpressionSimple("5-3"));
-        //console.log(evaluateExpressionSimple("5+(8-3)^2"));
-        //console.log(evaluateExpressionSimple("8-4+5"));
-
-
-    });
     
   </script>
 
-  <script>
-    
-
-    console.log("Expressions: ");
-    //console.log(getExpressions());
+  <script type="module">
+    import { 
+        evaluateExpression, 
+        tokenizeExpression, getTokenizedExpressions, getTokenizedExpressionMetas,
+        compileExpression, getCompiledExpressions
+    } from "./evaluator.js";  
 
     const canvas = document.getElementById('c');
     const ctx = canvas.getContext('2d');
 
     const fpsDisplay = document.getElementById('fps');
 
-    /*const validOperators = ["+", "-", "*", "/", "^", "<", "<=", ">", ">=", "=", "!=", "&&", "||", "!", "u-"];
-    const validFunctions = [
-        "sin", "cos", "tan", 
-        "arcsin","arccos","arctan",
-        "csc","sec","cot",
-        "arccsc","arcsec","arccot",
-        "sinh","cosh","tanh",
-        "arcsinh","arccosh","arctanh",
-        "csch","sech","coth",
-        "arccsch","arcsech","arccoth",
-        "gd","lam","abs","sign","mod",
-        "floor","ceil","round","trunc",
-        "min","max","avg","median",
-        "exp","ln","log","logn",
-        "sqrt","cbrt","nthroot",
-        "sinc","gamma","zeta","digamma","polygamma",
-        "Ei","Ti","Li","erf",
-        "fresnelS","fresnelC","Si","Ci",
-        "dawsonP","dawsonM","Ai",
-        "sum","integral",
-        "not","or","and","xor","bool"
-    ];
-    const validConstants = [
-        "pi","eunum","eucon",
-        "egrav","sc",
-        "grav", "NA", "gascon",
-        "bmc","sbc","culuk","epzo","muzo","speli","plcon",
-        "elcharge","elmas","prmas","numas","uam",
-        "radfer"
-    ];
-
-    const alphanumRegex = /^[a-zA-Z0-9]+$/;
-    const operatorRegex = /^[\+\-\*\/\^\%\!\=\<\>\&\|]$/;
-    const bracketRegex = /^[\(\)\[\]]{1}$/;*/
+    let quadCount = 0;
 
     let equation = "";
     let tokens = [];
     let postfix = [];
 
     let scaleFactor = 3;
-    let offsetX = 0;
-    let offsetY = 0;
+    let offsetX = 0.00000001;
+    let offsetY = 0.00000001;
     let isDragging = false;
     let lastMouseX = 0;
     let lastMouseY = 0;
 
-    /*function isNumber(string){
-        if(typeof string != "string") return false;
-        return !isNaN(string) && !isNaN(parseFloat(string));
-        //return !isNaN(string);
-    }
-
-    function isOperator(string){
-        if(typeof string != "string") return false;
-        return operatorRegex.test(string);
-    }
-
-    function isBracket(string){
-        if(typeof string != "string") return false;
-        return bracketRegex.test(string);
-    }
-
-    function isPrefixOfElementIn(s, elements) {
-        return elements.some(fn => fn.startsWith(s) && fn.length > s.length);
-    }
-
-    function isPrefixOfStringToken(string){
-        if (string.length == 0) return true;
-
-        //default constants
-        //user-made constants
-        //default functions
-        if(isPrefixOfElementIn(string, validFunctions)){
-            return true;
-        }
-        //user-made functions
-        //default variables
-        //user-made variables
-
-        return false;
-    }
-
-    function isStringToken(string){
-        if(string == "x" || string == "y") return true;
-        //constants
-        if(validFunctions.includes(string)) return true;
-        //variables
-        return false;
-    }
-
-    function tokenizeExpression(string){
-        tokens = [];
-
-        let tokenState = 0; //0) unknown 1) number 2) operator 3) literal/func/var 4) string
-        let token = "";
-        let char = "";
-
-        for (let index = 0; index < string.length; index++) {
-            char = string.charAt(index);
-
-            if(/\s/.test(char)){
-                if(token.length > 0){
-                    tokens.push(token);
-                    tokenState = 0;
-                    token = "";
-                }
-
-                char = "";
-                continue;
-            }
-
-            console.log(char + ", " + tokenState + " -> " + token);
-
-            if(char == "\""){
-                if(tokenState == 4){
-                    tokens.push(token);
-                    //meta
-                    tokenState = 0;
-                    token = "";
-                }else{
-                    if(token.length > 0){
-                        tokens.push(token);
-                        //meta
-                    }
-                    tokenState = 4;
-                    token = "";
-                }
-
-                continue;
-            }
-
-            if(tokenState == 4){
-                token = token.concat(char);
-
-                continue;
-            }
-
-            if(isNumber(char) || isNumber(token + char)){
-                if(tokenState == 1 || tokenState == 0){
-                    tokenState = 1;
-                    token = token.concat(char);
-                }else{
-                    tokens.push(token);
-                    //meta
-                    tokenState = 1;
-                    token = char;
-                }
-
-                continue;
-            }
-
-            if(isOperator(char)){
-                if(tokenState == 2 || tokenState == 0){
-                    if(isPrefixOfElementIn(token+char,validOperators)){
-                        token = token.concat(char);
-                        tokenState = 2;
-                    }else if(validOperators.includes(token + char)){
-                        tokens.push(token+char);
-                        //meta
-                        tokenState = 0;
-                        token = "";
-                    }else if(validOperators.includes(token)){
-                        tokens.push(token);
-
-                        tokenState = 2;
-                        token = char;
-                    }else{
-                        //error
-                        console.error("Unknown operator token: " + token);
-                    }
-                }else{
-                    tokens.push(token);
-                    //meta
-                    tokenState = 2;
-                    token = char;
-                }
-
-                continue;
-            }
-
-            if(isBracket(char) || char == ","){
-                if(token.length > 0){
-                    tokens.push(token);
-                    token = "";
-                    //meta
-                }
-                
-                tokens.push(char);
-                //meta
-
-                tokenState = 0;
-                continue;
-            }
-            
-            if(alphanumRegex.test(char)){
-                if(tokenState == 3 || tokenState == 0){
-                    if(isPrefixOfStringToken(token+char)){
-                        token = token.concat(char);
-                        tokenState = 3;
-                    }else if(isStringToken(token+char)){
-                        tokens.push(token+char);
-                        tokenState = 0;
-                        token = "";
-                    }else if(isStringToken(token)){
-                        tokens.push(token);
-                        tokenState = 3;
-                        token = char;
-                    }else{
-                        //error
-                        console.error("Unknown string token: " + token);
-                    }
-
-                    continue;
-                }else{
-                    tokens.push(token);
-                    //meta
-                    tokenState = 3;
-                    token = char;
-                }
-
-                continue;
-            }
-
-            //error
-            console.error(char + " is not a valid character");
-            return false;
-        }
-
-        if(token.length > 0){
-            tokens.push(token);
-            //meta
-        }
-
-        tokenState = 0;
-
-        //specific token typesetting
-        //implicit operations
-        //typecast data
-
-        console.log(tokens);
-
-        return true;
-    }
-
-    function compileExpression(tokenList){
-        let outputs = [];
-        let operators = [];
-
-        tokenList.forEach(token => {
-            //get meta
-            //...
-        });
-    }*/
+    let currentExpression = null;
 
     function update() {
         resize();
@@ -428,7 +180,10 @@
 
         drawGrid();
 
+        quadCount = 0;
         drawRect(0,0,window.innerWidth,window.innerHeight);
+
+        //console.log(quadCount);
 
         //draw a line from top-left (0,0) to bottom-right (window width, window height)
         //ctx.beginPath();
@@ -460,32 +215,81 @@
         return (-(y/scaleFactor)+offsetY)*(window.innerWidth/3)+window.innerHeight/2;
     }
 
-    function evaluate(tokenlist, screenx, screeny){
-        x = toGraphCoordsX(screenx);
-        y = toGraphCoordsY(screeny);
+    function evaluateQuad(quad){
+        if(currentExpression == null || currentExpression == undefined){
+            console.log("null quad");
+            return;
+        }
 
-        //...
+        if(currentExpression.replace == undefined){
+            console.log("invalid replace data");
+            return;
+        }
+
+        let x1 = toGraphCoordsX(quad.minX);
+        let x2 = toGraphCoordsX(quad.maxX);
+        let y1 = toGraphCoordsY(quad.minY);
+        let y2 = toGraphCoordsY(quad.maxY);
+
+        //console.log(currentExpression);
+
+        //let exprs = getCompiledExpressions();
+        //console.log(exprs);
+        return evaluateExpression(
+            currentExpression, 
+            {
+                minX: x1,
+                maxX: x2,
+                minY: y2,
+                maxY: y1, //TODO: HACK. y1 & y2 are flipped, because screen y is flipped from graph y
+            },
+            {evaluateDiff: true}
+        );
+
     }
 
+    /*
     function evalAt(screenx,screeny){
-        x=toGraphCoordsX(screenx);
-        y=toGraphCoordsY(screeny);
+        let x=toGraphCoordsX(screenx);
+        let y=toGraphCoordsY(screeny);
 
-        //eval
-        //return (x*x)+(y*y)-(1*1);
+        //return Math.tan(x)-y;
 
-        //y=tan(x)
-        return Math.tan(x)-y;
-        //return Math.pow(x,3)-y;
+        var exprs = getCompiledExpressions();
 
-        //return Math.cos(x)-Math.cos(y);
+        if(exprs.length == 0){
+          console.log("blank expression list");
+          return;
+        }
+
+        //console.log("something in expression list");
+        
+        const quad = {
+            minX: toGraphCoordsX(x),
+            maxX: toGraphCoordsX(x),
+            minY: toGraphCoordsY(y),
+            maxY: toGraphCoordsY(y),
+        };
+
+        //console.log("Array: ", exprs);
+
+
+        //console.log("At index: ", exprs, exprs[0]);
+        
+        return evaluateExpression(
+            exprs[exprs.length-1], 
+            quad,
+            {evaluateDiff: true}
+        );
+
     }
+    */
 
     //first derivative of the eval function (f'(x))
     //ideally, when f(x) is compiled, f'(x) will be found by symbolically differentiating f(x)
     function evalChangeAt(screenx,screeny){
-        x=toGraphCoordsX(screenx);
-        y=toGraphCoordsY(screeny);
+        let x=toGraphCoordsX(screenx);
+        let y=toGraphCoordsY(screeny);
 
         //dy      2
         //-- = sec (x)
@@ -494,8 +298,8 @@
     }
 
     function evalChangeChangeAt(screenx,screeny){
-        x=toGraphCoordsX(screenx);
-        y=toGraphCoordsY(screeny);
+        let x=toGraphCoordsX(screenx);
+        let y=toGraphCoordsY(screeny);
 
         // d^2y       2
         // ---- = 2sec (x)tan(x)
@@ -504,13 +308,26 @@
     }
 
     function drawRect(x, y, width, height, depth=0) {
+        quadCount++;
+        if(currentExpression == undefined){
+          quadCount--;
+          return;
+        }
 
-        if(depth<5){
+        if(depth<4){
             drawRect(x,y,width/2,height/2,depth+1);
             drawRect(x,y+height/2,width/2,height/2,depth+1);
             drawRect(x+width/2,y,width/2,height/2,depth+1);
             drawRect(x+width/2,y+height/2,width/2,height/2,depth+1);
+            quadCount--;
             return;
+        }
+
+        if(quadCount > 5000){
+          plotRect(x,y,width,height,true);
+          //ctx.rect(x,y,width,height);
+          //ctx.stroke();
+          return;
         }
 
         if(width<10 || height<10){
@@ -525,6 +342,7 @@
             drawRect(x,y+height/2,width/2,height/2,depth+1);
             drawRect(x+width/2,y,width/2,height/2,depth+1);
             drawRect(x+width/2,y+height/2,width/2,height/2,depth+1);
+            quadCount--;
             return;
         }
 
@@ -542,77 +360,162 @@
     }
 
     function plotRect(x,y,w,h,forcePlot=false){
+      const q = evaluateQuad({
+          minX: x, maxX: x+w, 
+          minY: y, maxY: y+h
+      });
 
-        // Evaluate function at four corners
-        const v00 = evalAt(x, y);       // top-left
-        const v10 = evalAt(x+w, y);     // top-right
-        const v01 = evalAt(x, y+h);     // bottom-left
-        const v11 = evalAt(x+w, y+h);   // bottom-right
+      const v=q.value;
 
-        //ideal process
-        //evalAt is called once, and evaluates all four corners at once
-        //detects discontinuities across each edge by managing each operation serarately
-        //may also be faster to eval 4 values at once instead of each one individually
+      if(
+        (q.edges.top[1] > 0) || 
+        (q.edges.lft[1] > 0) ||
+        (q.edges.rgt[1] > 0) ||
+        (q.edges.btm[1] > 0)
+      ){
+        //console.log("holes");
+        if(w > 20 && h > 20){
+          return true;
+        }else{
+          return false;
+        }
+      }
 
-        if(
-            v00 == undefined && 
-            v01 == undefined && 
-            v10 == undefined && 
-            v11 == undefined
-        ){
-            return false;
+      if(
+        (q.edges.top[0] > 1) || 
+        (q.edges.lft[0] > 1) ||
+        (q.edges.rgt[0] > 1) ||
+        (q.edges.btm[0] > 1)
+      ){
+        //console.log(q.edges);
+        if(!forcePlot){
+          return true;
+        }
+        //console.log("multiple crosses",q.edges);
+      }
+
+      const crossSum = 
+        (q.edges.top[0]) +
+        (q.edges.lft[0]) +
+        (q.edges.rgt[0]) +
+        (q.edges.btm[0]);
+
+      const v00 = v[0]; //tplf
+      const v10 = v[1]; //tprt
+      const v01 = v[2]; //btlf
+      const v11 = v[3]; //btrt
+
+      if(!forcePlot){
+        const topDif = Math.abs(v00-v10)*Math.SQRT1_2;
+        const rgtDif = Math.abs(v10-v11)*Math.SQRT1_2;
+        const btmDif = Math.abs(v11-v01)*Math.SQRT1_2;
+        const lftDif = Math.abs(v01-v00)*Math.SQRT1_2;
+
+        if(Math.abs(v00)<lftDif || Math.abs(v00)<topDif){
+          return true;
         }
 
-        //check if is far out of bounds (0-line does not come close to this box)
-        //f(x) \neq 0
-
-
-        u = evalChangeAt(x+w/2,y+h/2);
-        a = Math.abs(evalChangeChangeAt(x+w/2,y+h/2));
-
-        t=w/200;
-        s = u*t+0.5*a*Math.pow(t,2);
-
-        //s=ut+0.5at^2
-
-        //decent detection of 0-line being out-of-bounds but doesn't do asymptotes well
-        max=Math.abs(s)*scaleFactor;
-        
-        if(
-            (Math.abs(v00)>max ||
-            Math.abs(v01)>max ||
-            Math.abs(v10)>max ||
-            Math.abs(v11)>max) &&
-            a < 10
-        ){
-            return false;
+        if(Math.abs(v10)<topDif || Math.abs(v10)<rgtDif){
+          return true;
         }
 
+        if(Math.abs(v11)<rgtDif || Math.abs(v11)<btmDif){
+          return true;
+        }
 
-        /*if(Math.pow(a,1) > 32*w/scaleFactor && !forcePlot){
-            return true;
-        }*/
+        if(Math.abs(v01)<btmDif || Math.abs(v01)<lftDif){
+          return true;
+        }
+      }
 
-        // Determine binary state for each corner: 1 if positive, 0 if negative
-        const s00 = v00 > 0 ? 1 : 0;
-        const s10 = v10 > 0 ? 1 : 0;
-        const s01 = v01 > 0 ? 1 : 0;
-        const s11 = v11 > 0 ? 1 : 0;
+      
 
-        // Build case index (top-left, top-right, bottom-right, bottom-left)
-        const index = (s00 << 3) | (s10 << 2) | (s11 << 1) | s01;
+      /*const linDif00 = Math.abs(v00/(scaleFactor*scaleFactor)*1.5/window.innerWidth);
+      const linDif10 = Math.abs(v10/(scaleFactor*scaleFactor)*1.5/window.innerWidth);
+      const linDif01 = Math.abs(v01/(scaleFactor*scaleFactor)*1.5/window.innerWidth);
+      const linDif11 = Math.abs(v11/(scaleFactor*scaleFactor)*1.5/window.innerWidth);
 
-        // For simplicity, compute intersections along edges (assuming linear variation)
-        const interp = (a, b, va, vb) => {
-            const t = va / (va - vb);
-            return a + t * (b - a);
-        };
+      const m = w * 0.000001;
+      if((linDif00 < m || linDif01 < m || linDif10 < m || linDif11 < m )&& !forcePlot){
+        return true;
+      }*/
 
-        ctx.beginPath();
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = 'red';
+      // Evaluate function at four corners
+      //const v00 = evalAt(x,   y);     // top-left
+      //const v10 = evalAt(x+w, y);     // top-right
+      //const v01 = evalAt(x,   y+h);   // bottom-left
+      //const v11 = evalAt(x+w, y+h);   // bottom-right
 
-        // Calculate intersections relative to translated square
+      //ideal process
+      //evalAt is called once, and evaluates all four corners at once
+      //detects discontinuities across each edge by managing each operation serarately
+      //may also be faster to eval 4 values at once instead of each one individually
+
+      
+      if(
+          v00 == undefined && 
+          v01 == undefined && 
+          v10 == undefined && 
+          v11 == undefined 
+      ){
+          return false;
+      }
+
+      //check if is far out of bounds (0-line does not come close to this box)
+      //f(x) \neq 0
+
+
+      /*
+      let u = evalChangeAt(x+w/2,y+h/2);
+      let a = Math.abs(evalChangeChangeAt(x+w/2,y+h/2));
+
+      let t = w/200;
+      let s = u*t+0.5*a*Math.pow(t,2);
+
+      //s=ut+0.5at^2
+
+      //decent detection of 0-line being out-of-bounds but doesn't do asymptotes well
+      let max=Math.abs(s)*scaleFactor;
+      
+      if(
+          (Math.abs(v00)>max ||
+          Math.abs(v01)>max ||
+          Math.abs(v10)>max ||
+          Math.abs(v11)>max) &&
+          a < 10
+      ){
+          return false;
+      }*/
+
+
+      // Determine binary state for each corner: 1 if positive, 0 if negative
+      
+      //console.log(v);
+      
+      const s00 = v00 > 0 ? 1 : 0; //tplf
+      const s10 = v10 > 0 ? 1 : 0; //tprt
+      const s01 = v01 > 0 ? 1 : 0; //btlf
+      const s11 = v11 > 0 ? 1 : 0; //btrt
+
+      // Build case index (top-left, top-right, bottom-right, bottom-left)
+      const index = (s00 << 3) | (s10 << 2) | (s11 << 1) | s01;
+
+      if(crossSum>0 && (index == 0 || index == 16) && !forcePlot){
+        //console.log("0/16");
+        //return true;
+      }
+
+      // For simplicity, compute intersections along edges (assuming linear variation)
+      const interp = (a, b, va, vb) => {
+          const t = va / (va - vb);
+          return a + t * (b - a);
+      };
+
+      ctx.beginPath();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'red';
+
+      // Calculate intersections relative to translated square
       switch (index) {
         case 1: case 14:
           ctx.moveTo(x, interp(y + h, y, v01, v00));
@@ -645,12 +548,18 @@
           ctx.lineTo(x, interp(y + h, y, v01, v00));
           break;
         default:
+          //console.log("??msqr");
           break;
-        }
+      }
 
-        //ctx.rect(x,y,w,h);
+      ctx.stroke();
 
-        ctx.stroke();
+      
+      // ctx.beginPath();
+      // ctx.strokeStyle = 'lightgray';
+      // ctx.rect(x,y,w,h);
+
+      // ctx.stroke();
     }
 
     function drawHorizontalGridline(y) {
@@ -668,8 +577,8 @@
     }
 
     function majorGridScaleToNiceMultiple(scale){
-        scaleMagnitude = Math.log10(scale);
-        scaleToRoundedRatio = scale / Math.pow(10,Math.floor(scaleMagnitude));
+        let scaleMagnitude = Math.log10(scale);
+        let scaleToRoundedRatio = scale / Math.pow(10,Math.floor(scaleMagnitude));
         if(scaleToRoundedRatio > 5){
             //scalefactor is 5x more than floored magnitude
             //const minorGridScale = Math.pow(10, Math.floor(scaleMagnitude));
@@ -686,8 +595,8 @@
     }
 
     function minorGridScaleToNiceMultiple(scale){
-        scaleMagnitude = Math.log10(scale);
-        scaleToRoundedRatio = scale / Math.pow(10,Math.floor(scaleMagnitude));
+        let scaleMagnitude = Math.log10(scale);
+        let scaleToRoundedRatio = scale / Math.pow(10,Math.floor(scaleMagnitude));
         if(scaleToRoundedRatio > 5){
             //scalefactor is 5x more than floored magnitude
             return Math.pow(10, Math.floor(scaleMagnitude));
@@ -704,6 +613,7 @@
     }
 
     function drawGrid() {
+
         ctx.lineWidth = 1;
         ctx.strokeStyle = "#ccc";
 
@@ -761,11 +671,11 @@
         const startY = Math.floor(graphBottom / majorGridScale) * majorGridScale;
         const endY   = Math.ceil(graphTop / majorGridScale) * majorGridScale;
 
-        labelY = xAxis - 8;
+        let labelY = xAxis - 8;
         if(labelY < 20) labelY = 20 ;
         if(labelY > window.innerHeight - 10) labelY = window.innerHeight - 10;
 
-        labelX = yAxis + 4;
+        let labelX = yAxis + 4;
         if(labelX < 10){ labelX = 10};
         if(labelX + 20 > window.innerWidth) labelX = window.innerWidth-20;
 
@@ -778,7 +688,7 @@
             ctx.moveTo(sx, 0);
             ctx.lineTo(sx, window.innerHeight);
 
-            text = Math.round(gx*1_000_000)/1_000_000;
+            let text = Math.round(gx*1_000_000)/1_000_000; //Math.f16round
 
             ctx.fillText(text, sx+4, labelY);
         }
@@ -794,7 +704,7 @@
             ctx.moveTo(0, sy);
             ctx.lineTo(window.innerWidth, sy);
 
-            text = Math.round(gy*1_000_000)/1_000_000;
+            let text = Math.round(gy*1_000_000)/1_000_000;
 
             ctx.fillText(text, labelX, sy-8);
         }
@@ -883,6 +793,26 @@
 
         draw();
     }, { passive: false });
+
+    document.addEventListener("DOMContentLoaded", () => {
+        tokenizeExpression("y=x!");
+        compileExpression(getTokenizedExpressions().pop(),getTokenizedExpressionMetas().pop());
+
+        console.log("zlog");
+        currentExpression = getCompiledExpressions()[0];
+
+        console.log("current", currentExpression);
+
+        let string = "";
+
+        currentExpression.tokens.forEach(element => {
+            string += (element.type + ", ");
+        });
+    
+        document.getElementById("expDisplay").innerText = string;
+
+        draw();
+    });
 
     resize();
     draw();
