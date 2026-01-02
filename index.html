@@ -135,11 +135,19 @@
 
     const fpsDisplay = document.getElementById('fps');
 
-    let quadCount = 0;
+    const showQuadOutlines = false;
+    const maxQuads = 4096;
+    const maxDepth = 8;
+    const tryIsolateUnknown = false;
 
-    let equation = "";
-    let tokens = [];
-    let postfix = [];
+    let quadCount = 0;
+    let quadOn = 0;
+    let quadStack = [];
+    let renderStack = [];
+
+    
+    let equation = "y=sin(max(2,3)/6*pi)";
+    let currentExpression = null;
 
     let scaleFactor = 3;
     let offsetX = 0.00000001;
@@ -148,7 +156,13 @@
     let lastMouseX = 0;
     let lastMouseY = 0;
 
-    let currentExpression = null;
+    const exprColors = [
+      "seagreen",
+      "coral",
+      "cornflowerblue",
+      "lightcoral",
+      "mediumaquamarine"
+    ];
 
     function update() {
         resize();
@@ -172,27 +186,28 @@
         // clear
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        //start timer
+        // start timer
         var start = window.performance.now();
-
-        //ctx.rect(10,10, 150,100);
-        //ctx.stroke();
 
         drawGrid();
 
-        quadCount = 0;
-        drawRect(0,0,window.innerWidth,window.innerHeight);
+        if(currentExpression != null){
+          switch(currentExpression.type){
+            case 1: //Implicit
+              drawCurrentExpressionAsQuad();
+              break;
+            case 2: //y=f(x)
+              drawCurrentExpressionAsYofX();
+              break;
+            case 3: //x=f(y)
+              break;
+            default:
+              drawCurrentExpressionAsQuad();
+              break;
+          }
+        }
 
-        //console.log(quadCount);
-
-        //draw a line from top-left (0,0) to bottom-right (window width, window height)
-        //ctx.beginPath();
-        //ctx.moveTo(0, 0);
-        //ctx.lineTo(window.innerWidth, window.innerHeight); // coordinates in CSS pixels after setTransform
-        //ctx.lineWidth = 2; // in CSS pixels
-        //ctx.strokeStyle = '#000';
-        //ctx.stroke();
-
+        // end timer
         var end = window.performance.now();
         var time = end - start;
 
@@ -248,133 +263,169 @@
 
     }
 
-    /*
-    function evalAt(screenx,screeny){
-        let x=toGraphCoordsX(screenx);
-        let y=toGraphCoordsY(screeny);
+    function drawCurrentExpressionAsQuad(){
+      quadCount = 0;
+      quadOn = 0;
+      quadStack = [];
+      renderStack = [];
 
-        //return Math.tan(x)-y;
+      pushRect(0,0,window.innerWidth,window.innerHeight, false, true);
 
-        var exprs = getCompiledExpressions();
-
-        if(exprs.length == 0){
-          console.log("blank expression list");
-          return;
+      while(quadCount < maxQuads && quadOn < quadStack.length){
+        if(tryDrawRect(...quadStack[quadOn])){
+          renderStack.push(quadStack[quadOn]);
         }
+        quadOn++;
+      }
 
-        //console.log("something in expression list");
-        
-        const quad = {
-            minX: toGraphCoordsX(x),
-            maxX: toGraphCoordsX(x),
-            minY: toGraphCoordsY(y),
-            maxY: toGraphCoordsY(y),
-        };
+      for(let i = quadOn; i<quadStack.length; i++){
+        renderStack.push(quadStack[i]);
+      }
 
-        //console.log("Array: ", exprs);
+      renderStack.forEach((q) => {
+        tryPlotRect(q[0], q[1], q[2], q[3], true, true);
+      });
+    }
 
+    function drawCurrentExpressionAsYofX(){
+      const dx = 1;
+      const minY = toGraphCoordsY(0);
+      const maxY = toGraphCoordsY(window.innerHeight);
 
-        //console.log("At index: ", exprs, exprs[0]);
-        
-        return evaluateExpression(
-            exprs[exprs.length-1], 
-            quad,
-            {evaluateDiff: true}
+      var px = 0; // previous x
+      for(let x=dx; x<window.innerWidth; x+= dx){
+        let y = evaluateExpression(
+          currentExpression, 
+          {
+            minX: toGraphCoordsX(px), maxX: toGraphCoordsX(x),
+            minY: minY, maxY: maxY
+          }
         );
 
-    }
-    */
+        // TODO: implement variable quad density, like implicit graph
+        tryPlotRect(x,0,dx,window.innerHeight,true,true);
 
-    //first derivative of the eval function (f'(x))
-    //ideally, when f(x) is compiled, f'(x) will be found by symbolically differentiating f(x)
-    function evalChangeAt(screenx,screeny){
-        let x=toGraphCoordsX(screenx);
-        let y=toGraphCoordsY(screeny);
-
-        //dy      2
-        //-- = sec (x)
-        //dx
-        return Math.pow(Math.cos(x),-2);
+        px += dx;
+      }
     }
 
-    function evalChangeChangeAt(screenx,screeny){
-        let x=toGraphCoordsX(screenx);
-        let y=toGraphCoordsY(screeny);
-
-        // d^2y       2
-        // ---- = 2sec (x)tan(x)
-        // dx^2
-        return 2*Math.pow(Math.cos(x),-2)*Math.tan(x);
+    function pushRect(x,y,width,height, depth=0){
+      quadStack.push([x,y,width,height,depth]);
+      quadCount++;
     }
 
-    function drawRect(x, y, width, height, depth=0) {
-        quadCount++;
-        if(currentExpression == undefined){
-          quadCount--;
-          return;
-        }
+    function tryDrawRect(x,y,width,height,depth=0){
+      if(currentExpression == undefined){
+        return false;
+      }
 
-        if(depth<4){
-            drawRect(x,y,width/2,height/2,depth+1);
-            drawRect(x,y+height/2,width/2,height/2,depth+1);
-            drawRect(x+width/2,y,width/2,height/2,depth+1);
-            drawRect(x+width/2,y+height/2,width/2,height/2,depth+1);
-            quadCount--;
-            return;
-        }
+      //Assumption: quadCount should always be less than maxQuads
+      if(depth<4){
+        pushRect(x,y,width/2,height/2,depth+1);
+        pushRect(x,y+height/2,width/2,height/2,depth+1);
+        pushRect(x+width/2,y,width/2,height/2,depth+1);
+        pushRect(x+width/2,y+height/2,width/2,height/2,depth+1);
+        //quadCount+=4;
+        return false;
+      }
 
-        if(quadCount > 5000){
-          plotRect(x,y,width,height,true);
-          //ctx.rect(x,y,width,height);
-          //ctx.stroke();
-          return;
-        }
+      //check if should be iterated on more, rendered normally, or not rendered
+      const result = tryPlotRect(x,y,width,height,false,false);
+      if(result == null){
+        return false;
+      }
 
-        if(width<10 || height<10){
-            plotRect(x,y,width,height,true);
-            //ctx.rect(x,y,width,height);
-            //ctx.stroke();
-            return;
-        }
+      if(result && quadCount<maxQuads){
+        //return true;
+        //iterate further
+        pushRect(x,y,width/2,height/2,depth+1);
+        pushRect(x,y+height/2,width/2,height/2,depth+1);
+        pushRect(x+width/2,y,width/2,height/2,depth+1);
+        pushRect(x+width/2,y+height/2,width/2,height/2,depth+1);
+        //quadCount+=4;
+        return false;
+      }
 
-        if(plotRect(x,y,width,height)){
-            drawRect(x,y,width/2,height/2,depth+1);
-            drawRect(x,y+height/2,width/2,height/2,depth+1);
-            drawRect(x+width/2,y,width/2,height/2,depth+1);
-            drawRect(x+width/2,y+height/2,width/2,height/2,depth+1);
-            quadCount--;
-            return;
-        }
-
-        //if undefined at all corners, draw
-        //if ~linear, draw
-        //something about f(x) passing through 0?
-
-        //otherwise subdivide
-        //ctx.rect(x,y,width,height);
-        //ctx.stroke();
-
-        //ctx.rect(x,y,width,height);
-        //ctx.stroke();
-        return;
+      //quadCount++;
+      //can render this one as is
+      return true;
     }
 
-    function plotRect(x,y,w,h,forcePlot=false){
+    // function drawRect(x, y, width, height, depth=0) {
+      
+    //     if(currentExpression == undefined){
+    //       return false;
+    //     }
+
+    //     quadCount++;
+
+    //     if(depth<4){
+    //         pushRect(x,y,width/2,height/2,depth+1);
+    //         pushRect(x,y+height/2,width/2,height/2,depth+1);
+    //         pushRect(x+width/2,y,width/2,height/2,depth+1);
+    //         pushRect(x+width/2,y+height/2,width/2,height/2,depth+1);
+    //         quadCount--;
+    //         return false; //don't render me
+    //     }
+
+    //     // if(width<6 || height<6){
+    //     //     plotRect(x,y,width,height,true);
+    //     //     //ctx.rect(x,y,width,height);
+    //     //     //ctx.stroke();
+    //     //     return;
+    //     // }
+
+    //     //r
+    //     //true  -> iterate further
+    //     //false -> render now
+    //     //null  -> stop
+    //     const r = plotRect(x,y,width,height, false) ?? false;
+
+    //     if(r){
+    //         pushRect(x,y,width/2,height/2,depth+1);
+    //         pushRect(x,y+height/2,width/2,height/2,depth+1);
+    //         pushRect(x+width/2,y,width/2,height/2,depth+1);
+    //         pushRect(x+width/2,y+height/2,width/2,height/2,depth+1);
+    //         quadCount--;
+    //         return false; //don't render me
+    //     }
+
+    //     return true; //do render me
+
+    //     //if undefined at all corners, draw
+    //     //if ~linear, draw
+    //     //something about f(x) passing through 0?
+
+    //     //otherwise subdivide
+    //     //ctx.rect(x,y,width,height);
+    //     //ctx.stroke();
+
+    //     //ctx.rect(x,y,width,height);
+    //     //ctx.stroke();
+    // }
+
+
+    function tryPlotRect(x,y,w,h,forcePlot=false,doRender=true){
       const q = evaluateQuad({
           minX: x, maxX: x+w, 
           minY: y, maxY: y+h
       });
 
+      if(q.type != 10 || currentExpression.type != 1){
+        //console.log(q.value);
+        return;
+      }
+
       const v=q.value;
 
       if(
-        (q.edges.top[1] > 0) || 
+        ((q.edges.top[1] > 0) || 
         (q.edges.lft[1] > 0) ||
         (q.edges.rgt[1] > 0) ||
-        (q.edges.btm[1] > 0)
+        (q.edges.btm[1] > 0)) && !forcePlot
       ){
-        //console.log("holes");
-        if(w > 20 && h > 20){
+        if(w > 12 && h > 12){
+          //Attempt to iterate further
           return true;
         }else{
           return false;
@@ -387,11 +438,11 @@
         (q.edges.rgt[0] > 1) ||
         (q.edges.btm[0] > 1)
       ){
-        //console.log(q.edges);
         if(!forcePlot){
+          //If possible, iterate further
           return true;
         }
-        //console.log("multiple crosses",q.edges);
+        //Else continue as usual
       }
 
       const crossSum = 
@@ -406,6 +457,9 @@
       const v11 = v[3]; //btrt
 
       if(!forcePlot){
+        //check for if the quad is on/near f(x)=0
+        //if so, iterate further
+
         const topDif = Math.abs(v00-v10)*Math.SQRT1_2;
         const rgtDif = Math.abs(v10-v11)*Math.SQRT1_2;
         const btmDif = Math.abs(v11-v01)*Math.SQRT1_2;
@@ -451,14 +505,15 @@
       //detects discontinuities across each edge by managing each operation serarately
       //may also be faster to eval 4 values at once instead of each one individually
 
-      
       if(
           v00 == undefined && 
           v01 == undefined && 
           v10 == undefined && 
           v11 == undefined 
       ){
-          return false;
+          console.log("undefined");
+          //don't render if is undefined
+          return null;
       }
 
       //check if is far out of bounds (0-line does not come close to this box)
@@ -491,6 +546,11 @@
       // Determine binary state for each corner: 1 if positive, 0 if negative
       
       //console.log(v);
+
+      if(!doRender){
+        //render as usual, no further iteration
+        return false;
+      }
       
       const s00 = v00 > 0 ? 1 : 0; //tplf
       const s10 = v10 > 0 ? 1 : 0; //tprt
@@ -500,10 +560,10 @@
       // Build case index (top-left, top-right, bottom-right, bottom-left)
       const index = (s00 << 3) | (s10 << 2) | (s11 << 1) | s01;
 
-      if(crossSum>0 && (index == 0 || index == 16) && !forcePlot){
-        //console.log("0/16");
-        //return true;
-      }
+      // if(crossSum>0 && (index == 0 || index == 16) && !forcePlot){
+      //   console.log("0/16");
+      //   return true;
+      // }
 
       // For simplicity, compute intersections along edges (assuming linear variation)
       const interp = (a, b, va, vb) => {
@@ -512,8 +572,8 @@
       };
 
       ctx.beginPath();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = 'red';
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = exprColors[4]; //r 3,4,5,6
 
       // Calculate intersections relative to translated square
       switch (index) {
@@ -548,18 +608,19 @@
           ctx.lineTo(x, interp(y + h, y, v01, v00));
           break;
         default:
-          //console.log("??msqr");
+          //console.log(index);
           break;
       }
 
       ctx.stroke();
 
+      if(showQuadOutlines){
+        ctx.beginPath();
+        ctx.strokeStyle = 'lightgray';
+        ctx.rect(x,y,w,h);
+        ctx.stroke();
+      }
       
-      // ctx.beginPath();
-      // ctx.strokeStyle = 'lightgray';
-      // ctx.rect(x,y,w,h);
-
-      // ctx.stroke();
     }
 
     function drawHorizontalGridline(y) {
@@ -750,6 +811,7 @@
       offsetY += (dy*(3/window.innerWidth)*1);
       lastMouseX = e.clientX;
       lastMouseY = e.clientY;
+      //if(dx == 0 && dy == 0) return;
       update();
     });
 
@@ -795,21 +857,15 @@
     }, { passive: false });
 
     document.addEventListener("DOMContentLoaded", () => {
-        tokenizeExpression("y=x!");
+        tokenizeExpression(equation, tryIsolateUnknown);
         compileExpression(getTokenizedExpressions().pop(),getTokenizedExpressionMetas().pop());
 
         console.log("zlog");
         currentExpression = getCompiledExpressions()[0];
 
         console.log("current", currentExpression);
-
-        let string = "";
-
-        currentExpression.tokens.forEach(element => {
-            string += (element.type + ", ");
-        });
     
-        document.getElementById("expDisplay").innerText = string;
+        document.getElementById("expDisplay").innerText = equation;
 
         draw();
     });
