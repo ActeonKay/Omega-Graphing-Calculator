@@ -6,9 +6,25 @@ const ExpressionType = {
     EXP_F_Y: 3, //x=f(y)
     EXP_F_T: 4, //r=f(theta) or polar
     EXP_F_R: 5, //theta=f(r)
-    PRMTRC: 6,
+    PRMTRC: 6, //same as eval?
     ASGNMT: 7,
+    FUNCDEF: 8
 }
+
+const EvalType = {
+    INVALID: -1,
+    NUM: 0,
+    QUAD: 1,
+    DUAL: 2,
+    ARRAY: 3
+}
+
+//EVAL: num-based evaluation
+//IMPLICIT: quad-based evaluation
+//...F(...): dual-based evaluation
+//PRMTRC: dual-based evaluation
+//ASSGNMT: num-based evaluation
+//FUNCDEF: quad-based evaluation
 
 const TokenType = {
     INVLD: -1, //invalid/error
@@ -24,16 +40,44 @@ const TokenType = {
     DELIM: 9,
     QUAD: 10, //managing full quad at once
     CMPLX: 11,
-    VEC2: 12,
-    VEC3: 13,
-    ALPHANUM: 14,
-    ATT: 15,
-    ARRAY: 16
+    DUAL: 12,
+    VEC2: 13,
+    VEC3: 14,
+    ALPHANUM: 15,
+    ATT: 16,
+    ARRAY: 17
 }
 
-// 0/null  1/number  2/operator  3/function  4/string
-// 5/bracket  6/unknowns  7/constants  8/variables  9/delimeter
-// 10+/ reference-types  -1/invalid
+const LatexTokenType = {
+    WHITESPACE: 0,
+    CHAR: 1,
+    COMMAND: 2,
+    NUMBER: 3,
+    BRACKET: 4,
+    DELIMITER: 5
+}
+
+const ExpressionInfo = {
+    "invalid": { exprType: ExpressionType.INVLD, tokType: TokenType.INVLD},
+    "evaluate": { exprType: ExpressionType.EVAL, tokType: TokenType.NUM},
+    "implicit": { exprType: ExpressionType.IMPLICIT, tokType: TokenType.QUAD},
+    "y of x": { exprType: ExpressionType.EXP_F_X, tokType: TokenType.DUAL},
+    "x of y": { exprType: ExpressionType.EXP_F_Y, tokType: TokenType.DUAL},
+    "r of θ": { exprType: ExpressionType.EXP_F_T, tokType: TokenType.DUAL},
+    "θ of r": { exprType: ExpressionType.EXP_F_R, tokType: TokenType.DUAL},
+    "parametric": { exprType: ExpressionType.PRMTRC, tokType: TokenType.DUAL},
+    "assignment": { exprType: ExpressionType.ASGNMT, tokType: TokenType.NUM},
+    "function definition": { exprType: ExpressionType.FUNCDEF, tokType: TokenType.QUAD},
+}
+
+const ExpressionInfoByType = {};
+for (const sym in ExpressionInfo) {
+    const info = ExpressionInfo[sym];
+    ExpressionInfoByType[info.exprType] = {
+        ...info,
+        symbol: sym
+    };
+}
 
 const OpCode = {
     ADD: 1,
@@ -56,6 +100,7 @@ const OpCode = {
     DPR: 18, //dot prod
     CRP: 19, //cross prod
     ATT: 20, //attributive operator
+    POWN: 21
 }
 
 const OpAssoc = {
@@ -67,6 +112,7 @@ const OpInfo = {
     "+": { code: OpCode.ADD, precedence: 1, associativity: OpAssoc.LEFT, arity: 2 },
     "-": { code: OpCode.SUB, precedence: 1, associativity: OpAssoc.LEFT, arity: 2 },
     "*": { code: OpCode.MUL, precedence: 2, associativity: OpAssoc.LEFT, arity: 2 },
+    "cdot": { code: OpCode.MUL, precedence: 2, associativity: OpAssoc.LEFT, arity: 2 },
     "/": { code: OpCode.DIV, precedence: 2, associativity: OpAssoc.LEFT, arity: 2 },
     "^": { code: OpCode.POW, precedence: 3, associativity: OpAssoc.RIGHT, arity: 2 },
     "<": { code: OpCode.LT, precedence: 0, associativity: OpAssoc.LEFT, arity: 2 },
@@ -79,11 +125,12 @@ const OpInfo = {
     "&&": { code: OpCode.AND, precedence: -2, associativity: OpAssoc.LEFT, arity: 2 },
     "||": { code: OpCode.OR, precedence: -2, associativity: OpAssoc.LEFT, arity: 2 },
     "^^": { code: OpCode.XOR, precedence: -2, associativity: OpAssoc.LEFT, arity: 2 },
-    "~": { code: OpCode.NOT, precedence: 5, associativity: OpAssoc.LEFT, arity: 1 }, //prefix unary (L)
-    "!": { code: OpCode.FACT, precedence: 6, associativity: OpAssoc.RIGHT, arity: 1 }, //suffix unary (R)
-    "u-": { code: OpCode.NEG, precedence: 5, associativity: OpAssoc.LEFT, arity: 1 }, //prefix unary (L)
+    "~": { code: OpCode.NOT, precedence: 5, associativity: OpAssoc.RIGHT, arity: 1 }, //prefix unary (L)
+    "!": { code: OpCode.FACT, precedence: 6, associativity: OpAssoc.LEFT, arity: 1 }, //suffix unary (R)
+    "u-": { code: OpCode.NEG, precedence: 3, associativity: OpAssoc.RIGHT, arity: 1 }, //prefix unary (L)
     "#": { code: OpCode.CRP, precedence: 2, associativity: OpAssoc.LEFT, arity: 2 },
-    "\\": {code: OpCode.ATT, precedence: 101, associativity: OpAssoc.LEFT, arity: 2}
+    "\\": {code: OpCode.ATT, precedence: 101, associativity: OpAssoc.LEFT, arity: 2},
+    "^n": { code: OpCode.POWN, precedence: 7, associativity: OpAssoc.RIGHT, arity: 2 }, //for things like x^2!, the x^2 should come first as it is not x^{2!}
 }
 
 const OpInfoByCode = {};
@@ -96,6 +143,7 @@ for (const sym in OpInfo) {
 }
 
 const FuncCode = {
+    FRAC: 100, //maybe temporary
     SIN: 101,
     COS: 102,
     TAN: 103,
@@ -155,6 +203,7 @@ const FuncCode = {
 }
 
 const FuncInfo = {
+    "frac": { code: FuncCode.FRAC, staticArgs: true, args: 2},
     "sin": { code: FuncCode.SIN, staticArgs: true, args: 1 },
     "cos": { code: FuncCode.COS, staticArgs: true, args: 1 },
     "tan": { code: FuncCode.TAN, staticArgs: true, args: 1 },
@@ -200,7 +249,7 @@ const FuncInfo = {
     "sqrt": { code: FuncCode.SQRT, staticArgs: true, args: 1 },
     "cbrt": { code: FuncCode.CBRT, staticArgs: true, args: 1 },
     "nthrt": { code: FuncCode.NTHRT, staticArgs: true, args: 2 },
-    "gamma": { code: FuncCode.GAMMA, staticArgs: true, args: 1 },
+    "Gamma": { code: FuncCode.GAMMA, staticArgs: true, args: 1 },
     "dgama": { code: FuncCode.DGAMA, staticArgs: true, args: 1 },
     "pgama": { code: FuncCode.PGAMA, staticArgs: true, args: 1 },
     "zeta": { code: FuncCode.ZETA, staticArgs: true, args: 1 },
@@ -213,6 +262,15 @@ const FuncInfo = {
     "ampl": { code: FuncCode.AMPL, staticArgs: true, args: 1 },
 }
 
+const FuncInfoByCode = {};
+for (const sym in FuncInfo) {
+    const info = FuncInfo[sym];
+    FuncInfoByCode[info.code] = {
+        ...info,
+        symbol: sym
+    };
+}
+
 const BracCode = {
     LRND: 1,
     RRND: 2,
@@ -221,18 +279,28 @@ const BracCode = {
     LCUR: 5,
     RCUR: 6,
     LFNC: 7,
-    RFNC: 8
+    RFNC: 8,
+    LSTM: 9, //'stem' brackets --> of unknown type but orientation
+    RSTM: 10
 }
 
 const BracInfo = {
     "(": BracCode.LRND,
+    "left(": BracCode.LRND,
     ")": BracCode.RRND,
+    "right)": BracCode.RRND,
     "[": BracCode.LSQR,
+    "left[": BracCode.LSQR,
     "]": BracCode.RSQR,
+    "right]": BracCode.RSQR,
     "{": BracCode.LCUR,
+    "left{": BracCode.LCUR,
     "}": BracCode.RCUR,
+    "right}": BracCode.RCUR,
     "(.": BracCode.LFNC,
-    ").": BracCode.RFNC
+    ").": BracCode.RFNC,
+    "left?": BracCode.LSTM,
+    "right?": BracCode.RSTM
 }
 
 const UnknownCode = {
@@ -249,8 +317,10 @@ const UnknownInfo = {
     "y": UnknownCode.CARTY,
     "z": UnknownCode.CARTZ,
     "θ": UnknownCode.POLRT,
+    "theta": UnknownCode.POLRT,
     "r": UnknownCode.POLRR,
-    "φ": UnknownCode.POLRP
+    "φ": UnknownCode.POLRP,
+    //"phi": UnknownCode.POLRP
 }
 
 const ConstantCode = {
@@ -277,7 +347,8 @@ const ConstantCode = {
     UM_ATOM: 20,
     RAD_FRM: 21,
     TRUE: 22,
-    FALSE: 23
+    FALSE: 23,
+    PHI: 24
 }
 
 const ConstantInfo = {
@@ -305,6 +376,7 @@ const ConstantInfo = {
     "radfer": { code: ConstantCode.RAD_FRM, value: 1.20e-15 },
     "true": { code: ConstantCode.TRUE, value: true },
     "false": { code: ConstantCode.FALSE, value: false },
+    "phi": { code: ConstantCode.PHI, value: 1.61803398875}
 }
 
 const ConstInfoByCode = {};
@@ -331,7 +403,7 @@ const FunctionAttributiveInfo = {
 const validOperators = ["+", "-", "*", "/", "^", "<", "<=", ">", ">=", "=", "!=", "&&", "||", "!", "u-", "#", "_"];
 
 const validFunctions = [
-    "sin", "cos", "tan",
+    "frac", "sin", "cos", "tan",
     "arcsin", "arccos", "arctan",
     "csc", "sec", "cot",
     "arccsc", "arcsec", "arccot",
@@ -354,7 +426,7 @@ const validFunctions = [
 
 const validConstants = [
     "true", "false",
-    "pi", "eunum", "eucon",
+    "pi", "eunum", "eucon", "phi",
     "egrav", "sc",
     "grav", "NA", "gascon",
     "bmc", "sbc", "culuk", "epzo", "muzo", "speli", "plcon",
@@ -363,12 +435,46 @@ const validConstants = [
 ];
 
 //in operators, functions, etc, store a func expression that does what the operator does
-const doEvalsAsFuncExpressions = false;
+const doEvalsAsFuncExpressions = true;
 
 const numRegex = /^[0-9]*\.?[0-9]+$/;
 const alphanumRegex = /^[a-zA-Z0-9θ]+$/;
 const operatorRegex = /^[+\-*\/^%!=<>&|#_]$/;
 const bracketRegex = /^[\(\)\[\]]{1}$/;
+
+const latexOperators = ['cdot'];
+const latexCharacters = ['pi','theta'];
+const latexFunctions = ['sin', 'cos', 'tan'];
+const latexBrackets = ['left(','left[','left{','left|','left?','right)','right]','right}','right|','right?'];
+const latexStructs = ['frac','sqrt']
+const brackets = ['(',')','[',']','{','}','|'];
+const operators = ['+','-','_','^'];
+
+// types of tokens: 
+    //   operators
+    //     + - * (binary)
+    //   scripts
+    //     ^ _
+    //   variables
+    //     a b
+    //   constants (built-in)
+    //     \pi \theta
+    //   functions:
+    //     \sin \cos \tan
+    //   parenthesis
+    //     \left( \right) 
+    //     \left[ \right] 
+    //     \left{ \right}
+    //   commands
+    //     \frac{}{}
+    //     \sqrt{}
+    //   commands with modifier
+    //     \sqrt[]{}
+
+
+//token:
+//{type: int, value: int, edges: [][], attributes: []}
+//{type: 4bits, 64bitint / 64*4=256bit quad, edges: 4bits*3things*4edges=48bits, attributes: [pow: 64bitint, sub: 64bitint]}
 
 //expression = {
 // type: number, 
@@ -399,6 +505,11 @@ function isPrefixOfElementIn(s, elements) {
     return elements.some(fn => fn.startsWith(s) && fn.length > s.length);
 }
 
+/**
+ * Determines if a string token could have 1+ characters added and still be a valid string token
+ * @param {*} string 
+ * @returns `boolean`
+ */
 function isPrefixOfStringToken(string) {
     if (string.length == 0) return true;
 
@@ -417,6 +528,14 @@ function isPrefixOfStringToken(string) {
     return false;
 }
 
+/**
+ * Determine token type of string, one of:
+ * - Function
+ * - Unknown
+ * - Constant
+ * @param {*} string 
+ * @returns `integer`
+ */
 function typeOfStringToken(string) {
     if (FuncInfo[string] != undefined) return TokenType.FUNC;
     if (UnknownInfo[string] != undefined) return TokenType.UNKN;
@@ -424,11 +543,17 @@ function typeOfStringToken(string) {
     //var
 
     console.log("unknown string tested: ", string);
-    return -1; //unknown
+    return TokenType.INVLD; //unknown
 }
 
+/**
+ * Test if you can insert a token into the stack 
+ * @param {*} token 
+ * @param {*} tokenState 
+ * @returns {*} `integer` insertion type
+ */
 function testPushToken(token, tokenState) {
-    if (token.length <= 0) {
+    if (token.length == 0) {
         return TokenType.INVLD; //failure
     }
 
@@ -448,16 +573,18 @@ function testPushToken(token, tokenState) {
     return tokenState; //success
 }
 
+/**
+ * Turn `string` into an array of token data
+ * @param {*} string input string
+ * @param {*} tryIsolateUnknown try to fit expression into `u=f(v)`
+ * @returns `{type, tokens}` tokenized expression
+ */
 export function tokenizeExpression(string, tryIsolateUnknown = true) {
     var tokens = []; //Array<string>
     var tokenMetas = []; //Array<number>
 
     let charState = 0; //number
     let tokenState = 0; //number
-
-    // 0/null  1/number  2/operator  3/function  4/string
-    // 5/bracket  6/unknowns  7/constants  8/variables  9/delimiters
-    // 10+/ reference-types  -1/invalid
 
     let token = ""; //string
     let char = ""; //string
@@ -734,45 +861,78 @@ export function tokenizeExpression(string, tryIsolateUnknown = true) {
 
     tokenState = 0;
 
-    console.log("Raw tokens: ", tokens);
-    console.log("Raw tokenmeta: ", tokenMetas);
+    //console.log("Raw tokens: ", tokens);
+    //console.log("Raw tokenmeta: ", tokenMetas);
 
     //TODO: rename tryIsolateUnknown
-    const type = tryIsolateUnknown ? getExpressionType(tokens) : ExpressionType.IMPLICIT;
+    const eqInfo = tryIsolateUnknown ? getExpressionType(tokens, tokenMetas) : ExpressionType.IMPLICIT;
 
-    console.log(type);
+    console.log(eqInfo.type);
 
-    const fixed = insertImplicitOperations(tokens, tokenMetas, type);
+    const fixed = insertImplicitOperations(eqInfo.tokens, eqInfo.tokenMetas, eqInfo.type);
 
     console.log("Fixed tokens: ", fixed);
 
-
-
     //evaluation of truth (direct evaluation) vs evaluation of closeness to intercept (f(x)=0)
 
-    tokenizedExpressions.push({ type: type, tokens: fixed[0] });
-    tokenizedExpressionMetas.push(fixed[1]);
+    // tokenizedExpressions.push({ type: eqInfo.type, tokens: fixed[0] });
+    // tokenizedExpressionMetas.push(fixed[1]);
 
-    return true;
+    return { type: eqInfo.type, tokens: fixed[0], tokenTypes: fixed[1] };
 }
 
-function getExpressionType(tokens){
-    var type;
-
+/**
+ * Test for if an expression is implicit, polar, explicit, etc.
+ * @param {*} tokens String[] of tokens
+ * @param {*} tokenMetas Int[] of token types
+ * @returns 
+ */
+function getExpressionType(tokens, tokenMetas){
     const eqtoken = tokens.indexOf("=");
 
-    //console.log(eqtoken);
-
     if(eqtoken < 0){
-        return ExpressionType.EVAL;
-    }else if(tokens.includes("=", eqtoken+1)){
-        return ExpressionType.EVAL;
+        //check if there aren't unknowns
+        if(!tokenMetas.some((m) => m==TokenType.UNKN)){
+            return {tokens: tokens, tokenMetas: tokenMetas, type: ExpressionType.EVAL}; //no '=' tokens
+        }
+
+        // -> there is at least 1 unknown:
+
+        const nextUnkn = (n) => tokenMetas.indexOf(TokenType.UNKN,n+1);
+
+        // first unknown (we know there's at least this one)
+        let i1 = nextUnkn(-1);
+        const c1 = tokens[i1];
+
+        var i = nextUnkn(i1);
+        while(i >= 0){
+            //if this unknown is not equal to first, then it cannot be converted to a ...=f(...) expression type
+            if(tokens[i] != c1){
+                return {tokens: tokens, tokenMetas: tokenMetas, type: ExpressionType.INVLD};
+            }
+            i = nextUnkn(i);
+        }
+
+        //type dictionary
+        const type = {
+            "x": ExpressionType.EXP_F_X,
+            "y": ExpressionType.EXP_F_Y,
+            "θ": ExpressionType.EXP_F_T,
+            "r": ExpressionType.EXP_F_R
+        }[c1];
+
+        return {tokens: tokens, tokenMetas: tokenMetas, type: type};
+        
+    }else if(tokens.includes("=", eqtoken+1) || tokens.includes("!=")){
+        return {tokens: tokens, tokenMetas: tokenMetas, type: ExpressionType.EVAL}; //multiple '=' or '!=' tokens
     }else if((tokens.includes("&&") || tokens.includes("||")) || tokens.includes("^^")){
-        return ExpressionType.IMPLICIT; //logical implicit
+        return {tokens: tokens, tokenMetas: tokenMetas, type: ExpressionType.IMPLICIT}; //logical implicit
     }else{
         //splice tokens at =, determine if fits pattern y=f(x), x=f(y), etc...
         const lhs = tokens.slice(0, eqtoken);
         const rhs = tokens.slice(eqtoken+1);
+
+        //console.log(lhs, ["="], rhs);
 
         const exclusive = {
             "x": ["x","θ","r"],
@@ -790,22 +950,815 @@ function getExpressionType(tokens){
 
         if(lhs.length == 1){
             const tk = lhs[0];
-            if(ids[tk] != undefined && !rhs.some((item) => {exclusive[tk].includes(item)})){
-                return ids[tk];
+            if(ids[tk] != undefined && rhs.every((item) => {return !exclusive[tk].includes(item)})){
+                return {tokens: rhs, tokenMetas: tokenMetas.slice(eqtoken+1), type: ids[tk]};
             }
         }
 
         if(rhs.length == 1){
             const tk = rhs[0];
-            if(ids[tk] != undefined && !lhs.some((item) => {exclusive[tk].includes(item)})){
-                return ids[tk];
+            if(ids[tk] != undefined && lhs.every((item) => {return !exclusive[tk].includes(item)})){
+                return {tokens: lhs, tokenMetas: tokenMetas.slice(0,eqtoken), type: ids[tk]};
             }
         }
 
-        return ExpressionType.IMPLICIT;
+        return {tokens: tokens, tokenMetas: tokenMetas, type: ExpressionType.IMPLICIT};
     }
 }
 
+export function tokenizeLatexExpression(latex, tryIsolateUnknown){
+
+    // types of tokens: 
+    //   operators
+    //     + - * (binary)
+    //   scripts
+    //     ^ _
+    //   variables
+    //     a b
+    //   constants (built-in)
+    //     \pi \theta
+    //   functions:
+    //     \sin \cos \tan
+    //   parenthesis
+    //     \left( \right) 
+    //     \left[ \right] 
+    //     \left{ \right}
+    //   commands
+    //     \frac{}{}
+    //     \sqrt{}
+    //   commands with modifier
+    //     \sqrt[]{}
+
+    //loop characters
+    //  if tokensincelast 
+
+    // const funcs = '^\\(sin|cos|tan|arcsin|arccos|arctan)$'
+    // const ops = "^(+|-|^)$";
+    // const leftBracks = "( [ {";
+    // const rightBracks = ") ] }";
+
+    // const oneCharTokens = ["{","}","[","]","+","-","^","_"];
+
+    let tokens = [];
+    let strStart = 0;
+    let tryString = "";
+    let char = "";
+    let isCommand = false;
+    let isNumber = false;
+
+    const pushToken = function (type){
+        if(type !== LatexTokenType.WHITESPACE) tokens.push({ type, str: tryString});
+        strStart += tryString.length;
+        tryString = "";
+        isCommand = false;
+        isNumber = false;
+    };
+
+    for(let i = 0; i < latex.length; i++){
+        char = latex.charAt(i);
+        //console.log("Char: ", char, "string: ", tryString, "tokens: ", tokens);
+
+        if(char === ' '){
+            //prevent tokens from including the ' ' character TODO: include other whitespace just in case
+            console.log('whitespace');
+            tryString = ' ';
+            pushToken(LatexTokenType.WHITESPACE);
+            continue; //go to next token
+        }
+
+        if(isCommand){
+            while( !shouldCommandStop(tryString,latex.charAt(i)) && i<latex.length){
+                tryString = tryString+latex.charAt(i);
+                i++;
+            }
+            i--;
+
+            tryString = tryString.substring(1);
+
+            let type = (tryString.startsWith('left') || tryString.startsWith('right')) ? LatexTokenType.BRACKET : LatexTokenType.COMMAND;
+            pushToken(type);
+            continue;
+        }
+
+        if(isNumber){
+            while(
+                ('0123456789.'.includes(latex.charAt(i))) && 
+                ( (tryString+latex.charAt(i)).match(/\./) || [] ).length < 2 && 
+                i<latex.length
+            ){
+                tryString = tryString+latex.charAt(i);
+                i++;
+            }
+            i--;
+
+            pushToken(LatexTokenType.NUMBER);
+            continue;
+        }
+
+        if(tryString.length === 0){
+            if(char === '\\') {isCommand = true; }
+            if('0123456789.'.includes(char)) {isNumber = true; }
+        }
+
+        tryString = tryString+char;
+
+        console.assert(tryString.length > 0,tryString,tokens);
+
+        // HACK: helpful for converting commands like \frac{n}{d} to functions frac(n,d): we replace '}{' with ','
+        if(tryString === '}'){
+            if(latex.charAt(i+1) === '{'){
+                tryString = ','; // '}{' --> ','
+                pushToken(LatexTokenType.DELIMITER);
+                i++;
+                continue;
+            }
+
+            tryString = 'right?';
+            pushToken(LatexTokenType.BRACKET);
+            continue;
+        }
+
+        if(tryString === '{'){
+            tryString = 'left?';
+            pushToken(LatexTokenType.BRACKET);
+            continue;
+        }
+
+        if(tryString === ','){
+            pushToken(LatexTokenType.DELIMITER);
+            continue;
+        }
+
+        // if not a command, we assume all tokens are single-character
+        if(!isCommand && !isNumber) {
+            pushToken(LatexTokenType.CHAR);
+        }
+    }
+
+    if(tryString.length > 0){
+        if(isNumber){
+            pushToken(LatexTokenType.NUMBER);
+        }else{
+            pushToken(LatexTokenType.CHAR);
+        }
+    }
+
+    if(tokens.length === 0){
+        return {tokens: [], type: -1};
+    }
+
+    console.log('original: ', tokens);
+
+    const compilerSet = latexToTokenObjects(tokens);
+    console.log('compilerSet: ', compilerSet);
+
+    const typeset = getLatexExpressionType(compilerSet);
+    console.log('typeset: ', typeset);
+
+    //console.assert(typeset.type !== undefined, compilerSet, "->", typeset);
+
+    //console.log("typeset ->",typeset);
+    const final = addMetadataToTokens(typeset.tokens, typeset.type);
+    console.log('final: ', final);
+
+    return final;
+    //return tokens.map((tok) => tok.str);
+}
+
+/**
+ * Test for if an expression is implicit, polar, explicit, etc.
+ * @param {Object[]} tokens String[] of tokens
+ * @returns 
+ */
+function getLatexExpressionType(tokens){
+    const eqtoken = tokens.findIndex((t) => t.type === TokenType.OP && t.code === OpCode.EQ);
+
+    //console.log(eqtoken, 'eqtoken');
+    if(eqtoken < 0){
+        //check if there aren't unknowns
+        if(!tokens.some((t) => t.type === TokenType.UNKN)){
+            console.log('no unknowns');
+            return { type: ExpressionType.EVAL, tokens: tokens}; //no '=' tokens
+        }
+
+        //find index of next unknown after index n
+        const nextUnkn = (n) => tokens.findIndex(
+            (t,j) => t.type === TokenType.UNKN && j>n
+        );
+
+        // first unknown (we know there's at least this one)
+        let i1 = nextUnkn(-1);
+        const c1 = tokens[i1].code;
+
+        var i = nextUnkn(i1);
+        while(i >= 0){
+            //if this unknown is not equal to first, then it cannot be converted to a ...=f(...) expression type
+            if(tokens[i].code != c1){
+                console.log('invalid, both tokens')
+                return { type: ExpressionType.INVLD, tokens: tokens };
+            }
+            i = nextUnkn(i);
+        }
+
+        //type dictionary
+        const type = {
+            1: ExpressionType.EXP_F_X,
+            2: ExpressionType.EXP_F_Y,
+            4: ExpressionType.EXP_F_T,
+            5: ExpressionType.EXP_F_R, 
+        }[c1];
+
+        console.log('func of', type, tokens)
+        return {type: type, tokens: tokens };
+        
+    }else if(tokens.findIndex(
+        (t,j) => {
+            j > eqtoken
+            && t.type === TokenType.OP 
+            && t.code === OpCode.EQ
+        }) > 0
+    ){
+        console.log('multiple = or != tokens',tokens);
+        return { type: ExpressionType.EVAL, tokens: tokens }; //multiple '=' or '!=' tokens
+    }else if( tokens.some((t) => t.type === TokenType.OP && (t.code === OpCode.AND || t.code === OpCode.OR || t.code === OpCode.XOR)) ){
+        console.log('logical implicit', tokens);
+        return { type: ExpressionType.IMPLICIT, tokens: tokens }; //logical implicit
+    }else{
+        if(tokens.some((t) => {
+            t.type === TokenType.UNKN 
+            && (t.code === UnknownCode.POLRR || t.code === UnknownCode.POLRT)
+        })
+        ){
+            return {type: ExpressionType.IMPLICIT, tokens: tokens};
+        }
+
+        //splice tokens at =, determine if fits pattern y=f(x), x=f(y), etc...
+        const lhs = tokens.slice(0, eqtoken);
+        const rhs = tokens.slice(eqtoken+1);
+
+        //console.log(lhs, ["="], rhs);
+
+        const exclusive = {
+            1: [1,5,4],
+            2: [2,5,4],
+            4: [1,2,5],
+            5: [1,2,4]
+        };
+
+        const ids = {
+            2: ExpressionType.EXP_F_X,
+            1: ExpressionType.EXP_F_Y,
+            5: ExpressionType.EXP_F_T, 
+            4: ExpressionType.EXP_F_R
+        };
+
+        if(lhs.length === 1){
+            const tk = lhs[0];
+            if(
+                tk.type === TokenType.UNKN && 
+                ids[tk.code] !== undefined && 
+                rhs.every((t) => !(t.type === TokenType.UNKN && exclusive[tk.code].includes(t.code)))
+            ){
+                console.log('function ?=rhs');
+                return {type: ids[tk.code], tokens: rhs};
+            }
+
+        }
+
+        if(rhs.length === 1){
+            const tk = rhs[0];
+
+            if(
+                tk.type === TokenType.UNKN && 
+                ids[tk.code] !== undefined && 
+                lhs.every((t) => !(t.type === TokenType.UNKN && exclusive[tk.code].includes(t.code)))
+            ){
+                console.log('function lhs=?');
+                return {type: ids[tk.code], tokens: lhs};
+            }
+        }
+
+        return { type: ExpressionType.IMPLICIT, tokens: tokens };
+    }
+}
+
+function shouldCommandStop(cmdString, next){
+    if(/[0-9]|\.|[^a-zA-Z\(\)\[\]\{\}]/.test(next)) return true;
+    if('0123456789.'.includes(next)) return true;
+
+    if(cmdString.length > 5){
+        if(cmdString.startsWith('\\left')) return true; 
+        if(cmdString.startsWith('\\right') && cmdString.length > 6) return true;
+    } 
+
+    if(cmdString === '\\left' || cmdString === '\\right'){
+        return next === ' ' || next === '\\' || operators.includes(next);
+    }
+    else return next === ' ' || next === '\\' || brackets.includes(next) || operators.includes(next);
+
+    //simplistic, but should be sufficient
+}
+
+/**
+ * Turns the latex tokenization into a format readable by the compiler by:
+ * - Typesetting each token properly
+ * - Inserting implicit operators
+ * @param {*} latexTokens `Object[]` latex tokens
+ * @returns {*} `Object[]` compiler tokens
+ */
+export function latexToTokenObjects(latexTokens){
+    if(latexTokens.length === 0){
+        return [];
+    }
+
+    let compilerTokens = [];
+
+    if(latexTokens[0].str === '-'){
+        compilerTokens.push({ type: TokenType.OP, code: OpCode.NEG });
+    }else if(latexTokens[0].type !== LatexTokenType.WHITESPACE){
+        let cur = latexTokens[0]
+        let str = cur.str;
+        switch(true){
+            case cur.type === LatexTokenType.NUMBER: 
+                compilerTokens.push({ type: TokenType.NUM, value: parseFloat(str) });
+                break;
+            case cur.type === LatexTokenType.BRACKET:
+                compilerTokens.push({ type: TokenType.BRKT, code: BracInfo[str] });
+                break;
+            case OpInfo[str] !== undefined: 
+                compilerTokens.push({ type: TokenType.OP, code: OpInfo[str].code }); 
+                break;
+            case UnknownInfo[str] !== undefined:
+                compilerTokens.push({ type: TokenType.UNKN, code: UnknownInfo[str] }); 
+                break;
+            case FuncInfo[str] !== undefined:
+                compilerTokens.push({ type: TokenType.FUNC, code: FuncInfo[str].code }); 
+                break;
+            case ConstantInfo[str] !== undefined:
+                compilerTokens.push({ type: TokenType.NUM, value: ConstantInfo[str].value }); 
+                break;
+            default:
+                compilerTokens.push({ type: TokenType.VAR, code: str });
+                break;
+        }
+        
+    }
+
+    const tryInsertImplicitTimes = function (prev, next) {
+        if(prev.code === undefined || next.code === undefined) return false;
+        return (
+            prev.type === TokenType.NUM || 
+            prev.type === TokenType.UNKN ||
+            prev.type === TokenType.VAR || 
+            (prev.type === TokenType.BRKT && (prev.code % 2 === 0))
+        ) && (
+            next.type === TokenType.NUM || 
+            next.type === TokenType.UNKN ||
+            next.type === TokenType.VAR ||
+            next.type === TokenType.FUNC ||
+            (next.type === TokenType.BRKT && (next.code % 2 === 1)) ||
+            (
+                next.type === TokenType.OP && 
+                OpInfoByCode[next.code].arity === 1 && 
+                OpInfoByCode[next.code].associativity === OpAssoc.RIGHT
+            )
+        );
+    }
+
+    const isLeftBracket = function (t){
+        return latexBrackets.indexOf(t.str) < 5 && t.type === LatexTokenType.BRACKET;
+    }
+
+    const isRightBracket = function (t){
+        return latexBrackets.indexOf(t.str) > 4 && t.type === LatexTokenType.BRACKET;
+    }
+
+    for(let i = 1; i < latexTokens.length; i++){
+        const prev = compilerTokens[compilerTokens.length-1];
+        const current = latexTokens[i];
+        const str = current.str;
+
+        //invalid: 
+        // +- must have on left one of: number, ) and on right: number, (
+        // u- must have on right one of: number, (
+        // )  must have on left one of: number, ) and on right one of: op, )
+        // ( must have on left one of: op, function, ( and on right one of: number, 
+        // n must have on left one of: op, ( and on right one of: op, )
+        // f must have on left one of: op, ( and on right one of: (, number
+        // * must have on left one of: number, ) and on right one of: number, function, (, u-, 
+
+        if(current.type === LatexTokenType.WHITESPACE){
+            continue;
+        }
+
+        if(current.type === LatexTokenType.DELIMITER){
+            compilerTokens.push({ type: TokenType.DELIM });
+            continue;
+        }
+
+        if(current.type === LatexTokenType.NUMBER){
+            const validWithPrev = (
+                prev.type === TokenType.OP || 
+                isLeftBracket(latexTokens[i-1]) || 
+                prev.type === TokenType.FUNC || 
+                prev.type === TokenType.DELIM
+            );
+            const token = { type: TokenType.NUM, value: parseFloat(current.str) };
+
+            if(!validWithPrev){
+                console.assert(tryInsertImplicitTimes(prev, token),prev,token);
+                //might not be appropriate in some conditions
+                compilerTokens.push({ type: TokenType.OP, code: OpCode.MUL });
+            }
+
+            compilerTokens.push(token);
+            continue;
+        }
+
+        if(current.type === LatexTokenType.CHAR){
+            //determine type of character (operator, variable, etc.)
+
+            let op = OpInfo[str];
+            if(op !== undefined){
+                const validWithPrev = (
+                    prev.type === TokenType.NUM || 
+                    prev.type === TokenType.UNKN ||
+                    prev.type === TokenType.VAR ||
+                    isRightBracket(latexTokens[i-1])
+                );
+
+                if(!validWithPrev){
+                    if(op.code === OpCode.SUB){
+                        const token = { type: TokenType.OP, code: OpCode.NEG };
+                        if(tryInsertImplicitTimes(prev,token)) compilerTokens.push({ type: TokenType.OP, code: OpCode.MUL });
+                        compilerTokens.push(token);
+                        continue;
+                    }
+
+                    console.assert(tryInsertImplicitTimes(prev, token));
+                }
+
+                // if(!validWithPrev && op.code === OpCode.SUB){
+                //     const token = { type: TokenType.OP, code: OpCode.NEG };
+                    
+
+                //     //?? not sure if works, but u- should be okay for any previous token
+                //     compilerTokens.push(token);
+                //     continue;
+                // }
+
+                console.assert(validWithPrev, latexTokens);
+
+                if(op.code === OpCode.POW){
+                    console.assert(latexTokens[i+1] !== undefined);
+
+                    if(latexTokens[i+1].type === LatexTokenType.NUMBER){
+                        compilerTokens.push({ type: TokenType.OP, code: OpCode.POWN });
+                        continue;
+                    }
+                }
+
+                compilerTokens.push({ type: TokenType.OP, code: op.code });
+                continue;
+            }
+
+            if(UnknownInfo[current.str] !== undefined){
+                const validWithPrev = (
+                    prev.type === TokenType.OP || 
+                    isLeftBracket(latexTokens[i-1]) ||
+                    prev.type === TokenType.FUNC || 
+                    prev.type === TokenType.DELIM
+                );
+                const token = { type: TokenType.UNKN, code: UnknownInfo[current.str] };
+
+                if(!validWithPrev){
+                    console.assert(tryInsertImplicitTimes(prev, token),prev,token);
+
+                    //might not be appropriate in some conditions
+                    compilerTokens.push({ type: TokenType.OP, code: OpCode.MUL });
+                }
+
+                compilerTokens.push(token);
+                continue;
+            }
+
+            if(ConstantInfo[str] !== undefined){
+                const validWithPrev = (
+                    prev.type === TokenType.OP || 
+                    isLeftBracket(latexTokens[i-1]) ||
+                    prev.type === TokenType.FUNC || 
+                    prev.type === TokenType.DELIM
+                );
+                const token = { type: TokenType.NUM, value: ConstantInfo[str].value };
+
+                if(!validWithPrev){
+                    console.assert(tryInsertImplicitTimes(prev, token),prev,token);
+
+                    //might not be appropriate in some conditions
+                    compilerTokens.push({ type: TokenType.OP, code: OpCode.MUL });
+                }
+
+                compilerTokens.push(token);
+                continue;
+            }
+
+            if(current.str === '{' || current.str === '}'){
+
+                const token = { type: TokenType.BRKT, code: current.str === '{' ? TokenType.LFNC : TokenType.RFNC};
+                //console.assert(tryInsertImplicitTimes(prev, token));
+
+                compilerTokens.push(token);
+                continue;
+            }
+
+            console.error('Unknown char token: ',current);
+        }
+
+        if(current.type === LatexTokenType.COMMAND){
+            if(FuncInfo[current.str] !== undefined){
+                const validWithPrev = (prev.type === TokenType.OP || prev.type === TokenType.DELIM || isLeftBracket(latexTokens[i-1]));
+                const token = { type: TokenType.FUNC, code: FuncInfo[current.str].code }
+
+                if(!validWithPrev){
+                    console.assert(tryInsertImplicitTimes(prev, token),prev,token);
+
+                    compilerTokens.push({ type: TokenType.OP, code: OpCode.MUL });
+                }
+
+                compilerTokens.push(token);
+                continue;
+            }
+
+            if(UnknownInfo[current.str] !== undefined){
+                const validWithPrev = (
+                    prev.type === TokenType.OP || 
+                    isLeftBracket(latexTokens[i-1]) ||
+                    prev.type === TokenType.FUNC
+                );
+                const token = { type: TokenType.UNKN, code: UnknownInfo[current.str] };
+
+                if(!validWithPrev){
+                    console.assert(tryInsertImplicitTimes(prev, token));
+
+                    //might not be appropriate in some conditions
+                    compilerTokens.push({ type: TokenType.OP, code: OpCode.MUL });
+                }
+
+                compilerTokens.push(token);
+                continue;
+            }
+
+            if(OpInfo[str] !== undefined){
+                const validWithPrev = (
+                    prev.type === TokenType.NUM || 
+                    prev.type === TokenType.UNKN ||
+                    prev.type === TokenType.VAR ||
+                    isLeftBracket(latexTokens[i-1])
+                );
+
+                //dont include unary- case, should never come up
+                console.assert(OpInfo[str].code !== OpCode.SUB);
+
+                console.assert(validWithPrev, latexTokens);
+
+                compilerTokens.push({ type: TokenType.OP, code: op.code });
+                continue;
+            }
+
+            if(ConstantInfo[str] !== undefined){
+                const validWithPrev = (
+                    prev.type === TokenType.OP || 
+                    isLeftBracket(latexTokens[i-1]) ||
+                    prev.type === TokenType.FUNC || 
+                    prev.type === TokenType.DELIM
+                );
+                const token = { type: TokenType.NUM, value: ConstantInfo[str].value };
+
+                if(!validWithPrev){
+                    console.assert(tryInsertImplicitTimes(prev, token),prev,token);
+
+                    //might not be appropriate in some conditions
+                    compilerTokens.push({ type: TokenType.OP, code: OpCode.MUL });
+                }
+
+                compilerTokens.push(token);
+                continue;
+            }
+        }
+
+        const bracId = latexBrackets.indexOf(current.str);
+        if(bracId > -1){
+            let code = undefined;
+            if(current.str === 'left?'){
+                if(prev.type === TokenType.FUNC){
+                    code = BracCode.LFNC;
+                }else{
+                    code = BracCode.LRND;
+                }
+            }else if(current.str === 'right?'){
+                code = BracCode.RSTM; //unsure yet
+            }else{
+                code = BracInfo[current.str];
+            }
+
+            console.assert(code !== undefined, current);
+
+            if(isLeftBracket(current)){
+                //left bracket: (
+                const validWithPrev = (
+                    prev.type === TokenType.OP || 
+                    prev.type === TokenType.FUNC || 
+                    isLeftBracket(latexTokens[i-1])
+                );
+                const token = { type: TokenType.BRKT, code: code };
+
+                if(!validWithPrev){
+                    console.assert(tryInsertImplicitTimes(prev, token), prev, token);
+
+                    compilerTokens.push({ type: TokenType.OP, code: OpCode.MUL });
+                }
+
+                compilerTokens.push(token);
+                continue;
+            }else{
+                //right bracket: )
+                const validWithPrev = (
+                    prev.type === TokenType.NUM ||
+                    prev.type === TokenType.UNKN || 
+                    prev.type === TokenType.VAR ||
+                    isRightBracket(latexTokens[i-1]) || 
+                    (prev.type === TokenType.OP && (OpInfoByCode[prev.code].arity===1 && OpInfoByCode[prev.code].associativity === OpAssoc.LEFT))
+                );
+                const token = { type: TokenType.BRKT, code: code };
+
+                if(!validWithPrev){
+                    console.assert(tryInsertImplicitTimes(prev, token),prev,token);
+
+                    compilerTokens.push({ type: TokenType.OP, code: OpCode.MUL });
+                }
+
+                compilerTokens.push(token);
+                continue;
+            }
+        }
+    }
+
+    return  compilerTokens;
+}
+
+function addMetadataToTokens(tokens, exprType){
+    let tokType = ExpressionInfoByType[exprType].tokType; //change system later
+    let lastToken = {};
+
+    let parenType = [];
+
+    let final = [];
+
+    for(let i = 0; i < tokens.length; i++){
+        const token = tokens[i];
+        switch(token.type){
+            case TokenType.BRKT:
+                let code = token.code;
+                const matchingRight = {
+                    [BracCode.LRND]: BracCode.RRND,
+                    [BracCode.LSQR]: BracCode.RSQR,
+                    [BracCode.LCUR]: BracCode.RSQR,
+                    [BracCode.LFNC]: BracCode.RFNC,
+                    [BracCode.LSTM]: BracCode.RSTM
+                }
+
+                if (code % 2 === 1) {
+                    // left bracket
+
+                    if (lastToken.type === TokenType.FUNC) {
+                        if (!(code === BracCode.LRND || code === BracCode.LFNC)) {
+                            console.error("Functions can only be used with round brackets");
+                        }
+
+                        code = BracCode.LFNC;
+                    } else if (
+                        lastToken.type === TokenType.NUM ||
+                        lastToken.type === TokenType.UNKN ||
+                        lastToken.type === TokenType.CNST ||
+                        lastToken.type === TokenType.VAR ||
+                        (lastToken.type === TokenType.BRKT && lastToken.code == BracCode.RRND)
+                    ) {
+                        console.error("Invalid expression.");
+                    }
+
+                    parenType.push(code);
+                    final.push({ type: TokenType.BRKT, code: code });
+                } else {
+                    // right bracket
+                    
+                    const leftType = parenType.pop();
+                    const rightType = matchingRight[leftType];
+
+                    if(code === BracCode.RSTM){
+                        console.log('yippee',token);
+                        final.push({ type: TokenType.BRKT, code: rightType});
+                    }else{
+                        if (rightType === BracCode.RFNC && !(code === BracCode.RRND || code === BracCode.RFNC)) {
+                            console.error("Mismatched function parenthesis");
+                        }
+
+                        final.push({ type: TokenType.BRKT, code: rightType });
+                    }
+                    
+                }
+                break;
+
+            case TokenType.OP:
+                // if(lastTokenType == TokenType.FUNC){
+                //     //TODO: implement attributives as part of expression evaluation log_b(n) -> log(n,b)
+                //     if(FunctionAttributiveInfo[tok] != undefined){
+                //         final.push({ type: TokenType.ATT, code: FunctionAttributiveInfo[tok].code});
+                //         break;
+                //     }
+
+                //     //console.error
+                // }
+
+                //TODO: attributives for large operators
+
+                //unary- should already be inserted
+
+                if(doEvalsAsFuncExpressions){
+                    const fn = generateMethodExprForOp(token.code, tokType, false); //%%EDGE %%FUNCEXPR
+
+                    final.push({ type: TokenType.OP, code: token.code, fnexp: fn })
+                }else{
+                    final.push({ type: TokenType.OP, code: token.code });
+                }
+                
+                break;
+
+            case TokenType.FUNC:
+                console.assert(token.code !== undefined, token);
+
+                if(doEvalsAsFuncExpressions){
+                    const fn = generateMethodExprForFunc(token.code, ExpressionInfoByType[exprType].tokType); //%%FUNCEXPR
+
+                    //TODO: implement attributes so that they affect the function
+                    final.push({ type: TokenType.FUNC, code: token.code, fnexp: fn, attributes: {} })
+                }else{
+                    final.push({ type: TokenType.FUNC, code: token.code, attributes: {} })
+                }
+                break;
+            case TokenType.DELIM:
+                final.push(token);
+                break;
+
+            case TokenType.NUM:
+            case TokenType.STRG:
+            case TokenType.UNKN:
+            case TokenType.CNST:
+            case TokenType.VAR:
+            default:
+                if(token.type == TokenType.UNKN){
+                    //unkowns don't get pushed with their values, because for duals & quads unknown values are set at runtime
+                    final.push(token); //%%TOKEN
+                    break;
+                }
+
+                var value = 0;
+                switch(token.type) {
+                    case TokenType.NUM: value = token.value; break;
+                    case TokenType.STRG: value = token.value; break;
+                    case TokenType.UNKN: value = token.value; break;
+                    case TokenType.CNST: value = token.code; break;
+                    case TokenType.VAR: value = 0; break;
+                    default: value = null;
+                }
+
+                switch(tokType){
+                    case TokenType.NUM:
+                        final.push({ type: tokType, value: value}); //%%TOKEN
+                        break;
+                    case TokenType.QUAD:
+                        final.push({ type: TokenType.QUAD, value: Array(4).fill(value), edges: {top: [0,0,0], lft: [0,0,0], rgt: [0,0,0], btm: [0,0,0]}}); //%%TOKEN
+                        break;
+                    case TokenType.DUAL:
+                        final.push({ type: TokenType.DUAL, value: Array(2).fill(value), edge: [0,0,0]}); //%%TOKEN
+                        break;
+                }
+
+                break;
+        }
+
+        lastToken = token;
+    }
+
+    return {type: exprType, tokens: final};
+}
+
+/**
+ * Inserts implicit "*" and "u-"
+ * @param {*} tokenList `String[]` input token list
+ * @param {*} metaList `Int[]` input token metas
+ * @param {*} type `int` Expression type
+ * @returns `[String[], int[]]`
+ */
 function insertImplicitOperations(tokenList, metaList, type) {
     var lastToken = "";
     var lastTokenType = 0;
@@ -865,7 +1818,8 @@ function insertImplicitOperations(tokenList, metaList, type) {
                         lastTokenType === TokenType.NUM ||
                         lastTokenType === TokenType.UNKN ||
                         lastTokenType === TokenType.CNST ||
-                        lastTokenType === TokenType.VAR
+                        lastTokenType === TokenType.VAR ||
+                        (lastTokenType === TokenType.BRKT && lastToken == ")")
                     ) {
                         final.push({ type: TokenType.OP, code: OpInfo["*"].code })
                     }
@@ -883,6 +1837,7 @@ function insertImplicitOperations(tokenList, metaList, type) {
                     final.push({ type: TokenType.BRKT, code: rightType });
                 }
                 break;
+            
             case TokenType.OP:
                 // if(lastTokenType == TokenType.FUNC){
                 //     //TODO: implement attributives as part of expression evaluation log_b(n) -> log(n,b)
@@ -916,7 +1871,7 @@ function insertImplicitOperations(tokenList, metaList, type) {
                 //console.log("Tok: " + tok + ", Code: " + OpInfo[tok]);
 
                 if(doEvalsAsFuncExpressions){
-                    const fn = generateMethodExprForOp(OpInfo[tok].code, type != ExpressionType.EVAL); //%%EDGE
+                    const fn = generateMethodExprForOp(OpInfo[tok].code, ExpressionInfoByType[type].tokType, false); //%%EDGE %%FUNCEXPR
 
                     final.push({ type: TokenType.OP, code: OpInfo[tok].code, fnexp: fn })
                 }else{
@@ -924,9 +1879,10 @@ function insertImplicitOperations(tokenList, metaList, type) {
                 }
                 
                 break;
+            
             case TokenType.FUNC:
                 if(doEvalsAsFuncExpressions){
-                    const fn = generateMethodExprForFunc(FuncInfo[tok].code, type != ExpressionType.EVAL);
+                    const fn = generateMethodExprForFunc(FuncInfo[tok].code, ExpressionInfoByType[type].tokType); //%%FUNCEXPR
 
                     //TODO: implement attributes so that they affect the function
                     final.push({ type: TokenType.FUNC, code: FuncInfo[tok].code, fnexp: fn, attributes: {} })
@@ -934,6 +1890,7 @@ function insertImplicitOperations(tokenList, metaList, type) {
                     final.push({ type: TokenType.FUNC, code: FuncInfo[tok].code, attributes: {} })
                 }
                 break;
+            
             case TokenType.DELIM:
                 final.push({ type: TokenType.DELIM })
                 break;
@@ -951,6 +1908,8 @@ function insertImplicitOperations(tokenList, metaList, type) {
                     lastTokenType == TokenType.CNST ||
                     lastTokenType == TokenType.VAR ||
                     lastTokenType == TokenType.QUAD ||
+                    lastTokenType == TokenType.DUAL || 
+                    (lastTokenType == TokenType.BRKT && lastToken == ")") ||
                     lastTokenType >= 10
                 ) {
                     final.push({ type: TokenType.OP, code: OpInfo["*"].code }); //%%TOKEN
@@ -978,19 +1937,23 @@ function insertImplicitOperations(tokenList, metaList, type) {
                 //     old.attributes[attributive.code] = value;
                 // }
 
-                if(
-                    type == ExpressionType.EVAL || tokType == TokenType.UNKN
-                    // && (
-                    //     tokType == TokenType.NUM || 
-                    //     tokType == TokenType.STRG || 
-                    //     tokType == TokenType.CNST
-                    // )
-                ){
-                    //quads needed
+                if(tokType == TokenType.UNKN){
+                    //unkowns don't get pushed with their values, because for duals & quads unknown values are set at runtime
                     final.push({ type: tokType, value: value}); //%%TOKEN
-                }else{
-                    final.push({ type: TokenType.QUAD, value: Array(4).fill(value)}); //%%TOKEN
-                    
+                    break;
+                }
+
+                const evalType = ExpressionInfoByType[type].tokType;
+                switch(evalType){
+                    case TokenType.NUM:
+                        final.push({ type: tokType, value: value}); //%%TOKEN
+                        break;
+                    case TokenType.QUAD:
+                        final.push({ type: TokenType.QUAD, value: Array(4).fill(value)}); //%%TOKEN
+                        break;
+                    case TokenType.DUAL:
+                        final.push({ type: TokenType.DUAL, value: Array(2).fill(value), edge: [0,0,0]}); //%%TOKEN
+                        break;
                 }
 
                 break;
@@ -1007,19 +1970,56 @@ function insertImplicitOperations(tokenList, metaList, type) {
     return [final, finalMeta];
 }
 
-function generateMethodExprForOp(opcode, forQuad = true){
+// %%FUNCEXPR
+/**
+ * Generate a function expression for an operator
+ * @param {*} opcode `int` operator id number
+ * @param {*} tokType `int` Expression evaluation token type
+ * @param {*} evalTrue `boolean` Whether to evaluate the operation exactly, or, as in the case of '=', evaluate it such that one side of the solutions are >0 and the other are <0 
+ * @returns `callBack` function expression for an operator
+ */
+function generateMethodExprForOp(opcode, tokType, evalTrue = true){
     //TODO: quad 'edge' handling
-    const fromValue = (a) => {return {type: TokenType.NUM, value: a}};
-    if(!forQuad){
+    //const fromValue = (a) => {return {type: TokenType.NUM, value: a}};
+    if(tokType == TokenType.NUM){
+        if(!evalTrue){
+            switch(opcode){
+                case OpCode.ADD: return (a, b) => a+b; 
+                case OpCode.SUB: 
+                case OpCode.LT:
+                case OpCode.LTE:
+                case OpCode.EQ:
+                    return (a, b) => a-b; 
+                case OpCode.MUL: return (a, b) => a*b;
+                case OpCode.DIV: return (a, b) => a/b;
+                case OpCode.POW:
+                case OpCode.POWN: return (a, b) => a**b;
+                case OpCode.GT: 
+                case OpCode.GTE: 
+                case OpCode.NEQ: 
+                    return (a, b) => b-a; 
+                case OpCode.AND: return (a, b) => (a&&b); //todo
+                case OpCode.OR: return (a, b) => (a||b); //todo
+                case OpCode.XOR: return (a, b) => -a*b;
+                case OpCode.NOT: return (a) => -a;
+                case OpCode.FACT: return (a) => (func_gamma(a+1));
+                case OpCode.NEG: return (a) => (-a);
+                default:
+                    console.error("Unknown operator attempted to convert to function expression: ", opcode);
+                    return (a,b) => 0;
+            }
+        }
         switch(opcode){
-            case OpCode.ADD: return (a, b) => (a+b);
+            case OpCode.ADD: return (a, b) => a+b;
             case OpCode.SUB: return (a, b) => (a-b);
             case OpCode.MUL: return (a, b) => (a*b);
             case OpCode.DIV: return (a, b) => (a/b);
-            case OpCode.POW: return (a, b) => (a**b);
+            case OpCode.POW: 
+            case OpCode.POWN: return (a, b) => (a**b);
             case OpCode.LT: return (a, b) => (a<b);
             case OpCode.LTE: return (a, b) => (a<=b);
             case OpCode.GT: return (a, b) => (a>b);
+            case OpCode.GTE: return (a, b) => (a>=b);
             case OpCode.EQ: return (a, b) => (a==b);
             case OpCode.NEQ: return (a, b) => (a!=b);
             case OpCode.AND: return (a, b) => (a&&b);
@@ -1032,6 +2032,58 @@ function generateMethodExprForOp(opcode, forQuad = true){
                 console.error("Unknown operator attempted to convert to function expression: ", opcode);
                 return (a,b) => 0;
         }
+    }
+
+    const arity = OpInfoByCode[opcode].arity;
+    const f = generateMethodExprForOp(opcode, TokenType.NUM, false);
+
+    switch(tokType){
+        case TokenType.DUAL:
+            //console.log(arity, f)
+            if(arity == 1){
+                return (a) => [
+                    f(a[0]), f(a[1])
+                ];
+            }
+            return (a,b) => {
+                return [
+                    f(a[0], b[0]), 
+                    f(a[1], b[1])
+                ]};
+        case TokenType.QUAD:
+            if(arity == 1){
+                return (a) => [
+                    f(a[0]), f(a[1]), f(a[2]), f(a[3])
+                ];
+            }
+            return (a,b) => [
+                f(a[0], b[0]), 
+                f(a[1], b[1]),
+                f(a[2], b[2]), 
+                f(a[3], b[3])
+            ];
+        case TokenType.ARRAY:
+            if(arity == 1){
+                return (a) => {
+                    const n = a.length;
+                    let out = [];
+                    for(let i = 0; i<n; i++){
+                        out.push(f(a[n]));
+                    }
+                    return out;
+                }
+            }
+            return (a,b) => {
+                const n = Math.max(a.length, b.length);
+                let out = [];
+                for(let i = 0; i<n; i++){
+                    out.push(f(a[n]??0, b[n]??0));
+                }
+                return out;
+            }
+        default:
+            console.log("Unknown expression evaluation token type: " + tokType);
+            return {};
     }
 
     const fromValues = (tl, tr, bl, br) => {
@@ -1132,164 +2184,153 @@ function generateMethodExprForOp(opcode, forQuad = true){
     }
 }
 
-function generateMethodExprForFunc(funccode, forQuad = true){
-    if(!forQuad){
-        const fromValue = (a) => {return {type: TokenType.NUM, value: a}}
-        switch(funccode){
-            case FuncCode.SIN: return (a) => (Math.sin(a));
-            case FuncCode.COS: return (a) => (Math.cos(a));
-            case FuncCode.TAN: return (a) => (Math.tan(a));
-            case FuncCode.MAX: return (...a) => (Math.max(...a));
-            default:
-                console.error("Unknown function attempted to convert to function expression: ", opcode);
-                return (a,b) => 0;
+// %%FUNCEXPR
+/**
+ * Generate a function expression for an function
+ * @param {*} funccode `int` function id number
+ * @param {*} tokType `int` Expression evaluation token type
+ * @returns `callBack` function expression for a function
+ */
+function generateMethodExprForFunc(funccode, tokType){
+    if(funccode === undefined){
+        console.error(funccode,tokType);
+        return null;
+    }
+
+    if(tokType == TokenType.NUM){
+        switch (funccode) {
+            case FuncCode.FRAC: return (a,b) => b/a;
+            case FuncCode.SIN: return (a) => Math.sin(a); 
+            case FuncCode.COS: return (a) => Math.cos(a); 
+            case FuncCode.TAN: return (a) => Math.tan(a); 
+            case FuncCode.SEC: return (a) => 1 / Math.cos(a); 
+            case FuncCode.CSC: return (a) => 1 / Math.sin(a); 
+            case FuncCode.COT: return (a) => 1 / Math.tan(a); 
+            case FuncCode.ASIN: return (a) => Math.asin(a); 
+            case FuncCode.ACOS: return (a) => Math.acos(a); 
+            case FuncCode.ATAN: return (a) => Math.atan(a); 
+            case FuncCode.ASEC: return (a) => Math.acos(1 / a); 
+            case FuncCode.ACSC: return (a) => Math.asin(1 / a); 
+            case FuncCode.ACOT: return (a) => Math.atan(1 / a); 
+            case FuncCode.SINH: return (a) => 0.5*(Math.exp(a)-Math.exp(-a)); 
+            case FuncCode.COSH: return (a) => 0.5*(Math.exp(a)+Math.exp(-a)); 
+            case FuncCode.TANH: return (a) => (Math.exp(a)-Math.exp(-a))/(Math.exp(a)+Math.exp(-a));
+            case FuncCode.SECH: return (a) => 2/(Math.exp(a)+Math.exp(-a)); 
+            case FuncCode.CSCH: return (a) => 2/(Math.exp(a)-Math.exp(-a)); 
+            case FuncCode.COTH: return (a) => (Math.exp(a)+Math.exp(-a))/(Math.exp(a)-Math.exp(-a));
+            case FuncCode.ASINH: return (a) => Math.ln(a+Math.sqrt(a*a+1));
+            case FuncCode.ACOSH: return (a) => Math.ln(a+Math.sqrt(a*a-1));
+            case FuncCode.ATANH: return (a) => 0.5*Math.ln((1+a)/(1-a));
+            case FuncCode.ASECH: return (a) => Math.ln(1/a+Math.sqrt(1/(a*a)-1));
+            case FuncCode.ACSCH: return (a) => Math.ln(1/a+Math.sqrt(1/(a*a)+1));
+            case FuncCode.ACOTH: return (a) => 0.5*Math.ln((a+1)/(a-1));
+            case FuncCode.GD: return (a) => Math.atan(Math.sinh(a)); 
+            case FuncCode.LAM: return (a) => a; 
+            case FuncCode.ABS: return (a) => Math.abs(a); 
+            case FuncCode.SIGN: return (a) => Math.sign(a); 
+            case FuncCode.FLOOR: return (a) => Math.floor(a); 
+            case FuncCode.CEIL: return (a) => Math.ceil(a); 
+            case FuncCode.ROUND: return (a) => Math.round(a); 
+            case FuncCode.TRUNC: return (a) => Math.trunc(a); 
+            case FuncCode.MOD: return (a,b) => a % b; 
+            case FuncCode.MIN: return (...a) => Math.min(...a); 
+            case FuncCode.MAX: return (...a) => Math.max(...a); 
+            //sum()
+            //
+            /* Todo: add handling for variables that are arrays */
+            case FuncCode.AVG: 
+                return (...args) => {
+                    var sum = 0;
+                    for (var i = 0; i < args.length; i++) {
+                        sum += args[i];
+                    }
+                    return sum / args.length;
+                }
+                
+            case FuncCode.MED:
+                return (...args) => {
+                    if (args.length % 2 == 1) return args[(args.length - 1) / 2];
+                    else {
+                        var mid = args.length / 2;
+                        return args[mid - 1] + args[mid]
+                    }
+                }
+            case FuncCode.MODE: return (a) => a; 
+            case FuncCode.EXP: return (a) => Math.exp(a); 
+            case FuncCode.LN: return (a) => Math.log(a); 
+            case FuncCode.LOG: return (a) => Math.log(a) / Math.log(10); 
+            case FuncCode.LOGN: return (a,b) => Math.log(a) / Math.log(b); 
+            case FuncCode.SQRT: return (a) => Math.sqrt(a); 
+            case FuncCode.CBRT: return (a) => Math.cbrt(a); 
+            case FuncCode.NTHRT: return (a,b) => Math.pow(a, 1 / b); 
+            case FuncCode.GAMMA: return (a) => func_gamma(a); 
+            case FuncCode.DGAMA: return (a)=>0; 
+            case FuncCode.PGAMA: return (a)=>0; 
+            case FuncCode.ZETA: return (a)=>0; 
+            default: 
+                console.error("Unknown function code", funccode);
+                return ()=>0;
+                break;
         }
+
+        console.error("Program error. Should shut down");
     }
 
-    const fromValues = (tl, tr, bl, br) => {
-        return {
-            type: TokenType.QUAD, 
-            value: [
-                tl, tr,
-                bl, br
-            ],
-            edges: {top: [0,0,0], lft: [0,0,0], rgt: [0,0,0], btm: [0,0,0]} //%%EDGE
-        };
-    }
+    const f = generateMethodExprForFunc(funccode, TokenType.NUM);
 
-    switch(funccode){
-        case FuncCode.SIN:
-            return (a) => {
-                return fromValues(
-                    Math.sin(a[0]), Math.sin(a[1]),
-                    Math.sin(a[2]), Math.sin(a[3])
-                );
-            };
-        case FuncCode.COS:
-            return (a) => {
-                return fromValues(
-                    Math.cos(a[0]), Math.cos(a[1]),
-                    Math.cos(a[2]), Math.cos(a[3])
-                );
-            };
-        case FuncCode.TAN:
-            return (a) => {
-                return fromValues(
-                    Math.tan(a[0]), Math.tan(a[1]),
-                    Math.tan(a[2]), Math.tan(a[3])
-                );
-            };
-        case FuncCode.SEC:
-            return (a) => fromValues(...a.map((n) => 1/Math.cos(n)))
-        case FuncCode.CSC:
-            return (a) => fromValues(...a.map((n) => 1/Math.sin(n)))
-        case FuncCode.COT:
-            return (a) => fromValues(...a.map((n) => 1/Math.tan(n)))
-        case FuncCode.ASIN:
-            return (a) => fromValues(...a.map((n) => Math.asin(n)))
-        case FuncCode.ACOS:
-            return (a) => fromValues(...a.map((n) => Math.acos(n)))
-        case FuncCode.ATAN:
-            return (a) => fromValues(...a.map((n) => Math.atan(n)))
-        case FuncCode.ASEC:
-            return (a) => fromValues(...a.map((n) => Math.acos(1/n)))
-        case FuncCode.ACSC:
-            return (a) => fromValues(...a.map((n) => Math.asin(1/n)))
-        case FuncCode.ACOT:
-            return (a) => fromValues(...a.map((n) => Math.atan(1/n)))
-        case FuncCode.SINH:
-            return (a) => fromValues(...a.map((n) => Math.sinh(n)))
-        case FuncCode.COSH:
-            return (a) => fromValues(...a.map((n) => Math.cosh(n)))
-        case FuncCode.TANH:
-            return (a) => fromValues(...a.map((n) => Math.tanh(n)))
-        case FuncCode.SECH:
-            return (a) => fromValues(...a.map((n) => 1/Math.cosh(n)))
-        case FuncCode.CSCH:
-            return (a) => fromValues(...a.map((n) => 1/Math.sinh(n)))
-        case FuncCode.COTH:
-            return (a) => fromValues(...a.map((n) => 1/Math.tanh(n)))
-        case FuncCode.ASINH:
-            return (a) => fromValues(...a.map((n) => Math.asinh(n)))
-        case FuncCode.ACOSH:
-            return (a) => fromValues(...a.map((n) => Math.acosh(n)))
-        case FuncCode.ATANH:
-            return (a) => fromValues(...a.map((n) => Math.atanh(n)))
-        case FuncCode.ASECH:
-            return (a) => fromValues(...a.map((n) => Math.acosh(1/n)))
-        case FuncCode.ACSCH:
-            return (a) => fromValues(...a.map((n) => Math.asinh(1/n)))
-        case FuncCode.ACOTH:
-            return (a) => fromValues(...a.map((n) => Math.atanh(1/n)))
-        case FuncCode.GD: 
-            return (a) => fromValues(...a.map((n) => Math.atanh(Math.sinh(n))))
-        case FuncCode.LAM: 
-            return (a) => fromValues(...a.map((n) => n))
-        case FuncCode.ABS: 
-            return (a) => fromValues(...a.map((n) => Math.abs(n)))
-        case FuncCode.SIGN:
-            return (a) => fromValues(...a.map((n) => Math.sign(n)))
-        case FuncCode.FLOOR:
-            return (a) => fromValues(...a.map((n) => Math.floor(n)))
-        case FuncCode.CEIL:
-            return (a) => fromValues(...a.map((n) => Math.ceil(n)))
-        case FuncCode.ROUND:
-            return (a) => fromValues(...a.map((n) => Math.round(n)))
-        case FuncCode.TRUNC:
-            return (a) => fromValues(...a.map((n) => Math.trunc(n)))
-        case FuncCode.MOD: 
-            return (a,b) => fromValues(...[0,1,2,3].map((i) => a[i]%b[i]))
-        case FuncCode.MIN:
-            return (...a) => fromValues(...[0,1,2,3].map((i) => Math.min(...a[i])))
-        case FuncCode.MAX: 
-            //return(...a) => fromValues(0,0,0,0)
-            return (...a) => {
-                const vertices = [0,1,2,3].map((i) => a.map((q)=>q[i]));
-                const values = [0,1,2,3].map((i) => Math.max(...vertices[i]));
-                //const k = [0,1,2,3].map((i) => Math.max(...(a.map((q)=>q[i]))));
-                //if(k !== values) console.log(k,values);
-                //fromvalues:
-                    //for each vertice
-                        //return Math.max of:
-                            //all of the values for that vertice
-                return fromValues(...values);
+    //similar to in generateMethodExprForOp()
+    switch(tokType){
+        case TokenType.DUAL:
+            return (args) => {
+                const byVertex = [
+                    args.map((arg) => arg[0]), 
+                    args.map((arg) => arg[1])
+                ];
+                return [
+                    f(...byVertex[0]), 
+                    f(...byVertex[1])
+                ]};
+        case TokenType.QUAD:
+            return (args) => {
+                const byVertex = [0,1,2,3].map((i) => args.map((arg) => arg[i]));
+                return [
+                    f(...byVertex[0]), 
+                    f(...byVertex[1]),
+                    f(...byVertex[2]), 
+                    f(...byVertex[3])
+                ]};
+        case TokenType.ARRAY:
+            return (args) => {
+                const n = Math.max(args.map((arg) => arg.length));
+                let byVertex;
+                let out = [];
+                for(let i = 0; i<n; i++){
+                    byVertex = args.map((arg) => arg[i]);
+                    out.push(f(...byVertex));
+                }
+                return out;
             }
-    // MOD: 133,
-    // MIN: 134,
-    // MAX: 135,
-    // AVG: 136,
-    // MED: 137,
-    // MODE: 138,
-    // EXP: 139,
-    // LN: 140,
-    // LOG: 141,
-    // LOGN: 142,
-    // SQRT: 143,
-    // CBRT: 144,
-    // NTHRT: 145,
-    // GAMMA: 146,
-    // DGAMA: 147,
-    // PGAMA: 148,
-    // ZETA: 149,
-    // ATAN2: 150,
-    // REAL: 151,
-    // IMAG: 152,
-    // CONJ: 153,
-    // ABSCP: 154, //complex abs()
-    // ARG: 155, //complex argument = atan2(b,a)
-    // AMPL: 156, //amplitude or modulus of complex number
+        default:
+            console.log("Unknown expression evaluation token type: " + tokType);
+            return {};
     }
-
-    //return fromValues(k);
 }
 
+/**
+ * Translates an array of tokens from infix to postfix notation (Reverse Polish Notation)
+ * @param {*} expression the expression to be evaluated in the form of `{type: int, tokens: Object[]}`
+ * @returns `{type, replace, tokens}` compiled expression 
+ */
 export function compileExpression(expression) {
+    console.assert(expression != undefined); //undefined or null
 
     const type = expression.type ?? ExpressionType.IMPLICIT;
+    const evalType = ExpressionInfoByType[type].tokType;
 
     const tokenList = expression.tokens;
-    if (tokenList == undefined) {
-        console.error("Invalid expression given. No tokens attribute");
+    if (tokenList == undefined || tokenList.length === 0) {
+        console.error("Invalid expression given. Expression blank",tokenList);
+        return {type: TokenType.INVLD, replace: [], tokens: []};
     }
 
     let outputs = []; //Array<string>
@@ -1297,39 +2338,34 @@ export function compileExpression(expression) {
     let meta = 0; //number
 
     let argCountStack = []; //managing function args
+    let unBracketedFuncArg = false;
 
-    //UNSURE IF THIS IS CORRECT WAY TO HANDLE THESE OPERATORS %%POPPREFIX
-    //DOES NOT WORK FOR SUFFIX UNARIES OR FOR y=max(-1,1)
-    const popPrefixOperators = (operators) => {
-        while (operators.length > 0) {
-            const topOp = operators[operators.length - 1];
-
-            if (topOp.type != TokenType.OP) {
-                //console.log("broken. Value:", value, "operatorlist:", operators[0],operators[1],operators[2]);
-                break;
-            }
-
-            const opinfo = OpInfoByCode[topOp.code];
-
-            // Left-associative: pop if topPrecedence >= current
-            // Right-associative: pop if topPrecedence > current
-            if ( opinfo.arity == 1 && opinfo.associativity == OpAssoc.LEFT) {
-                outputs.push(operators.pop());
-            } else {
-                break;
-            }
-        }
-    }
-
+    /**
+     * 
+     * @param {*} value Expected: {type: int, code/value: any}
+     * @param {*} index
+     */
     tokenList.forEach((value, index) => {
         meta = value.type;
         //popPrefixOperators(operators); // %%POPPREFIX
         switch (meta) {
             case TokenType.NUM:
-            case TokenType.CMPLX:
+            case TokenType.DUAL:
+            //case TokenType.CMPLX:
             case TokenType.QUAD:
                 //popPrefixOperators(operators); // %%POPPREFIX
+
+                if(value.type !== evalType){
+                    console.error("Incompatible token types. Wanted: "+evalType+", got: "+ value.type);
+                }
+
                 outputs.push(value);
+
+                //functions without brackets surrounding their argument
+                if(unBracketedFuncArg){
+                    argCountStack.pop();
+                    unBracketedFuncArg = false;
+                }
 
                 break;
             case TokenType.OP:
@@ -1338,22 +2374,17 @@ export function compileExpression(expression) {
 
                 //console.log("value.code = ", OpInfoByCode[value.code]);
 
+                if(unBracketedFuncArg){
+                    console.assert(operators.length > 0);
+                    outputs.push(operators.pop);
+
+                    argCountStack.pop();
+                    unBracketedFuncArg = false;
+                }
+
                 const op = OpInfoByCode[value.code]
                 const opPrecedence = op.precedence;
                 const opAssociativity = op.associativity; // 'L' or 'R'
-                const opArity = op.arity;
-
-                // if(opArity == 1 && opAssociativity == OpAssoc.LEFT){
-                //     //prefix unary operator
-                //     operators.push(value);
-                //     break;
-                // }
-
-                if(opAssociativity == OpAssoc.RIGHT){
-                    console.log(value.code);
-                }
-
-                //console.log("id: ", value.code, "precedence: ", opPrecedence, "assoc: ", opAssociativity);
 
                 while (operators.length > 0) {
                     const topOp = operators[operators.length - 1];
@@ -1388,6 +2419,15 @@ export function compileExpression(expression) {
             case TokenType.FUNC: //function
                 //popPrefixOperators(operators); // %%POPPREFIX
 
+                //check for cases like "sin x" -- functions without brackets surrounding their argument
+                //does not ensure correct bracket type as in only allowing f() or f{}
+                const next = tokenList[index+1];
+                if(!(next.type === TokenType.BRKT && next.code % 2 === 1)){
+                    if(value.argCount > 1) console.error("Multiple arguments passed to function without parenthesis");
+
+                    unBracketedFuncArg = true;
+                }
+
                 operators.push(value);
                 argCountStack.push(1); //%%FUNC
                 break;
@@ -1405,6 +2445,10 @@ export function compileExpression(expression) {
                     break;
                 } else {
                     //pop operators to output until matching bracket found
+                    //TODO: fix for function args not in parenthesis like \frac{\sin x}{\cos x} 
+                    // ...which doesn't work unless the argument in the denominator is surrounded by ()
+                    // but does work for things like \sqrt{\cos x} ???
+
                     const matchingBrackets = {
                         [BracCode.RRND]: BracCode.LRND,
                         [BracCode.RSQR]: BracCode.LSQR,
@@ -1418,6 +2462,8 @@ export function compileExpression(expression) {
                         break;
                     }
 
+                    //
+
                     while (operators.length > 0) {
                         const topOp = operators.pop();
 
@@ -1425,6 +2471,12 @@ export function compileExpression(expression) {
                             if (expectedLeft == BracCode.LFNC) {
                                 let funcTok = operators.pop();
                                 funcTok.argCount = argCountStack.pop();
+
+                                const funcinfo = FuncInfoByCode[funcTok.code];
+                                if(funcinfo.staticArgs){
+                                    console.assert(funcinfo.args === funcTok.argCount, funcinfo.args, funcTok.argCount);
+                                }
+
                                 outputs.push(funcTok);
                             }
                             break;
@@ -1438,6 +2490,13 @@ export function compileExpression(expression) {
             case TokenType.UNKN: //unknowns
                 outputs.push(value); //value is replaced later with the unknowns
                 //append to list of unknowns that need to be replaced
+
+                //functions without brackets surrounding their argument
+                if(unBracketedFuncArg){
+                    argCountStack.pop();
+                    unBracketedFuncArg = false;
+                }
+
                 break;
             case TokenType.CNST: //constants
                 //value: value.value --> value: token.value
@@ -1447,11 +2506,24 @@ export function compileExpression(expression) {
                 }else{
                     outputs.push({ type: TokenType.NUM, value: value.value }); //%%TOKEN
                 }
+
+                //functions without brackets surrounding their argument
+                if(unBracketedFuncArg){
+                    argCountStack.pop();
+                    unBracketedFuncArg = false;
+                }
                 
                 break;
             case TokenType.VAR: //variables 
                 //NOT YET IMPLEMENTED
                 outputs.push(value); //value is replaced in real time
+
+                //functions without brackets surrounding their argument
+                if(unBracketedFuncArg){
+                    argCountStack.pop();
+                    unBracketedFuncArg = false;
+                }
+
                 break;
             case TokenType.DELIM:
                 argCountStack[argCountStack.length - 1]++; //potential error if is first token
@@ -1514,36 +2586,52 @@ export function compileExpression(expression) {
     for (let i = 0; i < outputs.length; i++) {
         let element = outputs[i];
         if (element.type == TokenType.UNKN) {
-            toReplace.push({ index: i, type: TokenType.UNKN, unknownId: element.value }); //%%TOKEN
+            //element.code or element.value ??????
+            toReplace.push({ index: i, type: TokenType.UNKN, unknownId: element.code??element.value }); //%%TOKEN
         } else if (element.type == TokenType.VAR) {
             toReplace.push({ index: i, type: TokenType.VAR, varId: 0 }); //%%TOKEN
         }
     }
 
-    compiledExpressions.push({ type: type, replace: toReplace, tokens: outputs });
+    //compiledExpressions.push({ type: type, replace: toReplace, tokens: outputs });
 
-    //console.log(outputs);
+    //console.log(expression.tokens, "->", outputs);
 
-    return true;
+    return { type: type, replace: toReplace, tokens: outputs };
 }
 
-//for (x,y) cartesian coordinates
-export function evaluateExpression(compiledExpression, pointQuad, options) {
+/**
+ * Evaluates `compiledExpression` according to the `input` 
+ * @param {*} compiledExpression the expression to be evaluated
+ * @param {*} input the input representing where the expression is evaluated, relevant for handling tokens like "x" and "y".
+ * @param {*} options other expression options (unused)
+ * @returns the output (which may be vary type depending on `compiledExpression.type`) or NaN if there is an error
+ */
+export function evaluateExpression(compiledExpression, input, options) {
     //let expressionType = compiledExpression.type;
-    let tokenList = readExpressionWithReplacements(compiledExpression, pointQuad);
+    let tokenList = readExpressionWithReplacements(compiledExpression, input);
+
+    //console.log(tokenList);
 
     var solve = []; //Array<number>
 
     //true: solve for difference (f(x)=0)  false: solve exact
     const evaluateDiff = (compiledExpression.type == ExpressionType.IMPLICIT);
+    const evalType = ExpressionInfoByType[compiledExpression.type].tokType;
 
     tokenList.forEach((value, index) => {
+        //console.log("s->",solve.length,solve);
 
         switch (value.type) {
             case TokenType.NUM:
             //case TokenType.STRG:
             case TokenType.QUAD:
+            case TokenType.DUAL:
             //case TokenType.CNST: //should already be converted to number
+
+                if(value.type !== evalType){
+                    console.warn("Incompatible token types. Wanted: "+evalType+", got: "+ value.type);
+                }
                 solve.push(value);
                 break;
             case TokenType.VAR:
@@ -1573,25 +2661,21 @@ export function evaluateExpression(compiledExpression, pointQuad, options) {
                 let opArity = OpInfoByCode[value.code].arity;
 
                 if (opArity == 1) {
+                    //console.log(solve);
                     let arg = solve.pop();
 
                     //TokenType.UNKN not supported, should be quad
 
+                    if(doEvalsAsFuncExpressions){
+                        solve.push(evaluateMethodExprForUnaryOp(value, ExpressionInfoByType[compiledExpression.type].tokType, arg));
+                        break;
+                    }
+
                     if (arg.type == TokenType.NUM) {
-                        if(doEvalsAsFuncExpressions){
-                            solve.push(value.fnexp(Array(4).fill(arg))); //%%TOKEN %%FUNCEXPR
-                        }else{
-                            solve.push({ type: TokenType.NUM, value: unaryOp(arg.value, opcode), edges: arg.edges}) //%%TOKEN
-                        }
-                        
+                        solve.push({ type: TokenType.NUM, value: unaryOp(arg.value, opcode), edges: arg.edges}) //%%TOKEN
                     } else if (arg.type == TokenType.QUAD) {
-                        if(doEvalsAsFuncExpressions){
-                            solve.push(value.fnexp(arg.value)); //%%TOKEN %%FUNCEXPR
-                        }else{
-                            solve.push(executeUnaryOpOnQuad(opcode, arg, arg.edges ?? {top: [0,0,0], lft: [0,0,0], rgt: [0,0,0], btm: [0,0,0]})); //%%TOKEN
-                        }
+                        solve.push(executeUnaryOpOnQuad(opcode, arg, arg.edges ?? {top: [0,0,0], lft: [0,0,0], rgt: [0,0,0], btm: [0,0,0]})); //%%TOKEN
                     } else if (arg.type == TokenType.CMPLX) {
-                        //TODO: FIX THIS
                         if (opcode == OpCode.NOT || opcode == OpCode.NEG) solve.push({ type: TokenType.CMPLX, a: -arg.a, b: -arg.b }); //%%TOKEN
                         else if (opcode == OpCode.FACT) solve.push({ type: TokenType.CMPLX, a: 1, b: 1 }); //%%TOKEN
                         else solve.push({ type: TokenType.CMPLX, a: 1, b: 1 }); //%%TOKEN
@@ -1604,6 +2688,7 @@ export function evaluateExpression(compiledExpression, pointQuad, options) {
 
                 //assuming opArity == 2:
 
+                console.assert(solve.length >= 2,solve);
                 //let a = null; //should cause error if used wrong
                 var b = solve.pop();
                 var a = solve.pop();
@@ -1612,11 +2697,10 @@ export function evaluateExpression(compiledExpression, pointQuad, options) {
                 var result = 0;
 
                 if(doEvalsAsFuncExpressions){
-                    //console.log(a,b)
-                    result = value.fnexp(a.value, b.value);  //%%FUNCEXPR
-                    
+                    console.assert(a !== undefined, a); 
+                    console.assert(b !== undefined, b);
+                    result = evaluateMethodExprForBinaryOp(value, ExpressionInfoByType[compiledExpression.type].tokType, a, b);
                     solve.push(result);
-                    //console.log(value, a, b, result);
                     break;
                 }
 
@@ -1644,28 +2728,51 @@ export function evaluateExpression(compiledExpression, pointQuad, options) {
                     }
                 }
 
+                
+
                 let args = [];
-                for (let i = 0; i < value.argCount; i++) {
+                let popCount;
+                if((value.argCount ?? 0) === 0){
+                    //arguments not surrounded by parenthesis
+                    if(FuncInfoByCode[value.code].staticArgs === false){
+                        console.error("Varied-argument functions must have their arguments surrounded by parenthesis.");
+                    }
+
+                    popCount = FuncInfoByCode[value.code].args ?? 0;
+                    
+                }else{
+                    //arguments surrounded by parenthesis
+                    popCount = value.argCount;
+                }
+
+                //console.assert(solve.length >= popCount,solve,popCount,value.argCount);
+
+                for (let i = 0; i < popCount; i++) {
                     args.push(solve.pop());
                 }
 
+
                 //TODO: replace with equation type detection 
-                const needQuad = args.some((tok) => tok.type == TokenType.QUAD);
+                //const evalType = ExpressionInfoByType[compiledExpression.type].tokType;
 
                 var result = 0;
 
                 if(doEvalsAsFuncExpressions){
                     //console.log(value);
-                    if(needQuad){
-                        let quadargs = args.map((arg) => {
-                            return arg.type == TokenType.QUAD ? arg.value : Array(4).fill(arg.value);
-                        })
+                    console.assert(args.length > 0,args);
+                    //console.assert(args[0] !== undefined);
 
-                        result = value.fnexp(...quadargs); //%%FUNCEXPR
-                    }else{
-                        console.log("a");
-                        result = value.fnexp(...args); //%%FUNCEXPR
-                    }
+                    result = evaluateMethodExprForFunc(value, evalType, args);
+                    // if(needQuad){
+                    //     let quadargs = args.map((arg) => {
+                    //         return arg.type == TokenType.QUAD ? arg.value : Array(4).fill(arg.value);
+                    //     })
+
+                    //     result = value.fnexp(...quadargs); //%%FUNCEXPR
+                    // }else{
+                    //     console.log("a");
+                    //     result = value.fnexp(...args); //%%FUNCEXPR
+                    // }
 
                     
                     //console.log(result);
@@ -1677,7 +2784,8 @@ export function evaluateExpression(compiledExpression, pointQuad, options) {
                 //console.log(args);
                 //console.log(needQuad);
 
-                if (needQuad) {
+                //%%FIX
+                if (evalType == TokenType.QUAD) {
                     //console.log("executeFuncOnQuad(",value.code, args, value.attributes);
                     result = executeFuncOnQuad(value.code, args, value.attributes, value.edges);
 
@@ -1718,6 +2826,8 @@ export function evaluateExpression(compiledExpression, pointQuad, options) {
                 //should never 
                 break;
             case TokenType.VEC:
+            default:
+                console.error("Unknown token type");
         }
 
 
@@ -1747,10 +2857,46 @@ export function evaluateExpression(compiledExpression, pointQuad, options) {
     }
 }
 
-export function readExpressionWithReplacements(compiledExpression, pointQuad) {
+/**
+ * Replaces unknowns in the expression with input values. 
+ * For example, it would replace the 'y' and 'x' tokens in y=x+1 with their appropriate values based on the input 
+ * @param {*} compiledExpression 
+ * @param {*} input 
+ * @returns 
+ */
+export function readExpressionWithReplacements(compiledExpression, input) {
     let toReplace = compiledExpression.replace;
     let tokenList = compiledExpression.tokens.slice(); //duplicate array
+
+    const tokType = ExpressionInfoByType[compiledExpression.type].tokType;
+    //console.log(tokType)
+
     let action = 0;
+
+    if(tokType == TokenType.NUM){
+        for(let i = 0; i < toReplace.length; i++){
+            action = toReplace[i];
+
+            if(action.type == TokenType.VAR){
+                //todo
+            }
+        }
+        return tokenList;
+    }
+
+    if(tokType == TokenType.DUAL){
+        for(let i = 0; i < toReplace.length; i++){
+            action = toReplace[i];
+
+            if(action.type == TokenType.UNKN){
+                //assumption: only one type of unknown, so we can just replace all instances with the same value
+                let newtoken = {type: TokenType.DUAL, value: [input.min, input.max], edge: [0,0,0]}; /** @param {Number[]} input  */
+                tokenList.splice(action.index, 1, newtoken);
+            }
+            //var
+        }
+        return tokenList;
+    }
 
     for (let i = 0; i < toReplace.length; i++) {
         action = toReplace[i];
@@ -1777,12 +2923,12 @@ export function readExpressionWithReplacements(compiledExpression, pointQuad) {
                     //associated ys may be useful for multivariate functions
 
                     //how should i keep track of crosses? 
-                    //crosses = ((pointQuad.minX > 0) == (pointQuad.maxX > 0)) ? 0 : 1;
+                    //crosses = ((input.minX > 0) == (input.maxX > 0)) ? 0 : 1;
 
                     newtoken = newQuad(
                         UnknownCode.CARTX,
-                        pointQuad.minX, pointQuad.maxX,
-                        pointQuad.minX, pointQuad.maxX
+                        input.minX, input.maxX,
+                        input.minX, input.maxX
                     );
 
                     tokenList.splice(action.index, 1, newtoken);
@@ -1792,8 +2938,8 @@ export function readExpressionWithReplacements(compiledExpression, pointQuad) {
 
                     newtoken = newQuad(
                         UnknownCode.CARTY,
-                        pointQuad.maxY, pointQuad.maxY,
-                        pointQuad.minY, pointQuad.minY
+                        input.maxY, input.maxY,
+                        input.minY, input.minY
                     );
 
                     break;
@@ -1808,18 +2954,18 @@ export function readExpressionWithReplacements(compiledExpression, pointQuad) {
                 case UnknownCode.POLRR:
                     newtoken = newQuad(
                         UnknownCode.POLRT,
-                        Math.hypot(pointQuad.maxY, pointQuad.minX), Math.hypot(pointQuad.maxY, pointQuad.maxX),
-                        Math.hypot(pointQuad.minY, pointQuad.minX), Math.hypot(pointQuad.minY, pointQuad.maxX)
-                    );     
+                        Math.hypot(input.maxY, input.minX), Math.hypot(input.maxY, input.maxX),
+                        Math.hypot(input.minY, input.minX), Math.hypot(input.minY, input.maxX)
+                    ); 
 
                     break;
                 case UnknownCode.POLRT:
 
                     newtoken = newQuad(
                         UnknownCode.POLRP,
-                        Math.atan2(pointQuad.maxY, pointQuad.minX), Math.atan2(pointQuad.maxY, pointQuad.maxX),
-                        Math.atan2(pointQuad.minY, pointQuad.minX), Math.atan2(pointQuad.minY, pointQuad.maxX)
-                    );
+                        Math.atan2(input.maxY, input.minX), Math.atan2(input.maxY, input.maxX),
+                        Math.atan2(input.minY, input.minX), Math.atan2(input.minY, input.maxX)
+                    ); 
 
                     
                     break;
@@ -1843,6 +2989,165 @@ export function readExpressionWithReplacements(compiledExpression, pointQuad) {
     }
 
     return tokenList;
+}
+
+/**
+ * 
+ * @param {*} token unary operator
+ * @param {*} evalType the expected token type
+ * @param {*} a the 'argument' token 
+ * @returns 
+ */
+function evaluateMethodExprForUnaryOp(token, evalType, a){
+    const arg = a.value;
+
+    // if(token.type != evalType){
+    //     if(
+    //         (evalType == TokenType.QUAD || evalType == TokenType.DUAL) &&
+    //         token.type == TokenType.NUM
+    //     ){
+    //         arg = Array(evalType==TokenType.DUAL ? 2 : 4).fill(a.value);
+    //     }
+    // }
+
+    const v = token.fnexp(arg);
+
+    switch(evalType){
+        case TokenType.NUM:
+            return {type: TokenType.NUM, value: v};
+        case TokenType.QUAD:
+            return {
+                type: TokenType.QUAD, 
+                value: v, 
+                edges: handleEdgesForUnaryOp(token.code, a, a.edges)
+            };
+        case TokenType.DUAL:
+            const e = aggregateEdges([a.edge, handleEdgePairForUnaryOp(token.code, arg[0], arg[1])]);
+            return {
+                type: TokenType.DUAL, 
+                value: v, 
+                edge: e
+            };
+        default:
+            console.error("Unknown eval type");
+            return null;
+    }
+}
+
+/**
+ * 
+ * @param {*} token the binary operator
+ * @param {*} evalType the expected token type
+ * @param {*} a left operand
+ * @param {*} b right operand
+ * @returns 
+ */
+function evaluateMethodExprForBinaryOp(token, evalType, a,b){
+    const arga = a.value;
+    const argb = b.value;
+
+    const v = token.fnexp(arga,argb);
+
+    switch(evalType){
+        case TokenType.NUM:
+            return {
+                type: TokenType.NUM, value: v
+            };
+        case TokenType.QUAD:
+            if(a.edges == undefined || b.edges == undefined){
+                console.log("a,b:",a,b);
+            }
+            return {
+                type: TokenType.QUAD, 
+                value: v, 
+                edges: handleEdgesForBinaryOp(token.code,arga,argb,a.edges,b.edges)
+            };
+        case TokenType.DUAL:
+            //fix %%EDGES
+            if(typeof a.edge != "object" || typeof b.edge != "object"){
+                console.log(a,b,token.code);
+            }
+            return {
+                type: TokenType.DUAL, 
+                value: v, 
+                edge: aggregateEdges([a.edge, b.edge, handleEdgePairForBinaryOp(token.code,arga[0],argb[0],arga[1],argb[1])])
+            };
+    }
+}
+
+/**
+ * 
+ * @param {*} token the function token
+ * @param {*} evalType the expected token type
+ * @param {*} rawargs function arguments in the form `token[]`
+ * @returns the output token
+ */
+function evaluateMethodExprForFunc(token, evalType, rawargs){
+    console.assert(rawargs.length !== undefined, rawargs);
+    // console.assert(typeof rawargs == "object", typeof rawargs);
+    // console.assert(typeof rawargs[0] == "object", typeof rawargs[0],rawargs);
+    const args = rawargs.map((tok) => tok.value);
+
+    const v = token.fnexp(args);
+
+    switch(evalType){
+        case TokenType.NUM:
+            return {
+                type: TokenType.NUM, 
+                value: v
+            };
+        case TokenType.QUAD:
+            const vertex4 = [
+                args.map((arg) => arg[0]),
+                args.map((arg) => arg[1]),
+                args.map((arg) => arg[2]),
+                args.map((arg) => arg[3])
+            ];
+            return {
+                type: TokenType.QUAD, 
+                value: v, 
+                edges: handleEdgesForFunc(token.code, vertex4, rawargs.map((arg) => arg.edges))
+            };
+        case TokenType.DUAL:
+            //fix %%EDGES
+            const vertex2 = [
+                args.map((arg) => arg[0]),
+                args.map((arg) => arg[1])
+            ];
+            const edgeinfo = rawargs.map((arg) => arg.edge ?? [0,0,0]);
+            //console.log(edgeinfo)
+            return {
+                type: TokenType.DUAL, 
+                value: v, 
+                edge: handleEdgePairForFunc(token.code, vertex2[0], vertex2[1], edgeinfo )
+            };
+        default:
+            console.error('Invalid eval type passed to method expr',evalType);
+            break;
+    }
+}
+
+function aggregateEdges(edges){
+    let crosses = 0;
+    let holes = 0;
+    let jumps = 0;
+    for(let i = 0; i < edges.length; i++){
+        //if(edges[i] == undefined) console.log(edges);
+        crosses += edges[i][0];
+        holes += edges[i][1];
+        jumps += edges[i][2];
+    }
+    return [crosses,holes,jumps];
+}
+
+function aggregateQuadEdges(...quadEdges){
+    //faster way to do this with bit manipulation
+    let top = aggregateEdges(...(quadEdges.map((qe) => qe.top)));
+    let lft = aggregateEdges(...(quadEdges.map((qe) => qe.lft)));
+    let rgt = aggregateEdges(...(quadEdges.map((qe) => qe.rgt)));
+    let btm = aggregateEdges(...(quadEdges.map((qe) => qe.btm)));
+
+    return {top, lft, btm, rgt}; //shorthand
 }
 
 function executeUnaryOpOnQuad(opcode, arg, arg_edges){
@@ -1992,7 +3297,13 @@ function handleEdgesForBinaryOp(opcode, a_quad, b_quad, edges_a, edges_b){
     const rgt = handleEdgePairForBinaryOp(opcode, a_quad[1], b_quad[1], a_quad[3], b_quad[3]);
     const btm = handleEdgePairForBinaryOp(opcode, a_quad[2], b_quad[2], a_quad[3], b_quad[3]);
 
-    //console.log(edges_a);
+    if(edges_a === undefined){
+        console.log("undef_a:",edges_a);
+    }
+
+    if(edges_b === undefined){
+        console.log("undef_b:",b_quad);
+    }
 
     const edges = {
         top: [
@@ -2055,10 +3366,11 @@ function handleEdgePairForBinaryOp(opcode, a1, b1, a2, b2){
         case OpCode.DIV:
             //  a/b
             //TODO: FIX BELOW
-            if((a1 > 0) != (a2 > 0)) crosses++; 
-            if((b1 > 0) != (b2 > 0)) crosses++; jumps++; undefined = true;//holes++; 
+            if((a1 > 0) != (a2 > 0)) {crosses++; }
+            if((b1 > 0) != (b2 > 0)) crosses++, jumps++, undefined = true; //holes++; 
             break;
         case OpCode.POW: 
+        case OpCode.POWN:
             //  a^b
             if(a1>0 && a2 > 0){
                 break;
@@ -2097,7 +3409,8 @@ function binaryOp(opcode, a, b, evaluateDiff = true) {
             case OpCode.SUB: return a - b;
             case OpCode.MUL: return a * b;
             case OpCode.DIV: return a / b;
-            case OpCode.POW: return Math.pow(a, b);
+            case OpCode.POW:
+            case OpCode.POWN: return Math.pow(a, b);
             case OpCode.LT: return evaluateDiff ? a-b : (a < b);
             case OpCode.LTE: return evaluateDiff ? a-b : (a <= b);
             case OpCode.GT: return evaluateDiff ? b-a: (a > b);
@@ -2202,6 +3515,14 @@ function handleEdgesForFunc(funccode, vertexes, edgeslist){
     //return [top, left, right, bottom];
 }
 
+/**
+ * 
+ * @param {*} funccode 
+ * @param {*} args1 
+ * @param {*} args2 
+ * @param {*} edgeinfo 
+ * @returns 
+ */
 function handleEdgePairForFunc(funccode, args1, args2, edgeinfo){
     //returns # of jumps (like in a mod b)
     //returns # of holes (like in 1/x)
@@ -2220,6 +3541,29 @@ function handleEdgePairForFunc(funccode, args1, args2, edgeinfo){
     //console.log("before", crosses, holes, jumps);
 
     switch(funccode){
+        case FuncCode.FRAC: 
+            //argsn[k] kth argument of point n
+
+            //1st argument --> numerator
+            //2nd argument --> denominator
+            crosses = edgeinfo[0][0];
+            holes = edgeinfo[0][1];
+            jumps = edgeinfo[0][2];
+
+            if((args1[0] > 0) !== (args2[0] > 0)){
+                crosses++;
+                holes++;
+                jumps++;
+            }
+
+            if((args1[1] > 0) !== (args2[1] > 0)){
+                crosses++;
+                holes++;
+                jumps++;
+            }
+            
+            
+            break;
         case FuncCode.SIN:
             crosses = edgeinfo[0][0] + Math.abs(Math.floor(args1[0]/Math.PI)-Math.floor(args2[0]/Math.PI));
             holes = edgeinfo[0][1];
@@ -2275,6 +3619,16 @@ function handleEdgePairForFunc(funccode, args1, args2, edgeinfo){
             jumps = edgeinfo[0][2];
             undefined = (args1[0] < 0 || args2[0] < 0);
             break;
+        case FuncCode.GAMMA:
+            n = Math.abs(
+                Math.floor(args1[0])-Math.floor(args2[0])
+            )-(
+                Math.floor(Math.max(0,args1[0],args2[0])+1)
+                -Math.floor(Math.max(0,Math.min(args1[0],args2[0]))+1)
+            );
+            crosses = edgeinfo[0][0] + n;
+            holes = edgeinfo[0][1] + n;
+            jumps = edgeinfo[0][2] + n;
 
     }
 
@@ -2295,6 +3649,7 @@ function executeFunc(funccode, args, attributes) {
     }
 
     switch (funccode) {
+        case FuncCode.FRAC: return args[0]/args[1];
         case FuncCode.SIN: return Math.sin(args[0]); 
         case FuncCode.COS: return Math.cos(args[0]); 
         case FuncCode.TAN: return Math.tan(args[0]); 
@@ -2335,8 +3690,8 @@ function executeFunc(funccode, args, attributes) {
         /* Todo: add handling for variables that are arrays */
         case FuncCode.AVG:
             var sum = 0;
-            for (var i = 0; i < array.length; i++) {
-                sum = sum + array[i];
+            for (var i = 0; i < args.length; i++) {
+                sum = sum + args[i];
             }
             return sum / args.length;
             
