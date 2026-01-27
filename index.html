@@ -95,6 +95,7 @@
       min-height: 45px;
       margin-left: 5px;
       margin-right: 5px;
+      margin-top: 2px;
       outline: solid;
       display: flex;
       flex-direction: row;
@@ -103,6 +104,19 @@
     .equationEdit {
       outline: solid;
       width: 40px;
+      min-width: 40px;
+    }
+
+    .equationEdit button {
+      margin: -5px;
+      width: 30px;
+      height: 30px;
+      border-radius: 15px;
+      position: relative;
+      margin-top: 50%; 
+      margin-left: 50%; 
+      transform: translate(-50%, -50%);
+      outline: solid;
     }
 
     .equationWrapper {
@@ -115,9 +129,19 @@
       vertical-align: baseline;
     }
 
+    .equationResult {
+      position: relative;
+      right: 0;
+      margin-top: 2px;
+      max-width: 218px;
+      overflow: visible;
+    }
+
     .equation {
       min-width: 218px;
+      max-width: 218px;
       border-bottom: 0;
+      overflow: hidden;
     }
 
     #equationBox button {
@@ -130,23 +154,9 @@
       font-family: serif;
     }
 
-    .equation-row {
-      display: flex;
-      gap: 5px;
-      margin-bottom: 5px;
-    }
-
-    .equation-row input {
-      flex: 1;
-      padding: 5px;
-      border-radius: var(--ui-button-border-radius);
-      border: none;
-    }
-
-    .equation-row button {
-      padding: 5px 10px;
-      font-size: var(--ui-font-size-medium);
-    }
+    /* .equationList {
+     
+    } */
 
     #toggleBox {
       position: fixed;
@@ -168,7 +178,7 @@
   </div>
 
   <div id="controls">
-    <pre id="expDisplay">No loaded expression</pre>
+    <!-- <pre id="expDisplay">No loaded expression</pre> -->
     <button id="zoomIn">+</button>
     <button id="zoomOut">−</button>
   </div>
@@ -179,14 +189,16 @@
     <div id="equationPanel">
       <div id="equationPanelButtons"></div>
       <div id="equationList">
-        <div class="equationRow">
+
+        <!-- <div class="equationRow" id="eq-row-0">
           <div class="equationEdit">
 
           </div>
           <div class="equationWrapper">
             <div class="equation"></div>
           </div>
-        </div>
+        </div> -->
+
       </div>
     </div>
   </div>
@@ -215,6 +227,10 @@
         compileExpression, getCompiledExpressions, tokenizeLatexExpression, latexToTokenObjects
     } from "./evaluator.js";  
 
+    import {
+      getAllExpressions, appendExpression, getNextId, getNextColor, registerVariable, unregisterVariable
+    } from "./expressions.js"
+
     // --- Common Elements ---
     const canvas = document.getElementById('c');
     const ctx = canvas.getContext('2d');
@@ -239,6 +255,7 @@
     // --- SET EQUATION HERE ---
     let equation = "";
     let currentExpression = null;
+    let currentColor = "";
 
     // --- Graph Setup ---
     let scaleFactor = 3;
@@ -264,69 +281,432 @@
     }
     MQ.config(mathQuillConfig);
 
-    var eqSpans = document.getElementsByClassName('equation');
-    var eqSpan = eqSpans[0];
+    // --- DOM Constants ---
+    const expListID = 'equationList';
+    const expRowClass = 'equationRow';
+    const expRowId = 'eq-row-';
+    const expEditClass = 'equationEdit';
+    const expWrapperClass = 'equationWrapper';
+    const expResultClass = 'equationResult';
+    const expMathPlaceholderClass = 'equation';
+    
+    function harshUpdateHTML(){
+      const equationList = document.getElementById("equationList");
+      const expressions = getAllExpressions();
+      //console.log(expressions);
 
-    var eqMathField = MQ.MathField(eqSpan, {
-      handlers: {
-        edit: async function() {
-          var enteredMath = eqMathField.latex(); // Get entered math in LaTeX format
-          await checkAnswer(enteredMath, eqSpan);
+      while(equationList.hasChildNodes()){
+        equationList.removeChild(equationList.firstChild);
+      }
+
+      for(let i = 0; i < expressions.length; i++){
+        const expression = expressions[i];
+
+        let row = generateEquationRow(expression);
+        equationList.appendChild(row);
+      }
+
+      console.log(equationList);
+      console.log(expressions);
+    }
+
+    function generateEquationRow(expression){
+      console.log('generating: ', expression);
+      let row = newDivWithClass(expRowClass);
+      row.id = "eq-row-"+expression.id;
+
+      let edit = newDivWithClass(expEditClass);
+      
+      let colorButton = document.createElement('button');
+      colorButton.className = 'colorButton';
+      colorButton.textContent = ' ';
+      colorButton.style.background = expression.color;
+      // colorButton.style.outline = 'solid';
+
+      edit.appendChild(colorButton);
+
+      row.appendChild(edit);
+
+      let wrapper = newDivWithClass(expWrapperClass);
+
+      let eq = newDivWithClass(expMathPlaceholderClass);
+      wrapper.appendChild(eq);
+
+      row.appendChild(wrapper);
+
+      // var eqMathField = MQ.MathField(eq, {
+      //     handlers: {
+      //       edit: async function() {
+      //         var enteredMath = eqMathField?.latex();
+      //         if(enteredMath !== undefined) await checkAnswer(enteredMath, eq);
+      //       },
+      //       enter: function() {
+      //         //HACK
+      //         let eqRow = eq.parentElement.parentElement;
+              
+      //         let eqNew = insertBlankExpression(eq);
+      //         eqNew.focus();
+      //       },
+      //       deleteOutOf: function() {
+      //         var enteredMath = eqMathField?.latex();
+      //         if(enteredMath === undefined){
+      //           return;
+      //         }
+
+      //         console.log('deleted ex len', enteredMath.length);
+
+      //         if(enteredMath.length !== 0){
+      //           return;
+      //         }
+
+      //         if(getAllExpressions().length <= 1){
+      //           return;
+      //         }
+
+      //         //HACK
+      //         let eqRow = eq.parentElement.parentElement;
+
+      //         removeExpression(eqRow);
+      //       }
+      //     }
+      //   }).config(mathQuillConfig).latex(expression.latex);
+
+      var eqMathField = generateMathField(eq);
+
+      return row;
+    }
+
+    function generateStaticMath(element){
+      var elementStaticMath = MQ.StaticMath(element);
+      return elementStaticMath;
+    }
+
+    function generateMathField(eq){
+      var eqMathField = MQ.MathField(eq, {
+        handlers: {
+          edit: async function() {
+            var enteredMath = eqMathField?.latex();
+            if(enteredMath !== undefined) await checkAnswer(enteredMath, eq);
+          },
+          enter: function() {
+            //HACK
+            let eqRow = eq.parentElement.parentElement;
+            
+            //console.log('inserting after',eq);
+            let eqNew = insertBlankExpression(eqRow);
+            eqNew.focus();
+          },
+          deleteOutOf: function() {
+            var enteredMath = eqMathField?.latex();
+            if(enteredMath === undefined){
+              return;
+            }
+
+            console.log('deleted ex len', enteredMath.length);
+
+            if(enteredMath.length !== 0){
+              return;
+            }
+
+            if(getAllExpressions().length <= 1){
+              return;
+            }
+
+            //HACK
+            let eqRow = eq.parentElement.parentElement;
+
+            removeExpression(eqRow);
+          }
+        }
+      });
+
+      return eqMathField;
+
+    }
+
+    function newDivWithClass(name){
+      let a = document.createElement('div');
+      a.className = name;
+
+      return a;
+    }
+
+    async function checkAnswer(latex, eqSpan, canRecurse = true){
+      //console.log('called on ', latex);
+      console.assert(eqSpan.classList.contains(expMathPlaceholderClass));
+
+      let test = null;
+      try{
+        test = tokenizeLatexExpression(latex);
+      }catch(e){
+        console.log(e);
+      }
+
+      if(test === null){
+        update();
+        return;
+      }
+
+      const eqRow = eqSpan.parentElement.parentElement;
+
+      const wanted = parseInt(eqRow.id.slice(7));
+
+      const expressions = getAllExpressions();
+      const index = expressions.findIndex((ex) => ex.id === wanted);
+      const old = expressions[index];
+
+      if(old === undefined) {console.log('----- WEIRD -----',getAllExpressions()); return; }
+
+      let compiled;
+
+      try{
+        compiled = compileExpression(test);
+      }catch(e){
+        console.warn("Invalid compiled expression");
+
+        compiled = {
+          id: old.id,
+          type: -1,
+          color: old.color,
+          latex: latex,
+          tokens: []
         }
       }
-    }).config(mathQuillConfig);
 
-  async function checkAnswer(latex, eqSpan){
-    let test = null;
-    try{
-      test = (tokenizeLatexExpression(latex));
-    }catch(e){
-      console.log(e);
+      compiled.id = wanted;
+      compiled.color = old.color; 
+      compiled.latex = latex;
+
+      expressions[index] = compiled;
+
+      // if(compiled.type === -1) return;
+
+      onExpressionChange(eqRow, compiled, old, canRecurse);
+
+      update();
     }
 
-    if(test !== null){
-      console.log(test);
-      const compiled = compileExpression(test);
+    function onExpressionChange(eqRow, newExpr, oldExpr, canRecurse){
+      //console.log('expression change to', newExpr.type);
+      let wrapperElement = eqRow.childNodes[1]; //HACK
 
-      console.log('compiled: ',compiled);
-
-      if(compiled.type === -1){
-        console.warn("Invalid compiled expression");
+      if(oldExpr.type === 7){
+        unregisterVariable(oldExpr.var);
       }
 
-      currentExpression=compiled;
-      document.getElementById("expDisplay").innerText = latex+"      "+currentExpression.type;
-      update();
-      return;
+      if(newExpr.type === 7){
+        //console.log('registering');
+
+        const value = evaluateExpression(newExpr).value;
+
+        console.assert(newExpr.var !== undefined);
+        console.assert(newExpr.varDependencies !== undefined);
+
+        if(registerVariable(newExpr.var, value,newExpr.varDependencies)){
+          //console.log('set var ', newExpr.var , ' to ', value);
+        }else{
+          console.log('failed to set var ', newExpr.var , ' to ', value);
+        }
+
+        if(canRecurse){
+          const expressions = getAllExpressions();
+
+          expressions.forEach((exp) => {
+            if(exp.id === newExpr.id) return;
+
+            console.log('exp: ', exp, 'vs', newExpr,'dependencies:', exp.varDependencies);
+            if(exp.varDependencies.length === 0) return;
+
+            if(exp.varDependencies.includes(newExpr.var)){
+              const depEqRow = document.getElementById(expRowId+exp.id);
+
+              console.assert(depEqRow !== undefined);
+
+              const depEqWrapper = depEqRow.childNodes[1];
+
+              console.assert(depEqWrapper !== undefined);
+              console.assert(depEqWrapper.childNodes.length > 0);
+
+              const depEqSpanIndex = findIndexInNodeList(depEqWrapper.childNodes,(n) => n.classList.contains(expMathPlaceholderClass));
+              console.assert(depEqSpanIndex >= 0);
+              
+              const spanElement = depEqWrapper.childNodes[depEqSpanIndex];
+              //console.log(spanElement);
+
+              checkAnswer(exp.latex,spanElement,false);
+              //console.log('updated: ', exp.id);
+            }
+          })
+        }
+      }
+
+      // if(!canRecurse){
+      //   return;
+      // }
+
+      if(requiresExpressionResult(newExpr.type)){
+        const index = findIndexInNodeList(
+          wrapperElement.childNodes, 
+          function (n) { 
+            return n.classList.contains(expResultClass);
+          }
+        );
+        const displayedResult = parseTokenToLatex(evaluateExpression(newExpr));
+
+        let result;
+        let resultMathField;
+        if(index === -1){
+          //add new exp result element
+
+          //console.log('new result');
+          result = newDivWithClass(expResultClass);
+          result.style.outline = 'solid';
+
+          wrapperElement.appendChild(result);
+          
+          resultMathField = generateStaticMath(result,displayedResult); 
+        }else{
+          //replace current exp result element
+
+          resultMathField = MQ(wrapperElement.childNodes[index]);
+        }
+
+        resultMathField.latex(displayedResult); //set to display result
+      }else if(requiresExpressionResult(oldExpr.type)){
+        //console.warn('finding index of', expResultClass, ' in ', wrapperElement.childNodes);
+        const index = findIndexInNodeList(
+          wrapperElement.childNodes, 
+          function (n) { 
+            //console.log(n.classList,expResultClass);
+            return n.classList.contains(expResultClass);
+          }
+        );
+        //console.log('doing???????');
+        //if(index === -1) return;
+
+        //console.log('removing ', index,wrapperElement.childNodes.length, 'because ', oldExpr.type);
+        wrapperElement.removeChild(wrapperElement.childNodes[index]);
+      }
     }
+
+    function findIndexInNodeList(nodeList, fn){
+      //console.log(nodeList.values());
+      let i = 0;
+      for(const node of nodeList.values()){
+        //console.warn(node,i);
+        if(fn(node)) {
+          return i;
+        }
+        i++;
+      }
+      return -1;
+    }
+
+    function requiresExpressionResult(type){
+      return type === 0 || type === 7;
+    }
+
+    function parseTokenToLatex(token){
+      const value = token.value;
+
+      if(isFinite(value)){
+        return '='+value;
+      }
+
+      if(value === NaN){
+        return '=\\operatorname{NaN}';
+      }
+
+      if(value === undefined){
+        console.log('result: ', undefined);
+        return '=\\operatorname{undefined}'
+      }
+
+      if(value === Infinity){
+        return '=\\infty';
+      }
+
+      if(value === -Infinity){
+        return '=-\\infty';
+      }
+    }
+
+    // function updateExpressionResult(eqRow, expression){
+    //   let wrapper = eqRow.childNodes[1];
+
+    //   console.assert(wrapper.childNodes.length > 0);
       
-    
-    console.log(test);
+    //   if(wrapper.childNodes.length === 1){
+    //     var resultMathField = wrapper.childNodes[1]; //HACK
+    //     if(expression.type === 0){
+    //       let result = newDivWithClass(expResultClass);
+    //       result.style.outline = 'solid';
 
-    let exp = (' ' + latex).slice(1)
-      .replaceAll(/\\theta/g,"θ")
-      .replaceAll(/\\cdot/g,"*")
-      .replaceAll(/\\left/g,"")
-      .replaceAll(/\\right/g,"")
-      .replaceAll(/\\(?:a-zA-Z)*\s*/g,"")
-      .replaceAll('\\','')
-      .replaceAll('{','(')
-      .replaceAll('}',')');
+    //       resultMathField = generateStaticMath(result,expression.latex); 
+          
+    //       wrapper.appendChild(result);
+    //     }
 
-    const tokenized = tokenizeExpression(exp, tryIsolateUnknown); //{type, tokens, tokenTypes}
-    const compiled = compileExpression(tokenized);
-    // const compiled = compileExpression(exp);
-    // console.log(compiled);
+    //     const numericResult = evaluateExpression(expression);
+    //     console.log(numericResult);
+    //     resultMathField.latex(numericResult.value);
 
-    if(compiled.type === -1){
-      console.warn("Invalid compiled expression");
+    //   }else{
+    //     if(expression.type !== 0){
+    //       const s = eqRow.childNodes[0];
+    //       while(s.nextElementSibling !== null){
+    //         eqRow.removeChild(s.nextElementSibling);
+    //       }
+    //     }
+    //   }
+    // }
+
+    function removeExpression(eqRow){
+      console.log('removing row: ', eqRow);
+      const equationList = document.getElementById('equationList');
+
+      let wanted = parseInt(eqRow.id.slice(7));
+      let expressions = getAllExpressions();
+      let index = expressions.findIndex((ex) => ex.id === wanted);
+
+      expressions.splice(index,1);
+
+      equationList.removeChild(eqRow);
     }
 
-    currentExpression = compiled;
+    /**
+     * Insert a new expression at the specified index
+     * @param {number} index the index to be inserted after
+     */
+    function insertBlankExpression(eqRow, shouldFocus){
+      const equationList = document.getElementById('equationList');
 
-    document.getElementById("expDisplay").innerText = latex+"      "+currentExpression.type;
-    update();
-  }
+      let wanted = parseInt(eqRow.id.slice(7));
+      let expressions = getAllExpressions();
+      let index = expressions.findIndex((ex) => ex.id === wanted);
+
+      let expression = {
+        id: getNextId(),
+        type: -1,
+        color: getNextColor(),
+        latex: '',
+        tokens: []
+      };
+
+      expressions.splice(index, 0, expression);
+
+      let row = generateEquationRow(expression);
+
+      console.log('before, after: ', eqRow, eqRow.nextElementSibling);
+
+      equationList.insertBefore(row, eqRow.nextElementSibling);
+
+      //HACK
+      let field = MQ(row.childNodes[1].childNodes[0]);
+      //console.log(field instanceof MQ.MathField, field);
+
+      return field;
+    }
 
     function update() {
       resize();
@@ -356,22 +736,9 @@
 
         drawGrid();
 
-        if(currentExpression != null && currentExpression.type != -1){
-          switch(currentExpression.type){
-            case 1: //Implicit
-              drawCurrentExpressionAsQuad();
-              break;
-            case 2: //y=f(x)
-              drawCurrentExpressionAsYofX();
-              break;
-            case 3: //x=f(y)
-              drawCurrentExpressionAsXofY();
-              break;
-            default:
-              drawCurrentExpressionAsQuad();
-              break;
-          }
-        }
+        getAllExpressions().forEach((expr) => {
+          drawExpression(expr);
+        });
 
         if(doQuadTooltip && quadSelected.length == 4){
           ctx.beginPath();
@@ -385,6 +752,29 @@
         var time = end - start;
 
         fpsDisplay.innerHTML = "FPS: " + Math.floor(1000/time);
+    }
+
+    function drawExpression(expr){
+      if(expr === undefined || expr.type === -1){
+        return;
+      }
+
+      switch(expr.type){
+        case 1: //Implicit
+          drawAsQuad(expr);
+          break;
+        case 2: //y=f(x)
+          drawAsYofX(expr);
+          break;
+        case 3: //x=f(y)
+          drawAsXofY(expr);
+          break;
+        case 9: //blank
+          break;
+        default:
+          drawAsQuad(expr);
+          break;
+      }
     }
 
     function toGraphCoordsX(x){
@@ -436,7 +826,9 @@
 
     }
 
-    function drawCurrentExpressionAsQuad(){
+    function drawAsQuad(expr){
+      currentExpression = expr; //replace later with the rect() functions actually taking an expression as input?
+
       quadCount = 0;
       quadOn = 0;
       quadStack = [];
@@ -460,14 +852,16 @@
       });
     }
 
-    function drawCurrentExpressionAsYofX(){
-      const dx = 1/3;
+    function drawAsYofX(expr){
+      currentExpression = expr;
+
+      const dx = 1/2;
       const minY = toGraphCoordsY(0);
       const maxY = toGraphCoordsY(window.innerHeight);
 
       ctx.beginPath();
       ctx.lineWidth = 2.5;
-      ctx.strokeStyle = exprColors[3]; //r 3,4,5,6
+      ctx.strokeStyle = currentExpression.color; //FIX to not rely on currentExpression variable
 
       let gy = evaluateExpression(
         currentExpression, 
@@ -515,6 +909,13 @@
         min: toGraphCoordsX(lx), max: toGraphCoordsX(rx)
       });
 
+      // if(!isFinite(result.value[1])){
+      //   moveTo(rx,
+      //     window.innerHeight*(Math.sign(result.value[1])+1)
+      //   );
+      //   return;
+      // }
+
       let y = toScreenCoordsY(result.value[1]);
 
       if(y < 0) y = -window.innerHeight;
@@ -539,14 +940,16 @@
       }
     }
 
-    function drawCurrentExpressionAsXofY(){
+    function drawAsXofY(expr){
+      currentExpression = expr;
+
       const dy = 1;
       const minX = toGraphCoordsX(0);
       const maxX = toGraphCoordsX(window.innerWidth);
 
       ctx.beginPath();
       ctx.lineWidth = 2.5;
-      ctx.strokeStyle = exprColors[3]; //r 3,4,5,6
+      ctx.strokeStyle = currentExpression.color; //r 3,4,5,6
 
       let gx = evaluateExpression(
         currentExpression, 
@@ -713,7 +1116,6 @@
     //     //ctx.rect(x,y,width,height);
     //     //ctx.stroke();
     // }
-
 
     function tryPlotRect(x,y,w,h,forcePlot=false,doRender=true){
       const q = evaluateQuad({
@@ -883,7 +1285,7 @@
 
       ctx.beginPath();
       ctx.lineWidth = 2.5;
-      ctx.strokeStyle = exprColors[4]; //r 3,4,5,6
+      ctx.strokeStyle = currentExpression.color; //r 3,4,5,6
 
       // Calculate intersections relative to translated square
       switch (index) {
@@ -1174,38 +1576,30 @@
     }, { passive: false });
 
     document.addEventListener("DOMContentLoaded", () => {
-        const tokenized = tokenizeExpression(equation, tryIsolateUnknown);
-        compileExpression(tokenized, tokenized.tokenTypes);
+      const equationList = document.getElementById('equationList');
 
-        //console.log("zlog");
-        //currentExpression = getCompiledExpressions()[0];
+      const color = getNextColor();
+      console.log('new color: ', color);
 
-        console.log("current", currentExpression);
-    
-        document.getElementById("expDisplay").innerText = equation;
+      let blankExpression = {
+        id: getNextId(),
+        type: -1,
+        color: color,
+        latex: '',
+        tokens: [],
+        varDependencies: []
+      };
 
-        draw();
+      appendExpression(blankExpression);
+
+      equationList.appendChild(generateEquationRow(blankExpression));
+      console.log('generated blank',getAllExpressions());
+
+      update();
     });
 
     resize();
     draw();
-
-    /*tokenizeExpression("sin(cosx)+tany");
-    console.log(getExpressions());
-
-    tokenizeExpression("-x+y^3");
-    tokenizeExpression("(x)(y)");
-    tokenizeExpression("2+-3");
-    tokenizeExpression("x(y-1)ln(x)")
-    tokenizeExpression("2!^2!+sinx^2")
-    /*if(tokenizeExpression("-lnx+3")){
-        console.log("Successful");
-    }else{
-        console.log("Error")
-    }*/
-    /*tokens.forEach(element => {
-        console.log(element);
-    });*/
 
     document.getElementById('zoomIn').addEventListener('click', () => {
         scaleFactor /= 1.4142135;
