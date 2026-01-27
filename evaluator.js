@@ -136,6 +136,7 @@ const OpInfo = {
     "#": { code: OpCode.CRP, precedence: 2, associativity: OpAssoc.LEFT, arity: 2 },
     "\\": {code: OpCode.ATT, precedence: 101, associativity: OpAssoc.LEFT, arity: 2},
     "^n": { code: OpCode.POWN, precedence: 7, associativity: OpAssoc.RIGHT, arity: 2 }, //for things like x^2!, the x^2 should come first as it is not x^{2!}
+    "_": { code: OpCode.SUBS, precedence: 7, associativity: OpAssoc.RIGHT, arity: 2}
 }
 
 const OpInfoByCode = {};
@@ -1125,18 +1126,18 @@ export function tokenizeLatexExpression(latex, tryIsolateUnknown){
         return {tokens: [], varDependencies: [], type: ExpressionType.BLANK};
     }
 
-    //console.log('tokens: ', tokens);
+    console.log('tokens: ', tokens);
 
     const compilerSet = latexToTokenObjects(tokens);
 
-    //console.log('compset: ', compilerSet);
+    console.log('compset: ', compilerSet);
 
     const typeset = getLatexExpressionType(compilerSet);
 
-    //console.log('typset: ', typeset);
+    console.log('typset: ', typeset);
 
     const final = addMetadataToExpression(typeset);
-    //console.log(final);
+    console.log(final);
 
     return final;
     //return tokens.map((tok) => tok.str);
@@ -1326,7 +1327,7 @@ export function latexToTokenObjects(latexTokens){
                 compilerTokens.push({ type: TokenType.UNKN, code: UnknownInfo[str] }); 
                 break;
             case FuncInfo[str] !== undefined:
-                compilerTokens.push({ type: TokenType.FUNC, code: FuncInfo[str].code }); 
+                compilerTokens.push({ type: TokenType.FUNC, code: FuncInfo[str].code, attributes: new Map() }); 
                 break;
             case ConstantInfo[str] !== undefined:
                 compilerTokens.push({ type: TokenType.NUM, value: ConstantInfo[str].value }); 
@@ -1427,6 +1428,25 @@ export function latexToTokenObjects(latexTokens){
                         const token = { type: TokenType.OP, code: OpCode.NEG };
                         if(tryInsertImplicitTimes(prev,token)) compilerTokens.push({ type: TokenType.OP, code: OpCode.MUL });
                         compilerTokens.push(token);
+                        continue;
+                    }
+
+                    if(op.code === OpCode.POW && prev.type === TokenType.FUNC){
+                        console.assert(latexTokens[i+1].type === LatexTokenType.NUMBER);
+
+                        prev.attributes.set(AttributiveCode.POWER, parseFloat(latexTokens[i+1].str));
+
+                        i++;
+                        continue;
+                    }
+
+                    if(op.code === OpCode.SUBS && prev.type === TokenType.FUNC){
+                        console.assert(latexTokens[i+1].type === LatexTokenType.NUMBER);
+                        console.assert(latexTokens[i-1].str === 'log');
+
+                        prev.attributes.set(AttributiveCode.BASE, parseFloat(latexTokens[i+1].str));
+
+                        i++;
                         continue;
                     }
 
@@ -1533,7 +1553,8 @@ export function latexToTokenObjects(latexTokens){
         if(current.type === LatexTokenType.COMMAND){
             if(FuncInfo[current.str] !== undefined){
                 const validWithPrev = (prev.type === TokenType.OP || prev.type === TokenType.DELIM || isLeftBracket(latexTokens[i-1]));
-                const token = { type: TokenType.FUNC, code: FuncInfo[current.str].code }
+
+                const token = { type: TokenType.FUNC, code: FuncInfo[current.str].code, attributes: new Map() };
 
                 if(!validWithPrev){
                     console.assert(tryInsertImplicitTimes(prev, token),prev,token);
@@ -1758,12 +1779,12 @@ function addMetadataToExpression(expression){
                 console.assert(token.code !== undefined, token);
 
                 if(doEvalsAsFuncExpressions){
-                    const fn = generateMethodExprForFunc(token.code, ExpressionInfoByType[exprType].tokType); //%%FUNCEXPR
+                    const fn = generateMethodExprForFunc(token.code, ExpressionInfoByType[exprType].tokType, token.attributes); //%%FUNCEXPR
 
                     //TODO: implement attributes so that they affect the function
-                    final.push({ type: TokenType.FUNC, code: token.code, fnexp: fn, attributes: {} })
+                    final.push({ type: TokenType.FUNC, code: token.code, fnexp: fn, attributes: token.attributes })
                 }else{
-                    final.push({ type: TokenType.FUNC, code: token.code, attributes: {} })
+                    final.push({ type: TokenType.FUNC, code: token.code, attributes: token.attributes })
                 }
                 break;
             
@@ -1951,7 +1972,7 @@ function insertImplicitOperations(tokenList, metaList, type) {
             
             case TokenType.FUNC:
                 if(doEvalsAsFuncExpressions){
-                    const fn = generateMethodExprForFunc(FuncInfo[tok].code, ExpressionInfoByType[type].tokType); //%%FUNCEXPR
+                    const fn = generateMethodExprForFunc(FuncInfo[tok].code, ExpressionInfoByType[type].tokType, tok); //%%FUNCEXPR
 
                     //TODO: implement attributes so that they affect the function
                     final.push({ type: TokenType.FUNC, code: FuncInfo[tok].code, fnexp: fn, attributes: {} })
@@ -2260,7 +2281,7 @@ function generateMethodExprForOp(opcode, tokType, evalTrue = true){
  * @param {*} tokType `int` Expression evaluation token type
  * @returns `callBack` function expression for a function
  */
-function generateMethodExprForFunc(funccode, tokType){
+function generateMethodExprForFunc(funccode, tokType, attributes){
     if(funccode === undefined){
         console.error(funccode,tokType);
         return null;
@@ -2338,7 +2359,10 @@ function generateMethodExprForFunc(funccode, tokType){
             case FuncCode.MODE: return (a) => a; 
             case FuncCode.EXP: return (a) => Math.exp(a); 
             case FuncCode.LN: return (a) => Math.log(a); 
-            case FuncCode.LOG: return (a) => Math.log(a) / Math.log(10); 
+            case FuncCode.LOG: 
+                if(attributes.get(AttributiveCode.BASE) === undefined) return (a) => Math.log(a) / Math.log(10); 
+                else return (a) => Math.log(a) / Math.log(attributes.get(AttributiveCode.BASE));
+            
             case FuncCode.LOGN: return (a,b) => Math.log(a) / Math.log(b); 
             case FuncCode.SQRT: return (a) => Math.sqrt(a); 
             case FuncCode.CBRT: return (a) => Math.cbrt(a); 
@@ -2356,7 +2380,7 @@ function generateMethodExprForFunc(funccode, tokType){
         console.error("Program error. Should shut down");
     }
 
-    const f = generateMethodExprForFunc(funccode, TokenType.NUM);
+    const f = generateMethodExprForFunc(funccode, TokenType.NUM, attributes);
 
     //similar to in generateMethodExprForOp()
     switch(tokType){
@@ -2678,9 +2702,7 @@ export function compileExpression(expression) {
         }
     }
 
-    //compiledExpressions.push({ type: type, replace: toReplace, tokens: outputs });
-
-    //console.log(expression.tokens, "->", outputs);
+    console.log(expression.tokens, "->", outputs);
 
     if(type === ExpressionType.ASGNMT){
         return { type: type, var: expression.var, varDependencies: expression.varDependencies, replace: toReplace, tokens: outputs };
@@ -2701,6 +2723,7 @@ export function evaluateExpression(compiledExpression, input, options) {
     // console.warn('evaluating: ',compiledExpression);
 
     let tokenList = readExpressionWithReplacements(compiledExpression, input);
+    //console.warn(tokenList);
 
     //console.log(tokenList);
 
@@ -2711,7 +2734,7 @@ export function evaluateExpression(compiledExpression, input, options) {
     const evalType = ExpressionInfoByType[compiledExpression.type].tokType;
 
     tokenList.forEach((value, index) => {
-        //console.log("s->",solve.length,solve);
+        //console.log("s->",solve.length,solve.map((s) => s.value));
 
         switch (value.type) {
             case TokenType.NUM:
@@ -2723,13 +2746,10 @@ export function evaluateExpression(compiledExpression, input, options) {
                 if(value.type !== evalType){
                     console.warn("Incompatible token types. Wanted: "+evalType+", got: "+ value.type);
                 }
+                //console.log('pushing: ', value);
                 solve.push(value);
                 break;
             case TokenType.VAR:
-                console.error("var passed, not supported yet");
-                //get value
-                //push value as number
-                break;
             case TokenType.UNKN:
                 console.error(value);
                 break;
@@ -2814,12 +2834,10 @@ export function evaluateExpression(compiledExpression, input, options) {
                 break;
             case TokenType.FUNC:
                 if (value.staticArgs) {
-                    if (value.args != value.argCount) {
+                    if (value.args !== value.argCount) {
                         console.error("Incorrect amount of arguments for function. Expected: " + value.args);
                     }
                 }
-
-                
 
                 let args = [];
                 let popCount;
@@ -2841,6 +2859,7 @@ export function evaluateExpression(compiledExpression, input, options) {
                 for (let i = 0; i < popCount; i++) {
                     args.push(solve.pop());
                 }
+                //console.log(args);
 
 
                 //TODO: replace with equation type detection 
@@ -2853,7 +2872,8 @@ export function evaluateExpression(compiledExpression, input, options) {
                     console.assert(args.length > 0,args);
                     //console.assert(args[0] !== undefined);
 
-                    result = evaluateMethodExprForFunc(value, evalType, args);
+                    result = evaluateMethodExprForFunc(value, evalType, args, value.attributes);
+                    //console.log(result);
                     // if(needQuad){
                     //     let quadargs = args.map((arg) => {
                     //         return arg.type == TokenType.QUAD ? arg.value : Array(4).fill(arg.value);
@@ -2939,6 +2959,9 @@ export function evaluateExpression(compiledExpression, input, options) {
 
     });
 
+    //console.log("s->",solve.length,solve);
+
+
     if (solve.length == 1) {
         //console.log(solve[0]);
         return solve[0];
@@ -2973,7 +2996,10 @@ export function readExpressionWithReplacements(compiledExpression, input) {
                 const value = getVariable(action.varId);
                 if(value === undefined) console.error('variable '+ action.varId+ ' not found');
 
-                tokenList.splice(action.index, 1, {type: TokenType.NUM, value: value});
+                const token = {type: TokenType.NUM, value: value};
+                //console.log('replacing ', token);
+                tokenList.splice(action.index, 1, token);
+                //console.log(tokenList);
             }
         }
         return tokenList;
@@ -2999,19 +3025,19 @@ export function readExpressionWithReplacements(compiledExpression, input) {
     for (let i = 0; i < toReplace.length; i++) {
         action = toReplace[i];
 
-        if (action.type == TokenType.UNKN) {
-
-            const newQuad = (code, tplf, tprt, btlf, btrt) => {
-                return {
-                    type: TokenType.QUAD,
-                    code, code,
-                    value: [
-                        tplf, tprt,
-                        btlf, btrt
-                    ],
-                    edges: {top: [0,0,0], lft: [0,0,0], rgt: [0,0,0], btm: [0,0,0]}
-                }
+        const newQuad = (code, tplf, tprt, btlf, btrt) => {
+            return {
+                type: TokenType.QUAD,
+                code, code,
+                value: [
+                    tplf, tprt,
+                    btlf, btrt
+                ],
+                edges: {top: [0,0,0], lft: [0,0,0], rgt: [0,0,0], btm: [0,0,0]}
             }
+        }
+
+        if (action.type == TokenType.UNKN) {
 
             //FIX REPEATED CODE
             var newtoken; 
@@ -3083,7 +3109,14 @@ export function readExpressionWithReplacements(compiledExpression, input) {
 
             tokenList.splice(action.index, 1, newtoken);
         }else if(action.type === TokenType.VAR){
+            const newtoken = newQuad(action.varId, 
+                getVariable(action.varId),
+                getVariable(action.varId),
+                getVariable(action.varId),
+                getVariable(action.varId)
+            );
 
+            tokenList.splice(action.index, 1, newtoken);
         }
         //TODO: replacement for VARs 
     }
@@ -3184,13 +3217,23 @@ function evaluateMethodExprForBinaryOp(token, evalType, a,b){
  * @param {*} rawargs function arguments in the form `token[]`
  * @returns the output token
  */
-function evaluateMethodExprForFunc(token, evalType, rawargs){
+function evaluateMethodExprForFunc(token, evalType, rawargs, attributes){
     console.assert(rawargs.length !== undefined, rawargs);
     // console.assert(typeof rawargs == "object", typeof rawargs);
     // console.assert(typeof rawargs[0] == "object", typeof rawargs[0],rawargs);
     const args = rawargs.map((tok) => tok.value);
 
-    const v = token.fnexp(args);
+    const pow = attributes.get(AttributiveCode.POWER);
+    //const base = token.code === FuncCode.LOG ? attributes.get(AttributiveCode.BASE) : undefined;
+
+    let v;
+    if(evalType === TokenType.NUM){
+        v = token.fnexp(...args);
+        if(pow !== undefined) v = v**pow;
+    }else{
+        v = token.fnexp(args);
+        if(pow !== undefined) v=v.map((n) => n**pow);
+    }
 
     switch(evalType){
         case TokenType.NUM:
@@ -3221,7 +3264,7 @@ function evaluateMethodExprForFunc(token, evalType, rawargs){
             return {
                 type: TokenType.DUAL, 
                 value: v, 
-                edge: handleEdgePairForFunc(token.code, vertex2[0], vertex2[1], edgeinfo )
+                edge: handleEdgePairForFunc(token.code, vertex2[0], vertex2[1], edgeinfo, attributes)
             };
         default:
             console.error('Invalid eval type passed to method expr',evalType);
