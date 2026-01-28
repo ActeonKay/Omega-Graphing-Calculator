@@ -105,7 +105,10 @@ const OpCode = {
     DPR: 18, //dot prod
     CRP: 19, //cross prod
     ATT: 20, //attributive operator
-    POWN: 21
+    POWN: 21,
+    SUBS: 22,
+    PM: 23,
+    PCT: 24
 }
 
 const OpAssoc = {
@@ -135,8 +138,11 @@ const OpInfo = {
     "u-": { code: OpCode.NEG, precedence: 3, associativity: OpAssoc.RIGHT, arity: 1 }, //prefix unary (L)
     "#": { code: OpCode.CRP, precedence: 2, associativity: OpAssoc.LEFT, arity: 2 },
     "\\": {code: OpCode.ATT, precedence: 101, associativity: OpAssoc.LEFT, arity: 2},
-    "^n": { code: OpCode.POWN, precedence: 7, associativity: OpAssoc.RIGHT, arity: 2 }, //for things like x^2!, the x^2 should come first as it is not x^{2!}
-    "_": { code: OpCode.SUBS, precedence: 7, associativity: OpAssoc.RIGHT, arity: 2}
+    "^n": { code: OpCode.POWN, precedence: 6, associativity: OpAssoc.RIGHT, arity: 2 }, //for things like x^2!, the x^2 should come first as it is not x^{2!}
+    "_": { code: OpCode.SUBS, precedence: 6, associativity: OpAssoc.RIGHT, arity: 2},
+    "±": { code: OpCode.PM, precedence: 1, associativity: OpAssoc.LEFT, arity: 2 },
+    "pm": { code: OpCode.PM, precedence: 1, associativity: OpAssoc.LEFT, arity: 2 },
+    "%": { code: OpCode.PCT, precedence: 6, associativity: OpAssoc.LEFT, arity: 1 }
 }
 
 const OpInfoByCode = {};
@@ -585,307 +591,307 @@ function testPushToken(token, tokenState) {
  * @param {*} tryIsolateUnknown try to fit expression into `u=f(v)`
  * @returns `{type, tokens}` tokenized expression
  */
-export function tokenizeExpression(string, tryIsolateUnknown = true) {
-    var tokens = []; //Array<string>
-    var tokenMetas = []; //Array<number>
+// export function tokenizeExpression(string, tryIsolateUnknown = true) {
+//     var tokens = []; //Array<string>
+//     var tokenMetas = []; //Array<number>
 
-    let charState = 0; //number
-    let tokenState = 0; //number
+//     let charState = 0; //number
+//     let tokenState = 0; //number
 
-    let token = ""; //string
-    let char = ""; //string
-    let meta = 0; //number
+//     let token = ""; //string
+//     let char = ""; //string
+//     let meta = 0; //number
 
-    for (let index = 0; index < string.length; index++) {
-        char = string.charAt(index);
+//     for (let index = 0; index < string.length; index++) {
+//         char = string.charAt(index);
 
-        //if token+char makes sense as a token, continue building token
-        //else push token to tokens, start new token with char
+//         //if token+char makes sense as a token, continue building token
+//         //else push token to tokens, start new token with char
 
-        //console.log(char + ", " + tokenState + " -> " + token);
+//         //console.log(char + ", " + tokenState + " -> " + token);
 
-        if (/^[0-9.]$/.test(char)) charState = TokenType.NUM;
-        else if (isOperator(char)) charState = TokenType.OP;
-        else if (alphanumRegex.test(char)) charState = TokenType.ALPHANUM;
-        else if (char == "\"") charState = TokenType.STRG;
-        else if (isBracket(char)) charState = TokenType.BRKT;
-        else if (char == ",") charState = TokenType.DELIM
-        else if (/\s/.test(char)) charState = TokenType.NUL;
-        else charState = TokenType.INVLD;
+//         if (/^[0-9.]$/.test(char)) charState = TokenType.NUM;
+//         else if (isOperator(char)) charState = TokenType.OP;
+//         else if (alphanumRegex.test(char)) charState = TokenType.ALPHANUM;
+//         else if (char == "\"") charState = TokenType.STRG;
+//         else if (isBracket(char)) charState = TokenType.BRKT;
+//         else if (char == ",") charState = TokenType.DELIM
+//         else if (/\s/.test(char)) charState = TokenType.NUL;
+//         else charState = TokenType.INVLD;
 
-        //string
+//         //string
 
-        if (charState == TokenType.BRKT || charState == TokenType.DELIM) {
-            //no building needed
-            meta = testPushToken(token, tokenState);
-            if (meta >= 0) {
-                tokens.push(token);
-                tokenMetas.push(meta);
-            } else {
-                //error, but doesn't create problems in result. ???
-                //console.error("Unknown token: " + token + " before: " + char + ", " + index);
-            }
+//         if (charState == TokenType.BRKT || charState == TokenType.DELIM) {
+//             //no building needed
+//             meta = testPushToken(token, tokenState);
+//             if (meta >= 0) {
+//                 tokens.push(token);
+//                 tokenMetas.push(meta);
+//             } else {
+//                 //error, but doesn't create problems in result. ???
+//                 //console.error("Unknown token: " + token + " before: " + char + ", " + index);
+//             }
 
-            tokens.push(char);
-            tokenMetas.push(charState);
+//             tokens.push(char);
+//             tokenMetas.push(charState);
 
-            token = "";
-            tokenState = 0;
+//             token = "";
+//             tokenState = 0;
 
-            continue;
-        }
+//             continue;
+//         }
 
-        switch (tokenState) {
-            case TokenType.NUL:
-                if (token !== "\"") {
-                    token = char;
-                } else {
-                    token = ""; //quotes aren't included in strings
-                }
+//         switch (tokenState) {
+//             case TokenType.NUL:
+//                 if (token !== "\"") {
+//                     token = char;
+//                 } else {
+//                     token = ""; //quotes aren't included in strings
+//                 }
 
-                tokenState = charState;
-                break;
-            case TokenType.NUM: //numbers
-                if (charState != TokenType.NUM) {
-                    if (token.includes(".")) {
-                        //something like "2.7" + "."
-                        console.error("Unknown number token: " + token);
-                    }
+//                 tokenState = charState;
+//                 break;
+//             case TokenType.NUM: //numbers
+//                 if (charState != TokenType.NUM) {
+//                     if (token.includes(".")) {
+//                         //something like "2.7" + "."
+//                         console.error("Unknown number token: " + token);
+//                     }
 
-                    meta = testPushToken(token, tokenState);
-                    if (meta >= 0) {
-                        tokens.push(token); //TOKEN PUSH
-                        tokenMetas.push(meta); //meta
-                        //console.log("pushed token: " + token + " meta: " + meta);
-                    } else {
-                        console.error("Unknown token type for: " + token);
-                    }
+//                     meta = testPushToken(token, tokenState);
+//                     if (meta >= 0) {
+//                         tokens.push(token); //TOKEN PUSH
+//                         tokenMetas.push(meta); //meta
+//                         //console.log("pushed token: " + token + " meta: " + meta);
+//                     } else {
+//                         console.error("Unknown token type for: " + token);
+//                     }
 
-                    tokenState = charState;
-                    token = char;
+//                     tokenState = charState;
+//                     token = char;
 
-                    continue;
-                }
+//                     continue;
+//                 }
 
-                //already number token:
+//                 //already number token:
 
-                if (numRegex.test(token + char) || (token.indexOf(".") == -1 && char == ".")) {
-                    token = token.concat(char);
-                } else {
-                    //something like "2.2.1", an invalid number
-                    console.error("Unknown number token: " + token);
-                }
-                break;
-            case TokenType.OP: //operators
-                if (charState != TokenType.OP) {
+//                 if (numRegex.test(token + char) || (token.indexOf(".") == -1 && char == ".")) {
+//                     token = token.concat(char);
+//                 } else {
+//                     //something like "2.2.1", an invalid number
+//                     console.error("Unknown number token: " + token);
+//                 }
+//                 break;
+//             case TokenType.OP: //operators
+//                 if (charState != TokenType.OP) {
 
-                    meta = testPushToken(token, tokenState);
-                    if (meta >= 0) {
-                        tokens.push(token); //TOKEN PUSH
-                        tokenMetas.push(meta); //meta
-                        //console.log("pushed token: " + token + " meta: " + meta);
-                    } else {
-                        console.error("Unknown token type for: " + token);
-                    }
+//                     meta = testPushToken(token, tokenState);
+//                     if (meta >= 0) {
+//                         tokens.push(token); //TOKEN PUSH
+//                         tokenMetas.push(meta); //meta
+//                         //console.log("pushed token: " + token + " meta: " + meta);
+//                     } else {
+//                         console.error("Unknown token type for: " + token);
+//                     }
 
-                    tokenState = charState;
-                    token = char;
+//                     tokenState = charState;
+//                     token = char;
 
-                    continue;
-                }
+//                     continue;
+//                 }
 
-                //already operator token:
+//                 //already operator token:
 
-                if (isPrefixOfElementIn(token + char, validOperators)) {
-                    token = token.concat(char);
-                } else if (validOperators.includes(token + char)) {
-                    meta = testPushToken(token + char, tokenState);
-                    if (meta >= 0) {
-                        tokens.push(token + char); //TOKEN PUSH
-                        tokenMetas.push(meta); //meta
-                        //console.log("pushed token: " + token + " meta: " + meta);
-                    } else {
-                        console.error("Unknown token type for: " + (token + char));
-                    }
+//                 if (isPrefixOfElementIn(token + char, validOperators)) {
+//                     token = token.concat(char);
+//                 } else if (validOperators.includes(token + char)) {
+//                     meta = testPushToken(token + char, tokenState);
+//                     if (meta >= 0) {
+//                         tokens.push(token + char); //TOKEN PUSH
+//                         tokenMetas.push(meta); //meta
+//                         //console.log("pushed token: " + token + " meta: " + meta);
+//                     } else {
+//                         console.error("Unknown token type for: " + (token + char));
+//                     }
 
-                    tokenState = 0;
-                    token = "";
-                } else if (validOperators.includes(token)) {
-                    meta = testPushToken(token, tokenState);
-                    if (meta >= 0) {
-                        tokens.push(token); //TOKEN PUSH
-                        tokenMetas.push(meta); //meta
-                        //console.log("pushed token: " + token + " meta: " + meta);
-                    } else {
-                        console.error("Unknown token type for: " + token);
-                    }
+//                     tokenState = 0;
+//                     token = "";
+//                 } else if (validOperators.includes(token)) {
+//                     meta = testPushToken(token, tokenState);
+//                     if (meta >= 0) {
+//                         tokens.push(token); //TOKEN PUSH
+//                         tokenMetas.push(meta); //meta
+//                         //console.log("pushed token: " + token + " meta: " + meta);
+//                     } else {
+//                         console.error("Unknown token type for: " + token);
+//                     }
 
-                    tokenState = TokenType.OP;
-                    token = char;
-                } else {
-                    //throw error
-                    console.error("Unknown operator token: " + token);
-                }
-                break;
-            case TokenType.ALPHANUM: //string tokens (not quotations, but functions/vars/constants/etc)
-                if (charState != TokenType.ALPHANUM) {
-                    //special marking for function ( tokens???
+//                     tokenState = TokenType.OP;
+//                     token = char;
+//                 } else {
+//                     //throw error
+//                     console.error("Unknown operator token: " + token);
+//                 }
+//                 break;
+//             case TokenType.ALPHANUM: //string tokens (not quotations, but functions/vars/constants/etc)
+//                 if (charState != TokenType.ALPHANUM) {
+//                     //special marking for function ( tokens???
 
-                    meta = testPushToken(token, tokenState);
-                    if (meta >= 0) {
-                        tokens.push(token); //TOKEN PUSH
-                        tokenMetas.push(meta); //meta
-                        //console.log("pushed token: " + token + " meta: " + meta);
-                    } else {
-                        console.error("Unknown token type for: " + token);
-                    }
+//                     meta = testPushToken(token, tokenState);
+//                     if (meta >= 0) {
+//                         tokens.push(token); //TOKEN PUSH
+//                         tokenMetas.push(meta); //meta
+//                         //console.log("pushed token: " + token + " meta: " + meta);
+//                     } else {
+//                         console.error("Unknown token type for: " + token);
+//                     }
 
-                    tokenState = charState;
-                    token = char;
+//                     tokenState = charState;
+//                     token = char;
 
-                    continue;
-                }
+//                     continue;
+//                 }
 
-                //already string token:
+//                 //already string token:
 
-                if (isPrefixOfStringToken(token + char)) {
-                    token = token.concat(char);
-                } else if (typeOfStringToken(token + char) >= 0) {
-                    meta = testPushToken(token + char, tokenState);
-                    if (meta >= 0) {
-                        tokens.push(token + char); //TOKEN PUSH
-                        tokenMetas.push(meta); //meta
-                        //console.log("pushed token: " + token + " meta: " + meta);
-                    } else {
-                        console.error("Unknown token type for: " + (token + char));
-                    }
+//                 if (isPrefixOfStringToken(token + char)) {
+//                     token = token.concat(char);
+//                 } else if (typeOfStringToken(token + char) >= 0) {
+//                     meta = testPushToken(token + char, tokenState);
+//                     if (meta >= 0) {
+//                         tokens.push(token + char); //TOKEN PUSH
+//                         tokenMetas.push(meta); //meta
+//                         //console.log("pushed token: " + token + " meta: " + meta);
+//                     } else {
+//                         console.error("Unknown token type for: " + (token + char));
+//                     }
 
-                    tokenState = 0;
-                    token = "";
-                } else if (typeOfStringToken(token) >= 0) {
-                    meta = testPushToken(token, tokenState);
-                    if (meta >= 0) {
-                        tokens.push(token); //TOKEN PUSH
-                        tokenMetas.push(meta); //meta
-                        //console.log("pushed token: " + token + " meta: " + meta);
-                    } else {
-                        console.error("Unknown token type for: " + token);
-                    }
+//                     tokenState = 0;
+//                     token = "";
+//                 } else if (typeOfStringToken(token) >= 0) {
+//                     meta = testPushToken(token, tokenState);
+//                     if (meta >= 0) {
+//                         tokens.push(token); //TOKEN PUSH
+//                         tokenMetas.push(meta); //meta
+//                         //console.log("pushed token: " + token + " meta: " + meta);
+//                     } else {
+//                         console.error("Unknown token type for: " + token);
+//                     }
 
-                    tokenState = 0;
-                    token = char;
-                } else {
-                    //throw error
-                    console.error("Unknown string token: " + token);
-                }
-                break;
-            case TokenType.STRG:
-                if (char == '"' /* a quotation mark like " */) {
-                    meta = testPushToken(token, tokenState);
-                    if (meta >= 0) {
-                        tokens.push(token); //TOKEN PUSH
-                        tokenMetas.push(meta); //meta
-                        //console.log("pushed token: " + token + " meta: " + meta);
-                    } else {
-                        console.error("Unknown token type for: " + token);
-                    }
+//                     tokenState = 0;
+//                     token = char;
+//                 } else {
+//                     //throw error
+//                     console.error("Unknown string token: " + token);
+//                 }
+//                 break;
+//             case TokenType.STRG:
+//                 if (char == '"' /* a quotation mark like " */) {
+//                     meta = testPushToken(token, tokenState);
+//                     if (meta >= 0) {
+//                         tokens.push(token); //TOKEN PUSH
+//                         tokenMetas.push(meta); //meta
+//                         //console.log("pushed token: " + token + " meta: " + meta);
+//                     } else {
+//                         console.error("Unknown token type for: " + token);
+//                     }
 
-                    tokenState = 0;
-                } else {
-                    token = token.concat(char);
-                }
+//                     tokenState = 0;
+//                 } else {
+//                     token = token.concat(char);
+//                 }
 
-                break;
-            case TokenType.BRKT:
-                console.error("Code tokenized incorrectly. Token: " + token);
-                meta = testPushToken(token, tokenState);
-                if (meta >= 0) {
-                    tokens.push(token); //TOKEN PUSH
-                    tokenMetas.push(meta); //meta
-                    //console.log("pushed token: " + token + " meta: " + meta);
-                } else {
-                    console.error("Unknown token type for: " + token);
-                }
+//                 break;
+//             case TokenType.BRKT:
+//                 console.error("Code tokenized incorrectly. Token: " + token);
+//                 meta = testPushToken(token, tokenState);
+//                 if (meta >= 0) {
+//                     tokens.push(token); //TOKEN PUSH
+//                     tokenMetas.push(meta); //meta
+//                     //console.log("pushed token: " + token + " meta: " + meta);
+//                 } else {
+//                     console.error("Unknown token type for: " + token);
+//                 }
 
-                if (charState !== 0) {
-                    meta = testPushToken(char, charState);
-                    if (meta >= 0) {
-                        tokens.push(char); //TOKEN PUSH
-                        tokenMetas.push(meta); //meta
-                        //console.log("pushed token: " + char + " meta: " + meta);
-                    } else {
-                        console.error("Unknown token type for: " + char);
-                    }
-                }
+//                 if (charState !== 0) {
+//                     meta = testPushToken(char, charState);
+//                     if (meta >= 0) {
+//                         tokens.push(char); //TOKEN PUSH
+//                         tokenMetas.push(meta); //meta
+//                         //console.log("pushed token: " + char + " meta: " + meta);
+//                     } else {
+//                         console.error("Unknown token type for: " + char);
+//                     }
+//                 }
 
-                tokenState = 0;
-                token = "";
+//                 tokenState = 0;
+//                 token = "";
 
-                break;
-            case TokenType.DELIM:
-                if (token.length > 0) {
-                    meta = testPushToken(token, tokenState);
-                    if (meta >= 0) {
-                        tokens.push(token); //TOKEN PUSH
-                        tokenMetas.push(meta); //meta
-                        //console.log("pushed token: " + token + " meta: " + meta);
-                    } else {
-                        console.error("Unknown token type for: " + token);
-                    }
-                }
+//                 break;
+//             case TokenType.DELIM:
+//                 if (token.length > 0) {
+//                     meta = testPushToken(token, tokenState);
+//                     if (meta >= 0) {
+//                         tokens.push(token); //TOKEN PUSH
+//                         tokenMetas.push(meta); //meta
+//                         //console.log("pushed token: " + token + " meta: " + meta);
+//                     } else {
+//                         console.error("Unknown token type for: " + token);
+//                     }
+//                 }
 
-                if (charState !== 0) {
-                    meta = testPushToken(char, charState);
-                    if (meta >= 0) {
-                        tokens.push(char); //TOKEN PUSH
-                        tokenMetas.push(meta); //meta
-                        //console.log("pushed token: " + char + " meta: " + meta);
-                    } else {
-                        console.error("Unknown token type for: " + char);
-                    }
-                }
-            default:
-                console.error("Unknown token state: " + tokenState);
-                break;
-        }
+//                 if (charState !== 0) {
+//                     meta = testPushToken(char, charState);
+//                     if (meta >= 0) {
+//                         tokens.push(char); //TOKEN PUSH
+//                         tokenMetas.push(meta); //meta
+//                         //console.log("pushed token: " + char + " meta: " + meta);
+//                     } else {
+//                         console.error("Unknown token type for: " + char);
+//                     }
+//                 }
+//             default:
+//                 console.error("Unknown token state: " + tokenState);
+//                 break;
+//         }
 
-    }
+//     }
 
-    if (token.length > 0) {
-        // Determine meta for last token
-        let lastMeta = TokenType.NUL; //used to be: let lastMeta = tokenState
-        if (lastMeta === TokenType.NUL) {
-            // Try to infer type if tokenState is 0
-            if (isNumber(token)) lastMeta = TokenType.NUM;
-            else if (isOperator(token)) lastMeta = TokenType.OP;
-            else lastMeta = typeOfStringToken(token);
-        }
-        tokens.push(token);
-        tokenMetas.push(lastMeta);
-        //console.log("End token push: " + token + ", meta: " + lastMeta);
-    }
+//     if (token.length > 0) {
+//         // Determine meta for last token
+//         let lastMeta = TokenType.NUL; //used to be: let lastMeta = tokenState
+//         if (lastMeta === TokenType.NUL) {
+//             // Try to infer type if tokenState is 0
+//             if (isNumber(token)) lastMeta = TokenType.NUM;
+//             else if (isOperator(token)) lastMeta = TokenType.OP;
+//             else lastMeta = typeOfStringToken(token);
+//         }
+//         tokens.push(token);
+//         tokenMetas.push(lastMeta);
+//         //console.log("End token push: " + token + ", meta: " + lastMeta);
+//     }
 
-    tokenState = 0;
+//     tokenState = 0;
 
-    //console.log("Raw tokens: ", tokens);
-    //console.log("Raw tokenmeta: ", tokenMetas);
+//     //console.log("Raw tokens: ", tokens);
+//     //console.log("Raw tokenmeta: ", tokenMetas);
 
-    //TODO: rename tryIsolateUnknown
-    const eqInfo = tryIsolateUnknown ? getExpressionType(tokens, tokenMetas) : ExpressionType.IMPLICIT;
+//     //TODO: rename tryIsolateUnknown
+//     const eqInfo = tryIsolateUnknown ? getExpressionType(tokens, tokenMetas) : ExpressionType.IMPLICIT;
 
-    console.log(eqInfo.type);
+//     console.log(eqInfo.type);
 
-    const fixed = insertImplicitOperations(eqInfo.tokens, eqInfo.tokenMetas, eqInfo.type);
+//     const fixed = insertImplicitOperations(eqInfo.tokens, eqInfo.tokenMetas, eqInfo.type);
 
-    console.log("Fixed tokens: ", fixed);
+//     console.log("Fixed tokens: ", fixed);
 
-    //evaluation of truth (direct evaluation) vs evaluation of closeness to intercept (f(x)=0)
+//     //evaluation of truth (direct evaluation) vs evaluation of closeness to intercept (f(x)=0)
 
-    // tokenizedExpressions.push({ type: eqInfo.type, tokens: fixed[0] });
-    // tokenizedExpressionMetas.push(fixed[1]);
+//     // tokenizedExpressions.push({ type: eqInfo.type, tokens: fixed[0] });
+//     // tokenizedExpressionMetas.push(fixed[1]);
 
-    return { type: eqInfo.type, tokens: fixed[0], tokenTypes: fixed[1] };
-}
+//     return { type: eqInfo.type, tokens: fixed[0], tokenTypes: fixed[1] };
+// }
 
 /**
  * Test for if an expression is implicit, polar, explicit, etc.
@@ -893,88 +899,88 @@ export function tokenizeExpression(string, tryIsolateUnknown = true) {
  * @param {*} tokenMetas Int[] of token types
  * @returns 
  */
-function getExpressionType(tokens, tokenMetas){
-    const eqtoken = tokens.indexOf("=");
+// function getExpressionType(tokens, tokenMetas){
+//     const eqtoken = tokens.indexOf("=");
 
-    if(eqtoken < 0){
-        //check if there aren't unknowns
-        if(!tokenMetas.some((m) => m==TokenType.UNKN)){
-            return {tokens: tokens, tokenMetas: tokenMetas, type: ExpressionType.EVAL}; //no '=' tokens
-        }
+//     if(eqtoken < 0){
+//         //check if there aren't unknowns
+//         if(!tokenMetas.some((m) => m==TokenType.UNKN)){
+//             return {tokens: tokens, tokenMetas: tokenMetas, type: ExpressionType.EVAL}; //no '=' tokens
+//         }
 
-        // -> there is at least 1 unknown:
+//         // -> there is at least 1 unknown:
 
-        const nextUnkn = (n) => tokenMetas.indexOf(TokenType.UNKN,n+1);
+//         const nextUnkn = (n) => tokenMetas.indexOf(TokenType.UNKN,n+1);
 
-        // first unknown (we know there's at least this one)
-        let i1 = nextUnkn(-1);
-        const c1 = tokens[i1];
+//         // first unknown (we know there's at least this one)
+//         let i1 = nextUnkn(-1);
+//         const c1 = tokens[i1];
 
-        var i = nextUnkn(i1);
-        while(i >= 0){
-            //if this unknown is not equal to first, then it cannot be converted to a ...=f(...) expression type
-            if(tokens[i] != c1){
-                return {tokens: tokens, tokenMetas: tokenMetas, type: ExpressionType.INVLD};
-            }
-            i = nextUnkn(i);
-        }
+//         var i = nextUnkn(i1);
+//         while(i >= 0){
+//             //if this unknown is not equal to first, then it cannot be converted to a ...=f(...) expression type
+//             if(tokens[i] != c1){
+//                 return {tokens: tokens, tokenMetas: tokenMetas, type: ExpressionType.INVLD};
+//             }
+//             i = nextUnkn(i);
+//         }
 
-        //type dictionary
-        const type = {
-            "x": ExpressionType.EXP_F_X,
-            "y": ExpressionType.EXP_F_Y,
-            "θ": ExpressionType.EXP_F_T,
-            "r": ExpressionType.EXP_F_R
-        }[c1];
+//         //type dictionary
+//         const type = {
+//             "x": ExpressionType.EXP_F_X,
+//             "y": ExpressionType.EXP_F_Y,
+//             "θ": ExpressionType.EXP_F_T,
+//             "r": ExpressionType.EXP_F_R
+//         }[c1];
 
-        return {tokens: tokens, tokenMetas: tokenMetas, type: type};
+//         return {tokens: tokens, tokenMetas: tokenMetas, type: type};
         
-    }else if(tokens.includes("=", eqtoken+1) || tokens.includes("!=")){
-        return {tokens: tokens, tokenMetas: tokenMetas, type: ExpressionType.EVAL}; //multiple '=' or '!=' tokens
-    }else if((tokens.includes("&&") || tokens.includes("||")) || tokens.includes("^^")){
-        return {tokens: tokens, tokenMetas: tokenMetas, type: ExpressionType.IMPLICIT}; //logical implicit
-    }else{
-        //splice tokens at =, determine if fits pattern y=f(x), x=f(y), etc...
-        const lhs = tokens.slice(0, eqtoken);
-        const rhs = tokens.slice(eqtoken+1);
+//     }else if(tokens.includes("=", eqtoken+1) || tokens.includes("!=")){
+//         return {tokens: tokens, tokenMetas: tokenMetas, type: ExpressionType.EVAL}; //multiple '=' or '!=' tokens
+//     }else if((tokens.includes("&&") || tokens.includes("||")) || tokens.includes("^^")){
+//         return {tokens: tokens, tokenMetas: tokenMetas, type: ExpressionType.IMPLICIT}; //logical implicit
+//     }else{
+//         //splice tokens at =, determine if fits pattern y=f(x), x=f(y), etc...
+//         const lhs = tokens.slice(0, eqtoken);
+//         const rhs = tokens.slice(eqtoken+1);
 
-        if(lhs.length === 1){
-            tokenMetas[0] === TokenType.VAR; 
-        };
+//         if(lhs.length === 1){
+//             tokenMetas[0] === TokenType.VAR; 
+//         };
 
-        //console.log(lhs, ["="], rhs);
+//         //console.log(lhs, ["="], rhs);
 
-        const exclusive = {
-            "x": ["x","θ","r"],
-            "y": ["y","θ","r"],
-            "r": ["x","y","θ"],
-            "θ": ["x","y","r"]
-        };
+//         const exclusive = {
+//             "x": ["x","θ","r"],
+//             "y": ["y","θ","r"],
+//             "r": ["x","y","θ"],
+//             "θ": ["x","y","r"]
+//         };
 
-        const ids = {
-            "y": ExpressionType.EXP_F_X,
-            "x": ExpressionType.EXP_F_Y,
-            "r": ExpressionType.EXP_F_T,
-            "θ": ExpressionType.EXP_F_R
-        };
+//         const ids = {
+//             "y": ExpressionType.EXP_F_X,
+//             "x": ExpressionType.EXP_F_Y,
+//             "r": ExpressionType.EXP_F_T,
+//             "θ": ExpressionType.EXP_F_R
+//         };
 
-        if(lhs.length == 1){
-            const tk = lhs[0];
-            if(ids[tk] != undefined && rhs.every((item) => {return !exclusive[tk].includes(item)})){
-                return {tokens: rhs, tokenMetas: tokenMetas.slice(eqtoken+1), type: ids[tk]};
-            }
-        }
+//         if(lhs.length == 1){
+//             const tk = lhs[0];
+//             if(ids[tk] != undefined && rhs.every((item) => {return !exclusive[tk].includes(item)})){
+//                 return {tokens: rhs, tokenMetas: tokenMetas.slice(eqtoken+1), type: ids[tk]};
+//             }
+//         }
 
-        if(rhs.length == 1){
-            const tk = rhs[0];
-            if(ids[tk] != undefined && lhs.every((item) => {return !exclusive[tk].includes(item)})){
-                return {tokens: lhs, tokenMetas: tokenMetas.slice(0,eqtoken), type: ids[tk]};
-            }
-        }
+//         if(rhs.length == 1){
+//             const tk = rhs[0];
+//             if(ids[tk] != undefined && lhs.every((item) => {return !exclusive[tk].includes(item)})){
+//                 return {tokens: lhs, tokenMetas: tokenMetas.slice(0,eqtoken), type: ids[tk]};
+//             }
+//         }
 
-        return {tokens: tokens, tokenMetas: tokenMetas, type: ExpressionType.IMPLICIT};
-    }
-}
+//         return {tokens: tokens, tokenMetas: tokenMetas, type: ExpressionType.IMPLICIT};
+//     }
+// }
 
 export function tokenizeLatexExpression(latex, tryIsolateUnknown){
 
@@ -1053,7 +1059,7 @@ export function tokenizeLatexExpression(latex, tryIsolateUnknown){
         }
 
         if(isNumber){
-            if(prevToken === '^'){
+            if(prevToken === '^' || prevToken === '_'){
                 //edge-case where latex: 'a^21' means 'a^2 * 1'
                 pushToken(LatexTokenType.NUMBER);
                 i--;
@@ -1441,16 +1447,20 @@ export function latexToTokenObjects(latexTokens){
                     }
 
                     if(op.code === OpCode.SUBS && prev.type === TokenType.FUNC){
-                        console.assert(latexTokens[i+1].type === LatexTokenType.NUMBER);
+                        //console.assert(latexTokens[i+1].type === LatexTokenType.NUMBER);
                         console.assert(latexTokens[i-1].str === 'log');
 
-                        prev.attributes.set(AttributiveCode.BASE, parseFloat(latexTokens[i+1].str));
+                        const next = latexTokens[i+1];
+
+                        const base = parseFloat(next.type === LatexTokenType.NUMBER ? next.str : ConstantInfo[next.str]?.value);
+
+                        prev.attributes.set(AttributiveCode.BASE, base ?? 1);
 
                         i++;
                         continue;
                     }
 
-                    console.assert(tryInsertImplicitTimes(prev, token));
+                    //console.assert(tryInsertImplicitTimes(prev, token));
                 }
 
                 // if(!validWithPrev && op.code === OpCode.SUB){
@@ -1462,12 +1472,13 @@ export function latexToTokenObjects(latexTokens){
                 //     continue;
                 // }
 
-                console.assert(validWithPrev, latexTokens);
+                console.assert(validWithPrev, latexTokens, op, i);
 
                 if(op.code === OpCode.POW){
                     console.assert(latexTokens[i+1] !== undefined);
 
-                    if(latexTokens[i+1].type === LatexTokenType.NUMBER){
+                    if(latexTokens[i+1].type === LatexTokenType.NUMBER && prev.type !== TokenType.OP){
+                        //binds if prev is bindable, i.e. is not another operator, a (, or a delimiter
                         compilerTokens.push({ type: TokenType.OP, code: OpCode.POWN });
                         continue;
                     }
@@ -1621,6 +1632,7 @@ export function latexToTokenObjects(latexTokens){
                 compilerTokens.push(token);
                 continue;
             }
+
         }
 
         const bracId = latexBrackets.indexOf(current.str);
@@ -1849,218 +1861,219 @@ function addMetadataToExpression(expression){
  * @param {*} type `int` Expression type
  * @returns `[String[], int[]]`
  */
-function insertImplicitOperations(tokenList, metaList, type) {
-    var lastToken = "";
-    var lastTokenType = 0;
+// function insertImplicitOperations(tokenList, metaList, type) {
+//     var lastToken = "";
+//     var lastTokenType = 0;
 
-    var tok = "";
-    var tokType = 0;
+//     var tok = "";
+//     var tokType = 0;
 
-    var final = [];
-    var finalMeta = [];
+//     var final = [];
+//     var finalMeta = [];
 
-    //var argCountStack = [];
-    var parenType = [];
+//     //var argCountStack = [];
+//     var parenType = [];
 
-    for (let i = 0; i < tokenList.length; i++) {
-        tok = tokenList[i];
-        tokType = metaList[i];
+//     for (let i = 0; i < tokenList.length; i++) {
+//         tok = tokenList[i];
+//         tokType = metaList[i];
 
-        //ab     -> a*b
-        //-a     -> '-u' a
-        //(a)(b) -> (a)*(b)
-        //a(b)   -> a*(b)
-        //(a)b   -> (a)*b
+//         //ab     -> a*b
+//         //-a     -> '-u' a
+//         //(a)(b) -> (a)*(b)
+//         //a(b)   -> a*(b)
+//         //(a)b   -> (a)*b
 
-        switch (tokType) {
-            case TokenType.BRKT:
-                //if left:
-                //lastToken is null or operator, push token as usual
-                //if lastToken is function
-                //if not round, error (invalid syntax)
-                //push to parenType, set my type to LFNC
-                //if lastToken is number, const, var, etc
-                //insert implicit multiplication
-                //push token as usual with updates
-                //else if right:
-                //check if matching parenthesis is LFNC
-                //if not round, error (invalid syntax)
-                //pop from parenType, update function with argCount
+//         switch (tokType) {
+//             case TokenType.BRKT:
+//                 //if left:
+//                 //lastToken is null or operator, push token as usual
+//                 //if lastToken is function
+//                 //if not round, error (invalid syntax)
+//                 //push to parenType, set my type to LFNC
+//                 //if lastToken is number, const, var, etc
+//                 //insert implicit multiplication
+//                 //push token as usual with updates
+//                 //else if right:
+//                 //check if matching parenthesis is LFNC
+//                 //if not round, error (invalid syntax)
+//                 //pop from parenType, update function with argCount
 
 
-                //left
-                let code = BracInfo[tok];
-                const matchingRight = {
-                    [BracCode.LRND]: BracCode.RRND,
-                    [BracCode.LSQR]: BracCode.RSQR,
-                    [BracCode.LCUR]: BracCode.RSQR,
-                    [BracCode.LFNC]: BracCode.RFNC
-                }
+//                 //left
+//                 let code = BracInfo[tok];
+//                 const matchingRight = {
+//                     [BracCode.LRND]: BracCode.RRND,
+//                     [BracCode.LSQR]: BracCode.RSQR,
+//                     [BracCode.LCUR]: BracCode.RSQR,
+//                     [BracCode.LFNC]: BracCode.RFNC
+//                 }
 
-                if (code == BracCode.LRND || code == BracCode.LSQR || code == BracCode.LCUR) {
-                    if (lastTokenType === TokenType.FUNC) {
-                        if (code !== BracCode.LRND) {
-                            console.error("Functions can only be used with round brackets");
-                        }
+//                 if (code == BracCode.LRND || code == BracCode.LSQR || code == BracCode.LCUR) {
+//                     if (lastTokenType === TokenType.FUNC) {
+//                         if (code !== BracCode.LRND) {
+//                             console.error("Functions can only be used with round brackets");
+//                         }
 
-                        code = BracCode.LFNC;
-                    } else if (
-                        lastTokenType === TokenType.NUM ||
-                        lastTokenType === TokenType.UNKN ||
-                        lastTokenType === TokenType.CNST ||
-                        lastTokenType === TokenType.VAR ||
-                        (lastTokenType === TokenType.BRKT && lastToken == ")")
-                    ) {
-                        final.push({ type: TokenType.OP, code: OpInfo["*"].code })
-                    }
+//                         code = BracCode.LFNC;
+//                     } else if (
+//                         lastTokenType === TokenType.NUM ||
+//                         lastTokenType === TokenType.UNKN ||
+//                         lastTokenType === TokenType.CNST ||
+//                         lastTokenType === TokenType.VAR ||
+//                         (lastTokenType === TokenType.BRKT && lastToken == ")")
+//                     ) {
+//                         final.push({ type: TokenType.OP, code: OpInfo["*"].code })
+//                     }
 
-                    parenType.push(code);
-                    final.push({ type: TokenType.BRKT, code: code });
-                } else {
-                    const leftType = parenType.pop();
-                    const rightType = matchingRight[leftType];
+//                     parenType.push(code);
+//                     final.push({ type: TokenType.BRKT, code: code });
+//                 } else {
+//                     const leftType = parenType.pop();
+//                     const rightType = matchingRight[leftType];
 
-                    if (rightType == BracCode.RFNC && code !== BracCode.RRND) {
-                        console.error("Mismatched function parenthesis");
-                    }
+//                     if (rightType == BracCode.RFNC && code !== BracCode.RRND) {
+//                         console.error("Mismatched function parenthesis");
+//                     }
 
-                    final.push({ type: TokenType.BRKT, code: rightType });
-                }
-                break;
+//                     final.push({ type: TokenType.BRKT, code: rightType });
+//                 }
+//                 break;
             
-            case TokenType.OP:
-                // if(lastTokenType == TokenType.FUNC){
-                //     //TODO: implement attributives as part of expression evaluation log_b(n) -> log(n,b)
-                //     if(FunctionAttributiveInfo[tok] != undefined){
-                //         final.push({ type: TokenType.ATT, code: FunctionAttributiveInfo[tok].code});
-                //         break;
-                //     }
+//             case TokenType.OP:
+//                 // if(lastTokenType == TokenType.FUNC){
+//                 //     //TODO: implement attributives as part of expression evaluation log_b(n) -> log(n,b)
+//                 //     if(FunctionAttributiveInfo[tok] != undefined){
+//                 //         final.push({ type: TokenType.ATT, code: FunctionAttributiveInfo[tok].code});
+//                 //         break;
+//                 //     }
 
-                //     //console.error
-                // }
+//                 //     //console.error
+//                 // }
 
-                //TODO: attributives for large operators
+//                 //TODO: attributives for large operators
 
-                if (tok == "-") {
-                    if (lastToken == "") {
-                        tok = "u-";
-                    } else if (lastTokenType == TokenType.BRKT) {
-                        //or '[' or '{'
-                        if (lastToken == "(") {
-                            tok = "u-";
-                        }
-                    } else if (
-                        lastTokenType == TokenType.OP || 
-                        lastTokenType == TokenType.FUNC || 
-                        lastTokenType == TokenType.DELIM
-                    ) {
-                        tok = "u-";
-                    }
-                }
+//                 if (tok == "-") {
+//                     if (lastToken == "") {
+//                         tok = "u-";
+//                     } else if (lastTokenType == TokenType.BRKT) {
+//                         //or '[' or '{'
+//                         if (lastToken == "(") {
+//                             tok = "u-";
+//                         }
+//                     } else if (
+//                         lastTokenType == TokenType.OP || 
+//                         lastTokenType == TokenType.FUNC || 
+//                         lastTokenType == TokenType.DELIM
+//                     ) {
+//                         tok = "u-";
+//                     }
+//                 }
 
-                //console.log("Tok: " + tok + ", Code: " + OpInfo[tok]);
+//                 //console.log("Tok: " + tok + ", Code: " + OpInfo[tok]);
 
-                if(doEvalsAsFuncExpressions){
-                    const fn = generateMethodExprForOp(OpInfo[tok].code, ExpressionInfoByType[type].tokType, false); //%%EDGE %%FUNCEXPR
+//                 if(doEvalsAsFuncExpressions){
+//                     const fn = generateMethodExprForOp(OpInfo[tok].code, ExpressionInfoByType[type].tokType, false); //%%EDGE %%FUNCEXPR
 
-                    final.push({ type: TokenType.OP, code: OpInfo[tok].code, fnexp: fn })
-                }else{
-                    final.push({ type: TokenType.OP, code: OpInfo[tok].code });
-                }
+//                     final.push({ type: TokenType.OP, code: OpInfo[tok].code, fnexp: fn })
+//                 }else{
+//                     final.push({ type: TokenType.OP, code: OpInfo[tok].code });
+//                 }
                 
-                break;
+//                 break;
             
-            case TokenType.FUNC:
-                if(doEvalsAsFuncExpressions){
-                    const fn = generateMethodExprForFunc(FuncInfo[tok].code, ExpressionInfoByType[type].tokType, tok); //%%FUNCEXPR
+//             case TokenType.FUNC:
+//                 if(doEvalsAsFuncExpressions){
+//                     const fn = generateMethodExprForFunc(FuncInfo[tok].code, ExpressionInfoByType[type].tokType, tok); //%%FUNCEXPR
 
-                    //TODO: implement attributes so that they affect the function
-                    final.push({ type: TokenType.FUNC, code: FuncInfo[tok].code, fnexp: fn, attributes: {} })
-                }else{
-                    final.push({ type: TokenType.FUNC, code: FuncInfo[tok].code, attributes: {} })
-                }
-                break;
+//                     //TODO: implement attributes so that they affect the function
+//                     final.push({ type: TokenType.FUNC, code: FuncInfo[tok].code, fnexp: fn, attributes: {} })
+//                 }else{
+//                     final.push({ type: TokenType.FUNC, code: FuncInfo[tok].code, attributes: {} })
+//                 }
+//                 break;
             
-            case TokenType.DELIM:
-                final.push({ type: TokenType.DELIM })
-                break;
-            case TokenType.NUM:
-            case TokenType.STRG:
-            case TokenType.UNKN:
-            case TokenType.CNST:
-            case TokenType.VAR:
-            default:
-                //operands
-                if (
-                    lastTokenType == TokenType.NUM ||
-                    lastTokenType == TokenType.STRG ||
-                    lastTokenType == TokenType.UNKN ||
-                    lastTokenType == TokenType.CNST ||
-                    lastTokenType == TokenType.VAR ||
-                    lastTokenType == TokenType.QUAD ||
-                    lastTokenType == TokenType.DUAL || 
-                    (lastTokenType == TokenType.BRKT && lastToken == ")") ||
-                    lastTokenType >= 10
-                ) {
-                    final.push({ type: TokenType.OP, code: OpInfo["*"].code }); //%%TOKEN
-                    finalMeta.push(TokenType.OP);
-                }
+//             case TokenType.DELIM:
+//                 final.push({ type: TokenType.DELIM })
+//                 break;
+//             case TokenType.NUM:
+//             case TokenType.STRG:
+//             case TokenType.UNKN:
+//             case TokenType.CNST:
+//             case TokenType.VAR:
+//             default:
+//                 //operands
+//                 if (
+//                     lastTokenType == TokenType.NUM ||
+//                     lastTokenType == TokenType.STRG ||
+//                     lastTokenType == TokenType.UNKN ||
+//                     lastTokenType == TokenType.CNST ||
+//                     lastTokenType == TokenType.VAR ||
+//                     lastTokenType == TokenType.QUAD ||
+//                     lastTokenType == TokenType.DUAL || 
+//                     (lastTokenType == TokenType.BRKT && lastToken == ")") ||
+//                     lastTokenType >= 10
+//                 ) {
+//                     final.push({ type: TokenType.OP, code: OpInfo["*"].code }); //%%TOKEN
+//                     finalMeta.push(TokenType.OP);
+//                 }
 
-                var value = 0;
-                switch(tokType) {
-                    case TokenType.NUM: value = parseFloat(tok); break;
-                    case TokenType.STRG: value = tok; break;
-                    case TokenType.UNKN: value = UnknownInfo[tok]; break;
-                    case TokenType.CNST: value = ConstantInfo[tok].value; break;
-                    case TokenType.VAR: value = 0; break;
-                    //default??
-                }
+//                 var value = 0;
+//                 switch(tokType) {
+//                     case TokenType.NUM: value = parseFloat(tok); break;
+//                     case TokenType.STRG: value = tok; break;
+//                     case TokenType.UNKN: value = UnknownInfo[tok]; break;
+//                     case TokenType.CNST: value = ConstantInfo[tok].value; break;
+//                     case TokenType.VAR: value = 0; break;
+//                     //default??
+//                 }
 
-                // if(finalMeta[finalMeta.length - 1] == TokenType.ATT){
-                //     //last token is attributive
-                //     //if the above is true, then the token before that is either a function or large operator
+//                 // if(finalMeta[finalMeta.length - 1] == TokenType.ATT){
+//                 //     //last token is attributive
+//                 //     //if the above is true, then the token before that is either a function or large operator
 
-                //     const attributive = final.pop(); //pop attributive
+//                 //     const attributive = final.pop(); //pop attributive
 
 
-                //     var old = final.pop();
-                //     old.attributes[attributive.code] = value;
-                // }
+//                 //     var old = final.pop();
+//                 //     old.attributes[attributive.code] = value;
+//                 // }
 
-                if(tokType == TokenType.UNKN){
-                    //unkowns don't get pushed with their values, because for duals & quads unknown values are set at runtime
-                    final.push({ type: tokType, value: value}); //%%TOKEN
-                    break;
-                }
+//                 if(tokType == TokenType.UNKN){
+//                     //unkowns don't get pushed with their values, because for duals & quads unknown values are set at runtime
+//                     final.push({ type: tokType, value: value}); //%%TOKEN
+//                     break;
+//                 }
 
-                const evalType = ExpressionInfoByType[type].tokType;
-                switch(evalType){
-                    case TokenType.NUM:
-                        final.push({ type: tokType, value: value}); //%%TOKEN
-                        break;
-                    case TokenType.QUAD:
-                        final.push({ type: TokenType.QUAD, value: Array(4).fill(value)}); //%%TOKEN
-                        break;
-                    case TokenType.DUAL:
-                        final.push({ type: TokenType.DUAL, value: Array(2).fill(value), edge: [0,0,0]}); //%%TOKEN
-                        break;
-                }
+//                 const evalType = ExpressionInfoByType[type].tokType;
+//                 switch(evalType){
+//                     case TokenType.NUM:
+//                         final.push({ type: tokType, value: value}); //%%TOKEN
+//                         break;
+//                     case TokenType.QUAD:
+//                         final.push({ type: TokenType.QUAD, value: Array(4).fill(value)}); //%%TOKEN
+//                         break;
+//                     case TokenType.DUAL:
+//                         final.push({ type: TokenType.DUAL, value: Array(2).fill(value), edge: [0,0,0]}); //%%TOKEN
+//                         break;
+//                 }
 
-                break;
-        }
+//                 break;
+//         }
 
-        //final.push(tok);
-        finalMeta.push(tokType);
+//         //final.push(tok);
+//         finalMeta.push(tokType);
 
-        lastToken = tok;
-        lastTokenType = tokType;
-        //could potentially cause issues since if an operation inserts then the next token's kn of its previous token will be wrong
-    }
+//         lastToken = tok;
+//         lastTokenType = tokType;
+//         //could potentially cause issues since if an operation inserts then the next token's kn of its previous token will be wrong
+//     }
 
-    return [final, finalMeta];
-}
+//     return [final, finalMeta];
+// }
 
 // %%FUNCEXPR
+
 /**
  * Generate a function expression for an operator
  * @param {*} opcode `int` operator id number
@@ -2069,8 +2082,6 @@ function insertImplicitOperations(tokenList, metaList, type) {
  * @returns `callBack` function expression for an operator
  */
 function generateMethodExprForOp(opcode, tokType, evalTrue = true){
-    //TODO: quad 'edge' handling
-    //const fromValue = (a) => {return {type: TokenType.NUM, value: a}};
     if(tokType == TokenType.NUM){
         if(!evalTrue){
             switch(opcode){
@@ -2094,6 +2105,8 @@ function generateMethodExprForOp(opcode, tokType, evalTrue = true){
                 case OpCode.NOT: return (a) => -a;
                 case OpCode.FACT: return (a) => (func_gamma(a+1));
                 case OpCode.NEG: return (a) => (-a);
+                case OpCode.PM: return (a,b) => a;
+                case OpCode.PCT: return (a) => a;
                 default:
                     console.error("Unknown operator attempted to convert to function expression: ", opcode);
                     return (a,b) => 0;
@@ -2105,7 +2118,7 @@ function generateMethodExprForOp(opcode, tokType, evalTrue = true){
             case OpCode.MUL: return (a, b) => (a*b);
             case OpCode.DIV: return (a, b) => (a/b);
             case OpCode.POW: 
-            case OpCode.POWN: return (a, b) => (a**b);
+            case OpCode.POWN: return (a, b) => a**b;
             case OpCode.LT: return (a, b) => (a<b);
             case OpCode.LTE: return (a, b) => (a<=b);
             case OpCode.GT: return (a, b) => (a>b);
@@ -2118,6 +2131,8 @@ function generateMethodExprForOp(opcode, tokType, evalTrue = true){
             case OpCode.NOT: return (a) => (!a);
             case OpCode.FACT: return (a) => (func_gamma(a+1));
             case OpCode.NEG: return (a) => (-a);
+            case OpCode.PM: return (a,b) => a;
+            case OpCode.PCT: return (a) => a;
             default:
                 console.error("Unknown operator attempted to convert to function expression: ", opcode);
                 return (a,b) => 0;
@@ -2811,6 +2826,7 @@ export function evaluateExpression(compiledExpression, input, options) {
                     console.assert(a !== undefined, a); 
                     console.assert(b !== undefined, b);
                     result = evaluateMethodExprForBinaryOp(value, ExpressionInfoByType[compiledExpression.type].tokType, a, b);
+                    //console.log(result);
                     solve.push(result);
                     break;
                 }
@@ -2993,10 +3009,15 @@ export function readExpressionWithReplacements(compiledExpression, input) {
 
             if(action.type == TokenType.VAR){
                 //redo later to add greater variety of types that a var can assume
-                const value = getVariable(action.varId);
-                if(value === undefined) console.error('variable '+ action.varId+ ' not found');
+                const evalResult = getVariable(action.varId);
+                if(evalResult === undefined) console.error('variable '+ action.varId+ ' not found');
 
-                const token = {type: TokenType.NUM, value: value};
+                console.assert(evalResult.type === TokenType.NUM);
+                console.assert(evalResult.value !== undefined);
+
+                console.log(evalResult);
+
+                const token = evalResult;
                 //console.log('replacing ', token);
                 tokenList.splice(action.index, 1, token);
                 //console.log(tokenList);
@@ -3015,7 +3036,7 @@ export function readExpressionWithReplacements(compiledExpression, input) {
                 tokenList.splice(action.index, 1, newtoken);
             }
             if(action.type === TokenType.VAR){
-                let newtoken = {type: TokenType.DUAL, value: [getVariable(action.varId), getVariable(action.varId)], edge: [0,0,0]};
+                let newtoken = {type: TokenType.DUAL, value: [getVariable(action.varId).value, getVariable(action.varId).value], edge: [0,0,0]};
                 tokenList.splice(action.index, 1, newtoken);
             }
         }
@@ -3110,10 +3131,10 @@ export function readExpressionWithReplacements(compiledExpression, input) {
             tokenList.splice(action.index, 1, newtoken);
         }else if(action.type === TokenType.VAR){
             const newtoken = newQuad(action.varId, 
-                getVariable(action.varId),
-                getVariable(action.varId),
-                getVariable(action.varId),
-                getVariable(action.varId)
+                getVariable(action.varId).value,
+                getVariable(action.varId).value,
+                getVariable(action.varId).value,
+                getVariable(action.varId).value
             );
 
             tokenList.splice(action.index, 1, newtoken);
@@ -3134,6 +3155,14 @@ export function readExpressionWithReplacements(compiledExpression, input) {
 function evaluateMethodExprForUnaryOp(token, evalType, a){
     const arg = a.value;
 
+    const unca = a.uncertainty ?? 0;
+
+    const unc = evaluateUnaryOpUncertainty(token.code,evalType,a,unca);
+
+    if(token.code === OpCode.PCT){
+        return {type: TokenType.NUM, value: arg/100, interpret: 'pct'};
+    }
+
     // if(token.type != evalType){
     //     if(
     //         (evalType == TokenType.QUAD || evalType == TokenType.DUAL) &&
@@ -3147,7 +3176,7 @@ function evaluateMethodExprForUnaryOp(token, evalType, a){
 
     switch(evalType){
         case TokenType.NUM:
-            return {type: TokenType.NUM, value: v};
+            return {type: TokenType.NUM, value: v, uncertainty: unc};
         case TokenType.QUAD:
             return {
                 type: TokenType.QUAD, 
@@ -3167,6 +3196,18 @@ function evaluateMethodExprForUnaryOp(token, evalType, a){
     }
 }
 
+function evaluateUnaryOpUncertainty(opcode, evalType, a, aUnc){
+    if(evalType !== TokenType.NUM) return 0;
+
+    switch(opcode){
+        case OpCode.NOT:
+        case OpCode.NEG:
+            return aUnc;
+        case OpCode.FACT:
+            return aUnc;
+    }
+}
+
 /**
  * 
  * @param {*} token the binary operator
@@ -3179,6 +3220,22 @@ function evaluateMethodExprForBinaryOp(token, evalType, a,b){
     const arga = a.value;
     const argb = b.value;
 
+    const unca = a.uncertainty ?? 0;
+    const uncb = b.uncertainty ?? 0;
+
+    if(token.code === OpCode.PM){
+        //console.log(a,'±',b);
+        const unc = (b.interpret === 'pct') ? arga*argb : (argb+uncb);
+        //console.log(unc);
+
+        //const out = {type: TokenType.NUM, value: arga, uncertainty: unc, interpret: a.interpret ?? undefined};
+
+        return {type: TokenType.NUM, value: arga, uncertainty: unc, interpret: a.interpret ?? undefined};
+    }
+
+    const unc = evaluateBinaryOpUncertainty(token.code,evalType,arga,unca,argb,uncb);
+    //console.log(unc);
+
     console.assert(token.fnexp !== undefined, token);
 
     const v = token.fnexp(arga,argb);
@@ -3186,7 +3243,7 @@ function evaluateMethodExprForBinaryOp(token, evalType, a,b){
     switch(evalType){
         case TokenType.NUM:
             return {
-                type: TokenType.NUM, value: v
+                type: TokenType.NUM, value: v, uncertainty: unc, interpret: a.interpret ?? b.interpret ?? undefined
             };
         case TokenType.QUAD:
             if(a.edges == undefined || b.edges == undefined){
@@ -3210,6 +3267,36 @@ function evaluateMethodExprForBinaryOp(token, evalType, a,b){
     }
 }
 
+function evaluateBinaryOpUncertainty(opcode, evalType, a, aUnc, b, bUnc){
+    if(evalType !== TokenType.NUM) return 0;
+
+    switch(opcode){
+        case OpCode.ADD: 
+        case OpCode.SUB:
+        case OpCode.LT:
+        case OpCode.LTE:
+        case OpCode.GT:
+        case OpCode.GTE:
+        case OpCode.EQ:
+        case OpCode.NEQ:
+            return aUnc+bUnc;
+        case OpCode.MUL:
+        case OpCode.AND:
+        case OpCode.OR:
+        case OpCode.XOR:
+            const v = (aUnc/a + bUnc/b);
+            //console.log(v,aUnc,bUnc,a,b);
+            return v*(a*b);
+        case OpCode.DIV:
+            return (aUnc/a + bUnc/b)*(b/a);
+        case OpCode.POW:
+        case OpCode.POWN:
+            return Math.abs(b*aUnc/a)*(a**b);
+        default:
+            return 0;
+    }
+}
+
 /**
  * 
  * @param {*} token the function token
@@ -3219,9 +3306,11 @@ function evaluateMethodExprForBinaryOp(token, evalType, a,b){
  */
 function evaluateMethodExprForFunc(token, evalType, rawargs, attributes){
     console.assert(rawargs.length !== undefined, rawargs);
-    // console.assert(typeof rawargs == "object", typeof rawargs);
-    // console.assert(typeof rawargs[0] == "object", typeof rawargs[0],rawargs);
     const args = rawargs.map((tok) => tok.value);
+
+    const argsUnc = rawargs.map((arg) => arg.uncertainty ?? 0);
+
+    const unc = evaluateFuncUncertainty(token,evalType,args,argsUnc); //unneccesary evaluation of a/b for FRAC;
 
     const pow = attributes.get(AttributiveCode.POWER);
     //const base = token.code === FuncCode.LOG ? attributes.get(AttributiveCode.BASE) : undefined;
@@ -3239,7 +3328,8 @@ function evaluateMethodExprForFunc(token, evalType, rawargs, attributes){
         case TokenType.NUM:
             return {
                 type: TokenType.NUM, 
-                value: v
+                value: v,
+                uncertainty: unc
             };
         case TokenType.QUAD:
             const vertex4 = [
@@ -3270,6 +3360,26 @@ function evaluateMethodExprForFunc(token, evalType, rawargs, attributes){
             console.error('Invalid eval type passed to method expr',evalType);
             break;
     }
+}
+
+function evaluateFuncUncertainty(functoken, evalType, args, argsUnc){
+    const funccode = functoken.code;
+
+    switch(funccode){
+        case FuncCode.FRAC:
+            return (argsUnc[0]/args[0] + argsUnc[1]/args[1])*(args[1]/args[0]); 
+        case FuncCode.LN:
+            return argsUnc[0]/args[0];
+        case FuncCode.LOG:
+            const base = functoken.attributes.get(AttributiveCode.BASE);
+            if(base !== undefined){
+                return argsUnc[0]/(args[0]*Math.log(base));
+            }
+            return argsUnc[0]/(args[0]*Math.log(10));
+        default: 
+            return 0;
+    }
+    return 0;
 }
 
 function aggregateEdges(edges){
@@ -3520,8 +3630,8 @@ function handleEdgePairForBinaryOp(opcode, a1, b1, a2, b2){
             if(a1>0 && a2 > 0){
                 break;
             }
-            const r1 = Math.pow(a1, b1);
-            const r2 = Math.pow(a2, b2);
+            const r1 = a1**b1;
+            const r2 = a2**b2;
 
             if(r1 == NaN || r2 == NaN){
                 holes = 1;
@@ -3555,7 +3665,7 @@ function binaryOp(opcode, a, b, evaluateDiff = true) {
             case OpCode.MUL: return a * b;
             case OpCode.DIV: return a / b;
             case OpCode.POW:
-            case OpCode.POWN: return Math.pow(a, b);
+            case OpCode.POWN: return a**b;
             case OpCode.LT: return evaluateDiff ? a-b : (a < b);
             case OpCode.LTE: return evaluateDiff ? a-b : (a <= b);
             case OpCode.GT: return evaluateDiff ? b-a: (a > b);
@@ -3888,6 +3998,7 @@ function func_gamma(n) {
     ];
 
     if (n < 0.5) {
+        if(n-Math.floor(n) === 0) return Math.round(Math.PI / (Math.sin(Math.PI * n) * func_gamma(1 - n)));
         return Math.PI / (Math.sin(Math.PI * n) * func_gamma(1 - n));
     } else {
         n -= 1;
@@ -3898,6 +4009,7 @@ function func_gamma(n) {
         }
 
         let t = n + lancoszCoefficients.length - 0.5;
+        if(n-Math.floor(n) === 0) return Math.round(Math.sqrt(2 * Math.PI) * Math.pow(t, n + 0.5) * Math.exp(-t) * x);
         return Math.sqrt(2 * Math.PI) * Math.pow(t, n + 0.5) * Math.exp(-t) * x;    
     }
 

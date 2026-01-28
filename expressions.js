@@ -136,27 +136,30 @@ function getDependencies(name){
 
         if(r !== undefined) r.forEach((d2) => found.add(d2));
     });
+
+    return found;
 }
 
-export function registerVariable(name, value, varDependencies = []){
-    if(variableData.get(name) !== undefined) return false;
+export function registerVariable(name, varinfo, varDependencies = []){
+    if(variableData.get(name) !== undefined) { console.log(name + ' already defined'); return false;}
 
     let dependencies = new Set();
     varDependencies.forEach((d) => {
         dependencies.add(getDependencies(d));
+        dependencies.add(d);
     });
 
-    if(typeof value === 'number'){
-        variableData.set(name, {value: value, dependencies: dependencies});
-        //console.log(getAllExpressions());
+    if(typeof varinfo === 'object'){
+        variableData.set(name, {value: varinfo, dependencies: dependencies});
         return true;
     }
 
-    if(typeof value === 'string'){
-        variableData.set(name, {value: value, dependencies: dependencies});
+    if(typeof varinfo === 'string'){
+        variableData.set(name, {value: varinfo, dependencies: dependencies});
         return true;
     }
 
+    console.log(typeof + ' already defined');
     return false;
 }
 

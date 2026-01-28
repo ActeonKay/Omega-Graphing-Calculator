@@ -122,10 +122,10 @@
     .equationWrapper {
       font-size: 110%;
       margin-top: auto;
-      margin-bottom: 9px;
+      margin-bottom: 6px;
       margin-left: 15px;
       margin-right: 15px;
-      padding-top: 9px;
+      padding-top: 12px;
       vertical-align: baseline;
     }
 
@@ -223,7 +223,7 @@
   <script type="module">
     import { 
         evaluateExpression, 
-        tokenizeExpression, getTokenizedExpressions, getTokenizedExpressionMetas,
+        //tokenizeExpression, getTokenizedExpressions, getTokenizedExpressionMetas,
         compileExpression, getCompiledExpressions, tokenizeLatexExpression, latexToTokenObjects
     } from "./evaluator.js";  
 
@@ -237,7 +237,7 @@
     const fpsDisplay = document.getElementById('fps');
 
     // --- Options ---
-    const showQuadOutlines = false;
+    const showQuadOutlines = true;
     const doQuadTooltip = false;
     let quadSelected = []; //[x,y,w,h]
     const maxQuads = 4096;
@@ -276,7 +276,7 @@
     var MQ = MathQuill.getInterface(2);
     const mathQuillConfig = {
       restrictMismatchedBrackets: true,
-      autoCommands: 'pi theta phi Gamma sqrt nthroot sum int',
+      autoCommands: 'pi theta phi Gamma sqrt nthroot sum int plusmn',
       
     }
     MQ.config(mathQuillConfig);
@@ -442,7 +442,7 @@
         console.log(e);
       }
 
-      if(test === null){
+      if(test === null && canRecurse){
         update();
         return;
       }
@@ -469,9 +469,13 @@
           type: -1,
           color: old.color,
           latex: latex,
-          tokens: []
+          tokens: [],
+          varDependencies: new Set()
         }
       }
+
+      console.assert(old.varDependencies !== undefined);
+      console.assert(compiled.varDependencies !== undefined);
 
       compiled.id = wanted;
       compiled.color = old.color; 
@@ -497,15 +501,17 @@
       if(newExpr.type === 7){
         //console.log('registering');
 
-        const value = evaluateExpression(newExpr).value;
+        const evalResult = evaluateExpression(newExpr);
+        const value = evalResult.value;
+        const unc = evalResult.uncertainty;
 
         console.assert(newExpr.var !== undefined);
         console.assert(newExpr.varDependencies !== undefined);
 
-        if(registerVariable(newExpr.var, value,newExpr.varDependencies)){
+        if(registerVariable(newExpr.var, evalResult,newExpr.varDependencies)){
           //console.log('set var ', newExpr.var , ' to ', value);
         }else{
-          console.log('failed to set var ', newExpr.var , ' to ', value);
+          console.log('failed to set var ', newExpr.var , ' to ', evalResult);
         }
 
         if(canRecurse){
@@ -513,11 +519,13 @@
 
           expressions.forEach((exp) => {
             if(exp.id === newExpr.id) return;
+            console.assert(exp.varDependencies !== undefined);
+
 
             console.log('exp: ', exp, 'vs', newExpr,'dependencies:', exp.varDependencies);
             if(exp.varDependencies.length === 0) return;
 
-            if(exp.varDependencies.includes(newExpr.var)){
+            if(exp.varDependencies.has(newExpr.var)){
               const depEqRow = document.getElementById(expRowId+exp.id);
 
               console.assert(depEqRow !== undefined);
@@ -552,6 +560,7 @@
           }
         );
         const displayedResult = parseTokenToLatex(evaluateExpression(newExpr));
+        //console.log(displayedResult);
 
         let result;
         let resultMathField;
@@ -582,7 +591,7 @@
           }
         );
         //console.log('doing???????');
-        //if(index === -1) return;
+        if(index === -1) return;
 
         //console.log('removing ', index,wrapperElement.childNodes.length, 'because ', oldExpr.type);
         wrapperElement.removeChild(wrapperElement.childNodes[index]);
@@ -608,9 +617,13 @@
 
     function parseTokenToLatex(token){
       const value = token.value;
+      const uncertainty = token.uncertainty ?? 0;
+      const asPercent = token.interpret === 'pct';
 
       if(isFinite(value)){
-        return '='+value;
+        const strUncertainty = uncertainty === 0 ? '' : '±'+(asPercent ? uncertainty*100+'%' : uncertainty);
+        const strValue = (asPercent?value*100+'%':value);
+        return '='+strValue+strUncertainty;
       }
 
       if(value === NaN){
@@ -690,7 +703,8 @@
         type: -1,
         color: getNextColor(),
         latex: '',
-        tokens: []
+        tokens: [],
+        varDependencies: new Set()
       };
 
       expressions.splice(index, 0, expression);
