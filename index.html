@@ -224,7 +224,8 @@
     import { 
         evaluateExpression, 
         //tokenizeExpression, getTokenizedExpressions, getTokenizedExpressionMetas,
-        compileExpression, getCompiledExpressions, tokenizeLatexExpression, latexToTokenObjects
+        compileExpression, getCompiledExpressions, tokenizeLatexExpression, latexToTokenObjects,
+        validFunctions
     } from "./evaluator.js";  
 
     import {
@@ -237,7 +238,7 @@
     const fpsDisplay = document.getElementById('fps');
 
     // --- Options ---
-    const showQuadOutlines = true;
+    const showQuadOutlines = false;
     const doQuadTooltip = false;
     let quadSelected = []; //[x,y,w,h]
     const maxQuads = 4096;
@@ -276,8 +277,8 @@
     var MQ = MathQuill.getInterface(2);
     const mathQuillConfig = {
       restrictMismatchedBrackets: true,
-      autoCommands: 'pi theta phi Gamma sqrt nthroot sum int plusmn',
-      
+      autoCommands: 'pi theta phi Gamma sqrt plusmn degree binom', //add nthroot, sum, int
+      autoOperatorNames: validFunctions.join(' ')
     }
     MQ.config(mathQuillConfig);
 
@@ -462,7 +463,7 @@
       try{
         compiled = compileExpression(test);
       }catch(e){
-        console.warn("Invalid compiled expression");
+        console.warn("Invalid compiled expression",e);
 
         compiled = {
           id: old.id,
@@ -502,8 +503,13 @@
         //console.log('registering');
 
         const evalResult = evaluateExpression(newExpr);
-        const value = evalResult.value;
-        const unc = evalResult.uncertainty;
+
+        
+       
+
+        console.log(evalResult); 
+        const value = evalResult.value; 
+        const unc = evalResult.uncertainty; 
 
         console.assert(newExpr.var !== undefined);
         console.assert(newExpr.varDependencies !== undefined);
@@ -559,7 +565,7 @@
             return n.classList.contains(expResultClass);
           }
         );
-        const displayedResult = parseTokenToLatex(evaluateExpression(newExpr));
+        const displayedResult = '='+parseTokenToLatex(evaluateExpression(newExpr));
         //console.log(displayedResult);
 
         let result;
@@ -616,31 +622,45 @@
     }
 
     function parseTokenToLatex(token){
+      //return '\\frac{1}{\\sqrt{x^2 + 1}}';
+      //return '\\begin{array}{cc} a & b \\\\ c & d \\end{array}';
+
+      if(token.type === 17){ //HARDCODED
+        console.log(token.value);
+        return '['+token.value.join(', ')+']';
+      }
+
+      if(token.type === 18){
+        return '('+token.value.join(', ')+')';
+      }
+
       const value = token.value;
       const uncertainty = token.uncertainty ?? 0;
       const asPercent = token.interpret === 'pct';
+      //const asRadians = token.interpret === 'rad';
 
       if(isFinite(value)){
-        const strUncertainty = uncertainty === 0 ? '' : '±'+(asPercent ? uncertainty*100+'%' : uncertainty);
+        //weird bug where if this is a === V then the expression [1] evaluates to 1±0, instead of just 1
+        const strUncertainty = uncertainty == 0 ? '' : '±'+(asPercent ? uncertainty*100+'%' : uncertainty);
         const strValue = (asPercent?value*100+'%':value);
-        return '='+strValue+strUncertainty;
+        return strValue+strUncertainty;
       }
 
       if(value === NaN){
-        return '=\\operatorname{NaN}';
+        return '\\operatorname{NaN}';
       }
 
       if(value === undefined){
         console.log('result: ', undefined);
-        return '=\\operatorname{undefined}'
+        return '\\operatorname{undefined}'
       }
 
       if(value === Infinity){
-        return '=\\infty';
+        return '\\infty';
       }
 
       if(value === -Infinity){
-        return '=-\\infty';
+        return '-\\infty';
       }
     }
 
@@ -783,6 +803,9 @@
         case 3: //x=f(y)
           drawAsXofY(expr);
           break;
+        case 0:
+        case 7:
+          drawEvalResult(expr);
         case 9: //blank
           break;
         default:
@@ -840,6 +863,31 @@
 
     }
 
+    function drawEvalResult(expr){
+      //console.log('drawing eval');
+
+      currentExpression = expr;
+
+      const evalResult = evaluateExpression(currentExpression);
+
+      if(evalResult.type === 18 && evalResult.value.length === 2){
+        drawPoint(evalResult.value[0],evalResult.value[1],true);
+      }
+    }
+
+    function drawPoint(x,y,fill){
+      const screenX = toScreenCoordsX(x);
+      const screenY = toScreenCoordsY(y);
+      ctx.beginPath();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = currentExpression.color;
+      ctx.fillStyle = currentExpression.color;
+
+      ctx.arc(screenX,screenY,4,0,Math.PI*2,false);
+
+      if(fill) ctx.fill(); else ctx.stroke();
+    }
+
     function drawAsQuad(expr){
       currentExpression = expr; //replace later with the rect() functions actually taking an expression as input?
 
@@ -874,7 +922,8 @@
       const maxY = toGraphCoordsY(window.innerHeight);
 
       ctx.beginPath();
-      ctx.lineWidth = 2.5;
+      ctx.lineWidth = 3;
+      ctx.lineCap = "round";
       ctx.strokeStyle = currentExpression.color; //FIX to not rely on currentExpression variable
 
       let gy = evaluateExpression(
@@ -886,8 +935,9 @@
       segmentCount = 0;
 
       let px = 0; //previous x
+      let py = gy;
       for(let x=dx; x<window.innerWidth; x+= dx){
-        trySegYofX(px, x, 0, segmentCount < maxSegments);
+        py = trySegYofX(px, x, 0, segmentCount < maxSegments, py);
 
         px = x;
       }
@@ -907,7 +957,7 @@
       return n*o
     }
 
-    function trySegYofX(lx, rx, depth, allowSubdivision){
+    function trySegYofX(lx, rx, depth, allowSubdivision, py){
       segmentCount++;
 
       // const x1=toGraphCoordsX(lx), x2=toGraphCoordsX(rx);
@@ -937,7 +987,8 @@
 
       const s = getRenderState(
         result.edge, 
-        allowSubdivision && segmentCount < maxSegments
+        allowSubdivision && segmentCount < maxSegments,
+        y-py
       );
 
       if(s === 1){
@@ -952,6 +1003,8 @@
         // TODO: asymptote detection?
         ctx.moveTo(rx, y);
       }
+
+      return y;
     }
 
     function drawAsXofY(expr){
@@ -1006,7 +1059,7 @@
       ctx.stroke();
     }
 
-    function getRenderState(edge, allowSubdivision = true){
+    function getRenderState(edge, allowSubdivision = true, d){
 
       if(allowSubdivision){
         if(edge[1] > 0 || edge[2] > 0){
@@ -1016,7 +1069,7 @@
         return 0;
       }
 
-      if(edge[1] == 0 && edge[2] == 0){
+      if(edge[1] == 0 && (edge[2] == 0 || Math.abs(d)<2)){
         return 0;
       }
 
@@ -1410,6 +1463,7 @@
 
         ctx.lineWidth = 1;
         ctx.strokeStyle = "#ccc";
+        ctx.fillStyle = "#000";
 
         //Find visible graph coordinate bounds
         const graphLeft   = toGraphCoordsX(0);
@@ -1601,7 +1655,7 @@
         color: color,
         latex: '',
         tokens: [],
-        varDependencies: []
+        varDependencies: new Set()
       };
 
       appendExpression(blankExpression);

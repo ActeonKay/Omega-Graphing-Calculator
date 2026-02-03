@@ -1,5 +1,6 @@
 import{
-    getVariable, getAllVariables
+    getVariable, getAllVariables,
+    getVariableData
 } from "./expressions.js";
 
 export const ExpressionType = {
@@ -50,7 +51,8 @@ const TokenType = {
     VEC3: 14,
     ALPHANUM: 15,
     ATT: 16,
-    ARRAY: 17
+    ARRAY: 17, //{type: 17, valuetype: int, value: [values], uncertainties: int[] ?? 0[] }
+    TUPLE: 18 //same as array
 }
 
 const LatexTokenType = {
@@ -108,7 +110,9 @@ const OpCode = {
     POWN: 21,
     SUBS: 22,
     PM: 23,
-    PCT: 24
+    PCT: 24,
+    DEG: 25,
+    ABS: 26
 }
 
 const OpAssoc = {
@@ -134,15 +138,17 @@ const OpInfo = {
     "||": { code: OpCode.OR, precedence: -2, associativity: OpAssoc.LEFT, arity: 2 },
     "^^": { code: OpCode.XOR, precedence: -2, associativity: OpAssoc.LEFT, arity: 2 },
     "~": { code: OpCode.NOT, precedence: 5, associativity: OpAssoc.RIGHT, arity: 1 }, //prefix unary (L)
-    "!": { code: OpCode.FACT, precedence: 6, associativity: OpAssoc.LEFT, arity: 1 }, //suffix unary (R)
+    "!": { code: OpCode.FACT, precedence: 5, associativity: OpAssoc.LEFT, arity: 1 }, //suffix unary (R)
     "u-": { code: OpCode.NEG, precedence: 3, associativity: OpAssoc.RIGHT, arity: 1 }, //prefix unary (L)
-    "#": { code: OpCode.CRP, precedence: 2, associativity: OpAssoc.LEFT, arity: 2 },
+    "times": { code: OpCode.CRP, precedence: 2, associativity: OpAssoc.LEFT, arity: 2 },
     "\\": {code: OpCode.ATT, precedence: 101, associativity: OpAssoc.LEFT, arity: 2},
     "^n": { code: OpCode.POWN, precedence: 6, associativity: OpAssoc.RIGHT, arity: 2 }, //for things like x^2!, the x^2 should come first as it is not x^{2!}
     "_": { code: OpCode.SUBS, precedence: 6, associativity: OpAssoc.RIGHT, arity: 2},
-    "±": { code: OpCode.PM, precedence: 1, associativity: OpAssoc.LEFT, arity: 2 },
+    "±": { code: OpCode.PM, precedence: 1.5, associativity: OpAssoc.LEFT, arity: 2 },
     "pm": { code: OpCode.PM, precedence: 1, associativity: OpAssoc.LEFT, arity: 2 },
-    "%": { code: OpCode.PCT, precedence: 6, associativity: OpAssoc.LEFT, arity: 1 }
+    "%": { code: OpCode.PCT, precedence: 6, associativity: OpAssoc.LEFT, arity: 1 },
+    "degree": { code: OpCode.DEG, precedence: 6, associativity: OpAssoc.LEFT, arity: 1},
+    "abs": { code: OpCode.ABS, precedence: 6, associativity: OpAssoc.LEFT, arity: 1}
 }
 
 const OpInfoByCode = {};
@@ -152,6 +158,78 @@ for (const sym in OpInfo) {
         ...info,
         symbol: sym
     };
+}
+
+// let opMap = new Map();
+// opMap.set()
+
+const NumType = {
+    NUM: 0,
+    DUAL: 1,
+    QUAD: 2,
+    ARRAY: 3,
+    TUPLE: 4,
+    COMPLEX: 5
+}
+
+const TokenToNumType = {
+    [TokenType.NUM]: NumType.NUM,
+    [TokenType.DUAL]: NumType.DUAL,
+    [TokenType.QUAD]: NumType.QUAD,
+    [TokenType.ARRAY]: NumType.ARRAY,
+    [TokenType.TUPLE]: NumType.TUPLE,
+    [TokenType.CMPLX]: NumType.COMPLEX
+}
+
+//value types: NUM, DUAL, QUAD, ARRAY, TUPLE, COMPLEX, MATRIX?
+
+function toStrictOperatorCodeBinary(leftType, rightType, opcode){
+    //left,right have 4 bits, opcode has 8
+    return leftType << 12 | rightType << 8 | opcode;
+}
+
+function toStrictOperatorCodeUnary(arg, opcode){
+    //arg has 4 bits, opcode has 8
+    return arg << 8 | opcode;
+}
+
+function toStrictOperatorCodeFunction(argTypes, opcode){
+    console.assert(argTypes.length > 0);
+
+    if(FuncInfoByCode[opcode].staticArgs === false){
+        //ASSUMPTION: array handler, either takes in many inputs or one input as an array
+        if(argTypes.length === 1) {
+            console.assert(argTypes[0] === TokenHandleType.ARRAY);
+            return 1 << 4 | opcode;
+        }
+
+        return 2 << 4 | opcode;
+    }
+
+    if(FuncInfoByCode[opcode].args === 1){
+        return argTypes[0] << 4 | opcode;
+    }
+
+    let max = 0;
+    let min = 2**4-1; //ASSUMPTION: MAX OF TOKENHANDLETYPE values
+    for(let i = 0; i < argTypes.length; i++){
+        if(argTypes[i] > max) max = argTypes[i];
+        if(argTypes[i] < min) min = argTypes[i];
+    }
+
+    return max << 8 | min << 4 | opcode;
+}
+
+const TokenHandleType = {
+    REAL: 1, //1-Dimensional values, just a number
+    COMPLEX: 2, //2-dimensional number, NOT YET IMPLEMENTED
+    TUPLE: 3, //any-dimensional values, operations are performed on each value and a tuple is returned
+    ARRAY: 4, //similar to array
+    INPUT_TUPLE: 5, //like a quad or dual; interact as tuples except for when operated with tuples; which returns a different tuple in each 'branch'
+    BINARY_OP: 6, //2 inputs (l,r)
+    UNARY_OP: 7, //1 input (a)
+    FUNCTION: 8, //n inputs (arg[0],args[1],...)
+    DELIMITER: 9 //like a comma. Probably shouldn't exist
 }
 
 const FuncCode = {
@@ -212,66 +290,78 @@ const FuncCode = {
     ABSCP: 154, //complex abs()
     ARG: 155, //complex argument = atan2(b,a)
     AMPL: 156, //amplitude or modulus of complex number
+    SINC: 157,
+    ARRAY: 158,
+    TUPLE: 159,
+    BINOM: 160,
+    IN: 161, //∈
+    NOTIN: 162, //∉
+    FACTOR: 163
 }
 
 const FuncInfo = {
-    "frac": { code: FuncCode.FRAC, staticArgs: true, args: 2},
-    "sin": { code: FuncCode.SIN, staticArgs: true, args: 1 },
-    "cos": { code: FuncCode.COS, staticArgs: true, args: 1 },
-    "tan": { code: FuncCode.TAN, staticArgs: true, args: 1 },
-    "sec": { code: FuncCode.SEC, staticArgs: true, args: 1 },
-    "csc": { code: FuncCode.CSC, staticArgs: true, args: 1 },
-    "cot": { code: FuncCode.COT, staticArgs: true, args: 1 },
-    "arcsin": { code: FuncCode.ASIN, staticArgs: true, args: 1 },
-    "arccos": { code: FuncCode.ACOS, staticArgs: true, args: 1 },
-    "arctan": { code: FuncCode.ATAN, staticArgs: true, args: 1 },
-    "arcsec": { code: FuncCode.ASEC, staticArgs: true, args: 1 },
-    "arccsc": { code: FuncCode.ACSC, staticArgs: true, args: 1 },
-    "arccot": { code: FuncCode.ACOT, staticArgs: true, args: 1 },
-    "sinh": { code: FuncCode.SINH, staticArgs: true, args: 1 },
-    "cosh": { code: FuncCode.COSH, staticArgs: true, args: 1 },
-    "tanh": { code: FuncCode.TANH, staticArgs: true, args: 1 },
-    "sech": { code: FuncCode.SECH, staticArgs: true, args: 1 },
-    "csch": { code: FuncCode.CSCH, staticArgs: true, args: 1 },
-    "coth": { code: FuncCode.COTH, staticArgs: true, args: 1 },
-    "arcsinh": { code: FuncCode.ASINH, staticArgs: true, args: 1 },
-    "arccosh": { code: FuncCode.ACOSH, staticArgs: true, args: 1 },
-    "arctanh": { code: FuncCode.ATANH, staticArgs: true, args: 1 },
-    "arcsech": { code: FuncCode.ASECH, staticArgs: true, args: 1 },
-    "arccsch": { code: FuncCode.ACSCH, staticArgs: true, args: 1 },
-    "arccoth": { code: FuncCode.ACOTH, staticArgs: true, args: 1 },
-    "gd": { code: FuncCode.GD, staticArgs: true, args: 1 },
-    "lam": { code: FuncCode.LAM, staticArgs: true, args: 1 },
-    "abs": { code: FuncCode.ABS, staticArgs: true, args: 1 },
-    "sign": { code: FuncCode.SIGN, staticArgs: true, args: 1 },
-    "floor": { code: FuncCode.FLOOR, staticArgs: true, args: 1 },
-    "ceil": { code: FuncCode.CEIL, staticArgs: true, args: 1 },
-    "round": { code: FuncCode.ROUND, staticArgs: true, args: 1 },
-    "trunc": { code: FuncCode.TRUNC, staticArgs: true, args: 1 },
-    "mod": { code: FuncCode.MOD, staticArgs: true, args: 2 },
-    "min": { code: FuncCode.MIN, staticArgs: false, minArgs: 1 },
-    "max": { code: FuncCode.MAX, staticArgs: false, minArgs: 1 },
-    "avg": { code: FuncCode.AVG, staticArgs: false, minArgs: 1 },
-    "med": { code: FuncCode.MED, staticArgs: false, minArgs: 1 },
-    "mode": { code: FuncCode.MODE, staticArgs: false, minArgs: 1 },
-    "exp": { code: FuncCode.EXP, staticArgs: true, args: 1 },
-    "ln": { code: FuncCode.LN, staticArgs: true, args: 1 },
-    "log": { code: FuncCode.LOG, staticArgs: true, args: 1 },
-    "logn": { code: FuncCode.LOGN, staticArgs: true, args: 2 },
-    "sqrt": { code: FuncCode.SQRT, staticArgs: true, args: 1 },
-    "cbrt": { code: FuncCode.CBRT, staticArgs: true, args: 1 },
-    "nthrt": { code: FuncCode.NTHRT, staticArgs: true, args: 2 },
-    "Gamma": { code: FuncCode.GAMMA, staticArgs: true, args: 1 },
-    "dgama": { code: FuncCode.DGAMA, staticArgs: true, args: 1 },
-    "pgama": { code: FuncCode.PGAMA, staticArgs: true, args: 1 },
-    "zeta": { code: FuncCode.ZETA, staticArgs: true, args: 1 },
-    "atan2": { code: FuncCode.ATAN2, staticArgs: true, args: 2 },
-    "Re": { code: FuncCode.REAL, staticArgs: true, args: 1 },
-    "Im": { code: FuncCode.IMAG, staticArgs: true, args: 1 },
-    "Conj": { code: FuncCode.CONJ, staticArgs: true, args: 1 },
-    "abscp": { code: FuncCode.ABSCP, staticArgs: true, args: 1 },
-    "arg": { code: FuncCode.ARG, staticArgs: true, args: 1 },
-    "ampl": { code: FuncCode.AMPL, staticArgs: true, args: 1 },
+    "frac": { code: FuncCode.FRAC, staticArgs: true, args: 2, returnType: TokenHandleType.REAL },
+    "sin": { code: FuncCode.SIN, staticArgs: true, args: 1, returnType: TokenHandleType.REAL },
+    "cos": { code: FuncCode.COS, staticArgs: true, args: 1, returnType: TokenHandleType.REAL },
+    "tan": { code: FuncCode.TAN, staticArgs: true, args: 1, returnType: TokenHandleType.REAL },
+    "sec": { code: FuncCode.SEC, staticArgs: true, args: 1, returnType: TokenHandleType.REAL },
+    "csc": { code: FuncCode.CSC, staticArgs: true, args: 1, returnType: TokenHandleType.REAL },
+    "cot": { code: FuncCode.COT, staticArgs: true, args: 1, returnType: TokenHandleType.REAL },
+    "arcsin": { code: FuncCode.ASIN, staticArgs: true, args: 1, returnType: TokenHandleType.REAL },
+    "arccos": { code: FuncCode.ACOS, staticArgs: true, args: 1, returnType: TokenHandleType.REAL },
+    "arctan": { code: FuncCode.ATAN, staticArgs: true, args: 1, returnType: TokenHandleType.REAL },
+    "arcsec": { code: FuncCode.ASEC, staticArgs: true, args: 1, returnType: TokenHandleType.REAL },
+    "arccsc": { code: FuncCode.ACSC, staticArgs: true, args: 1, returnType: TokenHandleType.REAL },
+    "arccot": { code: FuncCode.ACOT, staticArgs: true, args: 1, returnType: TokenHandleType.REAL },
+    "sinh": { code: FuncCode.SINH, staticArgs: true, args: 1, returnType: TokenHandleType.REAL },
+    "cosh": { code: FuncCode.COSH, staticArgs: true, args: 1, returnType: TokenHandleType.REAL },
+    "tanh": { code: FuncCode.TANH, staticArgs: true, args: 1, returnType: TokenHandleType.REAL },
+    "sech": { code: FuncCode.SECH, staticArgs: true, args: 1, returnType: TokenHandleType.REAL },
+    "csch": { code: FuncCode.CSCH, staticArgs: true, args: 1, returnType: TokenHandleType.REAL },
+    "coth": { code: FuncCode.COTH, staticArgs: true, args: 1, returnType: TokenHandleType.REAL },
+    "arcsinh": { code: FuncCode.ASINH, staticArgs: true, args: 1, returnType: TokenHandleType.REAL },
+    "arccosh": { code: FuncCode.ACOSH, staticArgs: true, args: 1, returnType: TokenHandleType.REAL },
+    "arctanh": { code: FuncCode.ATANH, staticArgs: true, args: 1, returnType: TokenHandleType.REAL },
+    "arcsech": { code: FuncCode.ASECH, staticArgs: true, args: 1, returnType: TokenHandleType.REAL },
+    "arccsch": { code: FuncCode.ACSCH, staticArgs: true, args: 1, returnType: TokenHandleType.REAL },
+    "arccoth": { code: FuncCode.ACOTH, staticArgs: true, args: 1, returnType: TokenHandleType.REAL },
+    "gd": { code: FuncCode.GD, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
+    "lam": { code: FuncCode.LAM, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
+    "abs": { code: FuncCode.ABS, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
+    "sign": { code: FuncCode.SIGN, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
+    "floor": { code: FuncCode.FLOOR, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
+    "ceil": { code: FuncCode.CEIL, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
+    "round": { code: FuncCode.ROUND, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
+    "trunc": { code: FuncCode.TRUNC, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
+    "mod": { code: FuncCode.MOD, staticArgs: true, args: 2, returnType: TokenHandleType.REAL  },
+    "min": { code: FuncCode.MIN, staticArgs: false, minArgs: 1, returnType: TokenHandleType.REAL  },
+    "max": { code: FuncCode.MAX, staticArgs: false, minArgs: 1, returnType: TokenHandleType.REAL  },
+    "avg": { code: FuncCode.AVG, staticArgs: false, minArgs: 1, returnType: TokenHandleType.REAL  },
+    "med": { code: FuncCode.MED, staticArgs: false, minArgs: 1, returnType: TokenHandleType.REAL  },
+    "mode": { code: FuncCode.MODE, staticArgs: false, minArgs: 1, returnType: TokenHandleType.REAL  },
+    "exp": { code: FuncCode.EXP, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
+    "ln": { code: FuncCode.LN, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
+    "log": { code: FuncCode.LOG, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
+    "logn": { code: FuncCode.LOGN, staticArgs: true, args: 2, returnType: TokenHandleType.REAL  },
+    "sqrt": { code: FuncCode.SQRT, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
+    "cbrt": { code: FuncCode.CBRT, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
+    "nthrt": { code: FuncCode.NTHRT, staticArgs: true, args: 2, returnType: TokenHandleType.REAL  },
+    "Gamma": { code: FuncCode.GAMMA, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
+    "dgama": { code: FuncCode.DGAMA, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
+    "pgama": { code: FuncCode.PGAMA, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
+    "zeta": { code: FuncCode.ZETA, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
+    "atan2": { code: FuncCode.ATAN2, staticArgs: true, args: 2, returnType: TokenHandleType.REAL  },
+    "Re": { code: FuncCode.REAL, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
+    "Im": { code: FuncCode.IMAG, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
+    "Conj": { code: FuncCode.CONJ, staticArgs: true, args: 1, returnType: TokenHandleType.COMPLEX  },
+    "abscp": { code: FuncCode.ABSCP, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
+    "arg": { code: FuncCode.ARG, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
+    "ampl": { code: FuncCode.AMPL, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
+    "sinc": { code: FuncCode.SINC, staticArgs: true, args: 1, returnType: TokenHandleType.REAL },
+    "array": { code: FuncCode.ARRAY, staticArgs: false, returnType: TokenHandleType.ARRAY },
+    "tuple": { code: FuncCode.TUPLE, staticArgs: false, returnType: TokenHandleType.TUPLE },
+    "binom": { code: FuncCode.BINOM, staticArgs: true, args: 2, returnType: TokenHandleType.REAL },
+    "factor": { code: FuncCode.FACTOR, staticArgs: true, args: 1, returnType: TokenHandleType.ARRAY }
 }
 
 const FuncInfoByCode = {};
@@ -284,6 +374,8 @@ for (const sym in FuncInfo) {
 }
 
 const BracCode = {
+    START: -1,
+    END: 0,
     LRND: 1,
     RRND: 2,
     LSQR: 3,
@@ -293,7 +385,9 @@ const BracCode = {
     LFNC: 7,
     RFNC: 8,
     LSTM: 9, //'stem' brackets --> of unknown type but orientation
-    RSTM: 10
+    RSTM: 10,
+    LABS: 11,
+    RABS: 12
 }
 
 const BracInfo = {
@@ -312,7 +406,9 @@ const BracInfo = {
     "(.": BracCode.LFNC,
     ").": BracCode.RFNC,
     "left?": BracCode.LSTM,
-    "right?": BracCode.RSTM
+    "right?": BracCode.RSTM,
+    "left|": BracCode.LABS,
+    "right|": BracCode.RABS
 }
 
 const UnknownCode = {
@@ -414,8 +510,9 @@ const FunctionAttributiveInfo = {
 
 const validOperators = ["+", "-", "*", "/", "^", "<", "<=", ">", ">=", "=", "!=", "&&", "||", "!", "u-", "#", "_"];
 
-const validFunctions = [
-    "frac", "sin", "cos", "tan",
+export const validFunctions = [
+    "frac", "binom","factor",
+    "sin", "cos", "tan",
     "arcsin", "arccos", "arctan",
     "csc", "sec", "cot",
     "arccsc", "arcsec", "arccot",
@@ -425,15 +522,15 @@ const validFunctions = [
     "arccsch", "arcsech", "arccoth",
     "gd", "lam", "abs", "sign", "mod",
     "floor", "ceil", "round", "trunc",
-    "min", "max", "avg", "median",
+    "Array", "Tuple", "min", "max", "avg", "median",
     "exp", "ln", "log", "logn",
     "sqrt", "cbrt", "nthrt",
-    "sinc", "gamma", "zeta", "atan2", "digamma", "polygamma",
+    "sinc", "gamma", "zeta", "digamma", "polygamma",
     "Ei", "Ti", "Li", "erf",
     "fresnelS", "fresnelC", "Si", "Ci",
-    "dawsonP", "dawsonM", "Ai",
-    "sum", "integral",
-    "not", "or", "and", "xor", "bool"
+    "dawsonP", "dawsonM", "Ai"
+    //"sum", "integral",
+    //"not", "or", "and", "xor", "bool"
 ];
 
 const validConstants = [
@@ -1049,6 +1146,25 @@ export function tokenizeLatexExpression(latex, tryIsolateUnknown){
                 tryString = tryString+latex.charAt(i);
                 i++;
             }
+
+            if(tryString === '\\operatorname'){
+                //i++;
+                console.assert(latex.charAt(i) === '{');
+                //i++;
+
+                tryString = '';
+                i++;
+
+                while(latex.charAt(i) !== '}' && i<latex.length){
+                    tryString = tryString+latex.charAt(i);
+                    i++;
+                }
+
+                pushToken(LatexTokenType.COMMAND);
+
+                continue;
+            }
+
             i--;
 
             tryString = tryString.substring(1);
@@ -1129,7 +1245,7 @@ export function tokenizeLatexExpression(latex, tryIsolateUnknown){
     }
 
     if(tokens.length === 0){
-        return {tokens: [], varDependencies: [], type: ExpressionType.BLANK};
+        return {tokens: [], varDependencies: new Set(), type: ExpressionType.BLANK};
     }
 
     console.log('tokens: ', tokens);
@@ -1284,7 +1400,7 @@ function getLatexExpressionType(tokens){
 }
 
 function shouldCommandStop(cmdString, next){
-    if(/[0-9]|\.|[^a-zA-Z\(\)\[\]\{\}]/.test(next)) return true;
+    if(/[0-9]|\.|[^a-zA-Z\(\)\[\]\{\}\|]/.test(next)) return true;
     if('0123456789.'.includes(next)) return true;
 
     if(cmdString.length > 5){
@@ -1460,6 +1576,10 @@ export function latexToTokenObjects(latexTokens){
                         continue;
                     }
 
+                    // if(op.code === OpCode.DEG){
+
+                    // }
+
                     //console.assert(tryInsertImplicitTimes(prev, token));
                 }
 
@@ -1477,7 +1597,11 @@ export function latexToTokenObjects(latexTokens){
                 if(op.code === OpCode.POW){
                     console.assert(latexTokens[i+1] !== undefined);
 
-                    if(latexTokens[i+1].type === LatexTokenType.NUMBER && prev.type !== TokenType.OP){
+                    if(
+                        !(prev.type === TokenType.OP 
+                        && OpInfoByCode[prev.code].associativity === OpAssoc.LEFT
+                        && OpInfoByCode[prev.code].arity === 1)
+                    ){
                         //binds if prev is bindable, i.e. is not another operator, a (, or a delimiter
                         compilerTokens.push({ type: TokenType.OP, code: OpCode.POWN });
                         continue;
@@ -1657,7 +1781,8 @@ export function latexToTokenObjects(latexTokens){
                 const validWithPrev = (
                     prev.type === TokenType.OP || 
                     prev.type === TokenType.FUNC || 
-                    isLeftBracket(latexTokens[i-1])
+                    isLeftBracket(latexTokens[i-1]) ||
+                    prev.type === TokenType.DELIM
                 );
                 const token = { type: TokenType.BRKT, code: code };
 
@@ -1706,7 +1831,7 @@ function addMetadataToExpression(expression){
 
     let final = [];
 
-    let varDependencies = [];
+    let varDependencies = new Set();
 
     for(let i = 0; i < tokens.length; i++){
         const token = tokens[i];
@@ -1718,14 +1843,15 @@ function addMetadataToExpression(expression){
                     [BracCode.LSQR]: BracCode.RSQR,
                     [BracCode.LCUR]: BracCode.RSQR,
                     [BracCode.LFNC]: BracCode.RFNC,
-                    [BracCode.LSTM]: BracCode.RSTM
+                    [BracCode.LSTM]: BracCode.RSTM,
+                    [BracCode.LABS]: BracCode.RABS
                 }
 
                 if (code % 2 === 1) {
                     // left bracket
 
                     if (lastToken.type === TokenType.FUNC) {
-                        if (!(code === BracCode.LRND || code === BracCode.LFNC)) {
+                        if (!(code === BracCode.LRND || code === BracCode.LFNC || code === BracCode.LABS)) {
                             console.error("Functions can only be used with round brackets");
                         }
 
@@ -1748,8 +1874,13 @@ function addMetadataToExpression(expression){
                     const leftType = parenType.pop();
                     const rightType = matchingRight[leftType];
 
+                    // if(code === BracCode.RABS) {
+                    //     final.push({ type: TokenType.BRKT, code: code});
+                    //     break;
+                    // }
+
                     if(code === BracCode.RSTM){
-                        console.log('yippee',token);
+                        //console.log('yippee',token);
                         final.push({ type: TokenType.BRKT, code: rightType});
                     }else{
                         if (rightType === BracCode.RFNC && !(code === BracCode.RRND || code === BracCode.RFNC)) {
@@ -1812,7 +1943,7 @@ function addMetadataToExpression(expression){
             default:
                 if(token.type == TokenType.UNKN || token.type === TokenType.VAR){
                     if(token.type === TokenType.VAR){
-                        varDependencies.push(token.code);
+                        varDependencies.add(token.code);
                     }
                     //unkowns don't get pushed with their values, because for duals & quads unknown values are set at runtime
                     final.push(token); //%%TOKEN
@@ -2074,6 +2205,47 @@ function addMetadataToExpression(expression){
 
 // %%FUNCEXPR
 
+function generateStrictMethodExprForOp(strictOpCode){
+    const opId = strictOpCode & 0b11111111; //rightmost 4 digits
+    const right = strictOpCode >> 8 & 0b1111;
+    const left = strictOpCode >> 12 & 0b1111;
+
+    if(left === right){
+        if(left === TokenHandleType.REAL) return generateMethodExprForOp(opId, TokenType.NUM, false);
+
+        if(left === TokenHandleType.TUPLE){
+            //different 
+        }
+
+        switch(opId){
+            case OpCode.ADD: return (a,b) => tupleAdd(a,b);
+            case OpCode.SUB: return (a,b) => tupleSubtract(a,b);
+            case OpCode.MUL: return (a,b) => tupleMultiply(a,b);
+            case OpCode.DIV: return (a,b) => tupleDivide(a,b);
+            case OpCode.DPR: return (a,b) => tupleDotProduct(a,b);
+            case OpCode.CRP: return (a,b) => tupleCrossProduct(a,b);
+            default:
+                return (a,b) => {
+                    const f = gene
+                    let result = [];
+                    for(let i = 0; i < Math.min(a.length,b.length); i++){
+                        result.push()
+                    }
+                }
+                
+        }
+        
+    }
+
+    if(left > right){
+
+    }
+}
+
+function operationOnQuad(quadVertices, lowerPrecArg, opcode){
+
+}
+
 /**
  * Generate a function expression for an operator
  * @param {*} opcode `int` operator id number
@@ -2105,8 +2277,11 @@ function generateMethodExprForOp(opcode, tokType, evalTrue = true){
                 case OpCode.NOT: return (a) => -a;
                 case OpCode.FACT: return (a) => (func_gamma(a+1));
                 case OpCode.NEG: return (a) => (-a);
+                case OpCode.DPR: return (a,b) => tupleDotProduct(a,b);
+                case OpCode.CRP: return (a,b) => tupleCrossProduct(a,b);
                 case OpCode.PM: return (a,b) => a;
                 case OpCode.PCT: return (a) => a;
+                case OpCode.ABS: return (a) => Math.abs(a);
                 default:
                     console.error("Unknown operator attempted to convert to function expression: ", opcode);
                     return (a,b) => 0;
@@ -2131,8 +2306,11 @@ function generateMethodExprForOp(opcode, tokType, evalTrue = true){
             case OpCode.NOT: return (a) => (!a);
             case OpCode.FACT: return (a) => (func_gamma(a+1));
             case OpCode.NEG: return (a) => (-a);
+            case OpCode.DPR: return (a,b) => tupleDotProduct(a,b);
+            case OpCode.CRP: return (a,b) => tupleCrossProduct(a,b);
             case OpCode.PM: return (a,b) => a;
             case OpCode.PCT: return (a) => a;
+            case OpCode.ABS: return (a) => Math.abs(a);
             default:
                 console.error("Unknown operator attempted to convert to function expression: ", opcode);
                 return (a,b) => 0;
@@ -2305,18 +2483,20 @@ function generateMethodExprForFunc(funccode, tokType, attributes){
     if(tokType == TokenType.NUM){
         switch (funccode) {
             case FuncCode.FRAC: return (a,b) => b/a;
-            case FuncCode.SIN: return (a) => Math.sin(a);
-                // return (a) => {
-                //     if(a===0||isNaN(a)) return a;
-                //     if(!isFinite(a))return NaN;
-                //     if(a===Math.floor(a)) 
-                //         return a > 0 ? 0 : -0; //sign of e
-                //     let t = Math.round(2 * a), //double the number, then round that
-                //         r = -0.5 * t + a, //num - (num rounded to nearest half)
-                //         n = t & 2 ? -1 : 1, //if t is even, -1, else 1
-                //         o = t & 1 ? Math.cos(Math.PI*r) : Math.sin(Math.PI*r); //if t is odd: cos, else sin
-                //     return n*o
-                // }
+            case FuncCode.BINOM: return (a,b) => func_choose(b,a);
+            case FuncCode.SIN: 
+                return (a) => {
+                    let e = a/Math.PI;
+                    if(e===0||isNaN(e)) return e;
+                    if(!isFinite(e))return NaN;
+                    if(e===Math.floor(e)) 
+                        return e > 0 ? 0 : -0; //sign of e
+                    let t = Math.round(2 * e), //double the number, then round that
+                        r = -0.5 * t + e, //num - (num rounded to nearest half)
+                        n = t & 2 ? -1 : 1, //if t is even, -1, else 1
+                        o = t & 1 ? Math.cos(Math.PI*r) : Math.sin(Math.PI*r); //if t is odd: cos, else sin
+                    return n*o
+                }
             case FuncCode.COS: return (a) => Math.cos(a); 
             case FuncCode.TAN: return (a) => Math.tan(a); 
             case FuncCode.SEC: return (a) => 1 / Math.cos(a); 
@@ -2334,12 +2514,12 @@ function generateMethodExprForFunc(funccode, tokType, attributes){
             case FuncCode.SECH: return (a) => 2/(Math.exp(a)+Math.exp(-a)); 
             case FuncCode.CSCH: return (a) => 2/(Math.exp(a)-Math.exp(-a)); 
             case FuncCode.COTH: return (a) => (Math.exp(a)+Math.exp(-a))/(Math.exp(a)-Math.exp(-a));
-            case FuncCode.ASINH: return (a) => Math.ln(a+Math.sqrt(a*a+1));
-            case FuncCode.ACOSH: return (a) => Math.ln(a+Math.sqrt(a*a-1));
-            case FuncCode.ATANH: return (a) => 0.5*Math.ln((1+a)/(1-a));
-            case FuncCode.ASECH: return (a) => Math.ln(1/a+Math.sqrt(1/(a*a)-1));
-            case FuncCode.ACSCH: return (a) => Math.ln(1/a+Math.sqrt(1/(a*a)+1));
-            case FuncCode.ACOTH: return (a) => 0.5*Math.ln((a+1)/(a-1));
+            case FuncCode.ASINH: return (a) => Math.log(a+Math.sqrt(a*a+1));
+            case FuncCode.ACOSH: return (a) => Math.log(a+Math.sqrt(a*a-1));
+            case FuncCode.ATANH: return (a) => 0.5*Math.log((1+a)/(1-a));
+            case FuncCode.ASECH: return (a) => Math.log(1/a+Math.sqrt(1/(a*a)-1));
+            case FuncCode.ACSCH: return (a) => Math.log(1/a+Math.sqrt(1/(a*a)+1));
+            case FuncCode.ACOTH: return (a) => 0.5*Math.log((a+1)/(a-1));
             case FuncCode.GD: return (a) => Math.atan(Math.sinh(a)); 
             case FuncCode.LAM: return (a) => a; 
             case FuncCode.ABS: return (a) => Math.abs(a); 
@@ -2354,6 +2534,9 @@ function generateMethodExprForFunc(funccode, tokType, attributes){
             //sum()
             //
             /* Todo: add handling for variables that are arrays */
+            case FuncCode.ARRAY: //{type: TokenType.ARRAY, valueType: TokenType.NUM, values: [], uncertainties: []}
+            case FuncCode.TUPLE: //{type: TokenType.TUPLE, valueType: TokenType.NUM, values: [], uncertainties: []}
+                return (...args) => args.reverse(); //args are passed in backwards order
             case FuncCode.AVG: 
                 return (...args) => {
                     var sum = 0;
@@ -2386,6 +2569,8 @@ function generateMethodExprForFunc(funccode, tokType, attributes){
             case FuncCode.DGAMA: return (a)=>0; 
             case FuncCode.PGAMA: return (a)=>0; 
             case FuncCode.ZETA: return (a)=>0; 
+            case FuncCode.SINC: return (a)=>a===0?1:Math.sin(a)/a;
+            case FuncCode.FACTOR: return (a) => func_factor(Math.floor(a));
             default: 
                 console.error("Unknown function code", funccode);
                 return ()=>0;
@@ -2419,6 +2604,8 @@ function generateMethodExprForFunc(funccode, tokType, attributes){
                     f(...byVertex[3])
                 ]};
         case TokenType.ARRAY:
+        case TokenType.TUPLE:
+            //console.log('abababababa');
             return (args) => {
                 const n = Math.max(args.map((arg) => arg.length));
                 let byVertex;
@@ -2444,7 +2631,7 @@ export function compileExpression(expression) {
     console.assert(expression != undefined); //undefined or null
 
     if(expression.type === ExpressionType.BLANK){
-        return {type: ExpressionType.BLANK, replace: [], tokens: []};
+        return {type: ExpressionType.BLANK, varDependencies: new Set(), replace: [], tokens: []};
     }
 
     const type = expression.type ?? ExpressionType.IMPLICIT;
@@ -2463,6 +2650,10 @@ export function compileExpression(expression) {
     let argCountStack = []; //managing function args
     let unBracketedFuncArg = false;
 
+    let bracContext = []; //manage whether the current token is in (), [], {}, f(), ||, etc.
+    let bracContextArgCount = [];
+    let bracContextArgStart = [];
+
     /**
      * 
      * @param {*} value Expected: {type: int, code/value: any}
@@ -2470,6 +2661,7 @@ export function compileExpression(expression) {
      */
     tokenList.forEach((value, index) => {
         meta = value.type;
+        //console.log(operators.length,operators);
         //popPrefixOperators(operators); // %%POPPREFIX
         switch (meta) {
             case TokenType.NUM:
@@ -2513,7 +2705,6 @@ export function compileExpression(expression) {
                     const topOp = operators[operators.length - 1];
 
                     // Stop if top of stack is not an operator (e.g. left paren)
-                    // TODO doesn't work on delimeters (like y=max(-x,1)) as the u- acts on the 1, interpreting as y=max(x,-1)
                     if (topOp.type != TokenType.OP) {
                         console.log("broken. Value:", value, "operatorlist:", operators[0],operators[1],operators[2]);
                         //console.log()
@@ -2523,12 +2714,10 @@ export function compileExpression(expression) {
                     const topPrecedence = OpInfoByCode[topOp.code].precedence;
                     //console.log("id: ", topOp.code, "precedence: ", topPrecedence);
 
-
-                    // Left-associative: pop if topPrecedence >= current
-                    // Right-associative: pop if topPrecedence > current
                     if (
                         (opAssociativity === OpAssoc.LEFT && topPrecedence >= opPrecedence) ||
-                        (opAssociativity === OpAssoc.RIGHT && topPrecedence > opPrecedence)
+                        (opAssociativity === OpAssoc.RIGHT && topPrecedence > opPrecedence) ||
+                        (topOp.code === OpCode.POWN) //binding operation
                     ) {
                         outputs.push(operators.pop());
                     } else {
@@ -2562,8 +2751,13 @@ export function compileExpression(expression) {
                     value.code == BracCode.LRND ||
                     value.code == BracCode.LSQR ||
                     value.code == BracCode.LCUR ||
-                    value.code == BracCode.LFNC
+                    value.code == BracCode.LFNC ||
+                    value.code == BracCode.LABS
                 ) {
+                    bracContext.push(value.code);
+                    bracContextArgCount.push(1);
+                    bracContextArgStart.push(index);
+
                     operators.push(value);
                     break;
                 } else {
@@ -2576,19 +2770,30 @@ export function compileExpression(expression) {
                         [BracCode.RRND]: BracCode.LRND,
                         [BracCode.RSQR]: BracCode.LSQR,
                         [BracCode.RCUR]: BracCode.LCUR,
-                        [BracCode.RFNC]: BracCode.LFNC
+                        [BracCode.RFNC]: BracCode.LFNC,
+                        [BracCode.RABS]: BracCode.LABS
                     }
 
                     const expectedLeft = matchingBrackets[value.code];
                     if (expectedLeft == undefined) {
-                        console.error("Unknown bracket code", value);
+                        console.error("Unknown bracket code: ", value.code, matchingBrackets[value.code]);
                         break;
                     }
 
-                    //
+                    const mostRecentLeft = bracContext.pop();
+                    const mostRecentArgCount = bracContextArgCount.pop();
+                    const mostRecentArgStart = bracContextArgStart.pop();
+
+                    if(expectedLeft !== mostRecentLeft){
+                        throw new Error('Mistmatched bracket types. Left: '+mostRecentLeft+' right: '+value.code);
+                    }
+
+                    //console.log('starting popping', operators, operators.length);
 
                     while (operators.length > 0) {
                         const topOp = operators.pop();
+
+                        //console.log('next to pop:', topOp);
 
                         if (topOp.type == TokenType.BRKT && topOp.code == expectedLeft) {
                             if (expectedLeft == BracCode.LFNC) {
@@ -2605,7 +2810,45 @@ export function compileExpression(expression) {
                             break;
                         }
 
+                        //console.log('pushing: ', topOp);
                         outputs.push(topOp);
+                    }
+
+                    //check for array formation, absolute value formation, etc. 
+                    // |...| => abs
+                    // [...] => array
+                    // (...) => vector/tuple
+                    switch(value.code){
+                        case BracCode.RRND: // (1,2,...) a tuple: (point, vector, etc)
+                            if(mostRecentArgCount === 1) break;
+
+                            outputs.push({
+                                type: TokenType.FUNC,
+                                code: FuncCode.TUPLE,
+                                fnexp: generateMethodExprForFunc(FuncCode.TUPLE, evalType, false),
+                                argCount: mostRecentArgCount,
+                                attributes: new Map()
+                            });
+                            break;
+                        case BracCode.RABS: // |...| absolute value
+                            console.assert(mostRecentArgCount === 1);
+                            
+                            outputs.push({ 
+                                type: TokenType.OP, 
+                                code: OpCode.ABS, 
+                                fnexp: generateMethodExprForOp(OpCode.ABS, evalType, false) 
+                            });
+                            break;
+                        case BracCode.RSQR: // '[1,-3,...]' an array or 'a[0]' array access
+                            
+                            outputs.push({
+                                type: TokenType.FUNC,
+                                code: FuncCode.ARRAY,
+                                fnexp: generateMethodExprForFunc(FuncCode.ARRAY, evalType, false),
+                                argCount: mostRecentArgCount,
+                                attributes: new Map()
+                            });
+                            break;
                     }
 
                 }
@@ -2650,6 +2893,16 @@ export function compileExpression(expression) {
 
             //     break;
             case TokenType.DELIM:
+                console.log(operators.length);
+                const contextIn = bracContext[bracContext.length-1];
+
+                console.assert(
+                    contextIn === BracCode.LFNC ||
+                    contextIn === BracCode.LSQR ||
+                    contextIn === BracCode.LRND
+                );
+
+                bracContextArgCount[bracContextArgCount.length - 1]++;
                 argCountStack[argCountStack.length - 1]++; //potential error if is first token
 
                 //Each comma behaves as a closing parenthesis except it does not pop the open parenthesis according to:
@@ -2660,11 +2913,12 @@ export function compileExpression(expression) {
                     [BracCode.RRND]: BracCode.LRND,
                     [BracCode.RSQR]: BracCode.LSQR,
                     [BracCode.RCUR]: BracCode.LCUR,
-                    [BracCode.RFNC]: BracCode.LFNC
+                    [BracCode.RFNC]: BracCode.LFNC,
+                    [BracCode.RABS]: BracCode.LABS
                 }
 
                 //Assumption that all commas are in functions
-                const expectedLeft = BracCode.LFNC;
+                const expectedLeft = contextIn;
                 if (expectedLeft == undefined) {
                     console.error("Unknown bracket code", value);
                     break;
@@ -2680,6 +2934,7 @@ export function compileExpression(expression) {
 
                     outputs.push(topOp);
                 }
+                console.log(operators.length);
                 break;
             case TokenType.ATT:
                 break;
@@ -2719,6 +2974,15 @@ export function compileExpression(expression) {
 
     console.log(expression.tokens, "->", outputs);
 
+    const tokenMetaInfo = testEvaluation(outputs, ExpressionInfoByType[type].tokType);
+    for(let i = 0; i < outputs.length; i++){
+        const metaInfo = tokenMetaInfo[i];
+        outputs[i].outputType = metaInfo.outputType;
+        if(outputs[i].type === TokenType.OP || outputs[i].type === TokenType.FUNC) outputs[i].variantCode = metaInfo.variantCode;
+    }
+
+    console.log('after testing: ', outputs); 
+
     if(type === ExpressionType.ASGNMT){
         return { type: type, var: expression.var, varDependencies: expression.varDependencies, replace: toReplace, tokens: outputs };
     }
@@ -2733,6 +2997,7 @@ export function compileExpression(expression) {
  * @param {*} options other expression options (unused)
  * @returns the output (which may be vary type depending on `compiledExpression.type`) or NaN if there is an error
  */
+// -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 export function evaluateExpression(compiledExpression, input, options) {
     //let expressionType = compiledExpression.type;
     // console.warn('evaluating: ',compiledExpression);
@@ -2789,6 +3054,7 @@ export function evaluateExpression(compiledExpression, input, options) {
                 if (opArity == 1) {
                     //console.log(solve);
                     let arg = solve.pop();
+                    //console.log(arg);
 
                     //TokenType.UNKN not supported, should be quad
 
@@ -2819,7 +3085,7 @@ export function evaluateExpression(compiledExpression, input, options) {
                 var b = solve.pop();
                 var a = solve.pop();
 
-                //console.log("a:", a, "b:", b);
+                console.log("a:", a, "b:", b);
                 var result = 0;
 
                 if(doEvalsAsFuncExpressions){
@@ -2856,19 +3122,7 @@ export function evaluateExpression(compiledExpression, input, options) {
                 }
 
                 let args = [];
-                let popCount;
-                if((value.argCount ?? 0) === 0){
-                    //arguments not surrounded by parenthesis
-                    if(FuncInfoByCode[value.code].staticArgs === false){
-                        console.error("Varied-argument functions must have their arguments surrounded by parenthesis.");
-                    }
-
-                    popCount = FuncInfoByCode[value.code].args ?? 0;
-                    
-                }else{
-                    //arguments surrounded by parenthesis
-                    popCount = value.argCount;
-                }
+                let popCount = getPopCountOfFunction(value);
 
                 //console.assert(solve.length >= popCount,solve,popCount,value.argCount);
 
@@ -2887,6 +3141,9 @@ export function evaluateExpression(compiledExpression, input, options) {
                     //console.log(value);
                     console.assert(args.length > 0,args);
                     //console.assert(args[0] !== undefined);
+
+                    console.assert(value.attributes !== undefined, value);
+                    //console.log(value, value.attributes);
 
                     result = evaluateMethodExprForFunc(value, evalType, args, value.attributes);
                     //console.log(result);
@@ -2944,7 +3201,7 @@ export function evaluateExpression(compiledExpression, input, options) {
 
                 break;
             case TokenType.BRKT: //shouldn't be here?
-                console.error("bracket passed, not supported yet");
+                console.error("bracket passed, not supported yet", value);
                 //
                 break;
 
@@ -2952,9 +3209,12 @@ export function evaluateExpression(compiledExpression, input, options) {
                 console.error("delimeter passed, not supported yet");
                 //should never 
                 break;
-            case TokenType.VEC:
+            case TokenType.ARRAY:
+            case TokenType.TUPLE:
+                solve.push(value);
+                break;
             default:
-                console.error("Unknown token type");
+                console.error("Unknown token type",value.type);
         }
 
 
@@ -3012,15 +3272,30 @@ export function readExpressionWithReplacements(compiledExpression, input) {
                 const evalResult = getVariable(action.varId);
                 if(evalResult === undefined) console.error('variable '+ action.varId+ ' not found');
 
-                console.assert(evalResult.type === TokenType.NUM);
-                console.assert(evalResult.value !== undefined);
+                console.log(tokenList);
 
-                console.log(evalResult);
+                let token = tokenList[action.index];
 
-                const token = evalResult;
-                //console.log('replacing ', token);
+                console.log(token);
+
+                token.type = evalResult.type;
+                token.value = evalResult.value;
+
+                console.log(token);
+
+                // evalResult.outputType = convertToHandleType(evalResult.type, evalResult.value);
+
+                // console.assert(evalResult.type === TokenType.NUM || evalResult.type === TokenType.ARRAY || evalResult.type === TokenType.TUPLE);
+                // console.assert(evalResult.value !== undefined);
+                // console.assert(evalResult.outputType !== undefined);
+
+                // console.log(evalResult);
+
+                // const token = evalResult;
+                // console.log('replacing ', token);
+
                 tokenList.splice(action.index, 1, token);
-                //console.log(tokenList);
+                // console.log(tokenList);
             }
         }
         return tokenList;
@@ -3124,6 +3399,9 @@ export function readExpressionWithReplacements(compiledExpression, input) {
                     );
 
                     break;
+                case UnknownCode.PARAMETRIC_T:
+                    newtoken = { type: TokenType.DUAL, value: [input.minT, input.maxT], edge: [0,0,0]};
+                    break;
                 default:
                     console.error("Unknown replacement action");
             }
@@ -3145,6 +3423,25 @@ export function readExpressionWithReplacements(compiledExpression, input) {
     return tokenList;
 }
 
+function getPopCountOfFunction(token){
+    let popCount;
+
+    if((token.argCount ?? 0) === 0){
+        //arguments not surrounded by parenthesis
+        if(FuncInfoByCode[token.code].staticArgs === false){
+            console.error("Varied-argument functions must have their arguments surrounded by parenthesis.");
+            popCount = 1; //ASSUMPTION: default is 1
+        }else{
+            popCount = FuncInfoByCode[token.code].args ?? 0; 
+        }
+    }else{
+        //arguments surrounded by parenthesis
+        popCount = token.argCount;
+    }
+
+    return popCount;
+}
+
 /**
  * 
  * @param {*} token unary operator
@@ -3153,6 +3450,28 @@ export function readExpressionWithReplacements(compiledExpression, input) {
  * @returns 
  */
 function evaluateMethodExprForUnaryOp(token, evalType, a){
+    if(a.type === undefined){
+        return {value: token.fnexp(a) };
+    }
+
+    if(a.outputType >= TokenHandleType.TUPLE){
+        let result = [];
+        for(let i=0; i<a.value.length; i++){
+            result.push(evaluateMethodExprForUnaryOp(token,evalType,a.value[i]).value);
+        }
+        return { type: a.type, value: result };
+    }
+
+    // if(a.type === TokenType.ARRAY || a.type === TokenType.TUPLE){
+    //     const result = {
+    //         type: a.type,
+    //         value: a.value.map((e) => evaluateMethodExprForUnaryOp(token, evalType, e)),
+    //         uncertainty: a.value.map((e) => evaluateUnaryOpUncertainty(token.code,evalType,e,e.uncertainty??0))
+    //     }
+
+    //     console.log(result);
+    //     return result;
+    // }
     const arg = a.value;
 
     const unca = a.uncertainty ?? 0;
@@ -3161,6 +3480,10 @@ function evaluateMethodExprForUnaryOp(token, evalType, a){
 
     if(token.code === OpCode.PCT){
         return {type: TokenType.NUM, value: arg/100, interpret: 'pct'};
+    }
+
+    if(token.code === OpCode.DEG){
+        return {type: TokenType.NUM, value: arg*0.017453292519943295, interpret: 'rad'};
     }
 
     // if(token.type != evalType){
@@ -3173,10 +3496,11 @@ function evaluateMethodExprForUnaryOp(token, evalType, a){
     // }
 
     const v = token.fnexp(arg);
+    //console.log(v, token, token.fnexp, arg);
 
     switch(evalType){
         case TokenType.NUM:
-            return {type: TokenType.NUM, value: v, uncertainty: unc};
+            return {type: TokenType.NUM, value: v, uncertainty: unc, interpret: a.interpret ?? undefined};
         case TokenType.QUAD:
             return {
                 type: TokenType.QUAD, 
@@ -3190,6 +3514,8 @@ function evaluateMethodExprForUnaryOp(token, evalType, a){
                 value: v, 
                 edge: e
             };
+        case TokenType.TUPLE:
+
         default:
             console.error("Unknown eval type");
             return null;
@@ -3202,8 +3528,11 @@ function evaluateUnaryOpUncertainty(opcode, evalType, a, aUnc){
     switch(opcode){
         case OpCode.NOT:
         case OpCode.NEG:
-            return aUnc;
+        case OpCode.ABS:
+            return Math.abs(aUnc);
         case OpCode.FACT:
+            return aUnc;
+        default:
             return aUnc;
     }
 }
@@ -3217,6 +3546,118 @@ function evaluateUnaryOpUncertainty(opcode, evalType, a, aUnc){
  * @returns 
  */
 function evaluateMethodExprForBinaryOp(token, evalType, a,b){
+    if(a.type === undefined && b.type === undefined){
+        return {value: token.fnexp(a,b) };
+    }
+
+    console.assert(a.outputType !== undefined, a);
+    console.assert(b.outputType !== undefined, b);
+
+    if(a.outputType >= TokenHandleType.TUPLE || b.outputType >= TokenHandleType.TUPLE){
+        console.log('binary ops', a.outputType,b.outputType);
+        const aValue = a.value;
+        const bValue = b.value;
+
+        if(a.outputType === b.outputType){
+            let result = [];
+            for(let i=0; i<Math.min(aValue.length,bValue.length); i++){
+                result.push(evaluateMethodExprForBinaryOp(token,evalType,aValue[i],bValue[i]).value);
+            }
+            console.log(a,b,result);
+            return {type: a.type, value: result};
+        }
+
+        let returnType;
+        let result = [];
+        if(a.outputType > b.outputType){
+            returnType = a.type;
+            for(let i=0; i<aValue.length; i++){
+                result.push(evaluateMethodExprForBinaryOp(token,evalType,aValue[i],bValue).value);
+            }
+        }else{
+            returnType = b.type;
+            for(let i=0; i<bValue.length; i++){
+                const r = evaluateMethodExprForBinaryOp(token,evalType,aValue.value ?? aValue,bValue[i]).value;
+                console.assert(!isNaN(r), token, evalType, aValue.value ?? aValue, bValue[i]);
+                console.log('pushing: ', r);
+                result.push(r);
+            }
+        }
+
+        console.log(result,result.length);
+
+        const t = {
+            type: returnType,
+            value: result,
+        }
+
+        console.log(t);
+        
+        return t;
+    }
+
+    // console.log('tok', token,'...',a.outputType,b.outputType);
+
+    // if(a.type === TokenType.ARRAY || b.type === TokenType.ARRAY){
+    //     let array1, array2;
+
+    //     if(a.type === b.type) [array1, array2] = [a,b];
+    //     else if(a.type === TokenType.ARRAY){
+    //         array1 = a.value;
+    //         array2 = Array(a.value.length).fill(b);
+    //     }else{
+    //         array1 = b.value;
+    //         array2 = Array(b.value.length).fill(a);
+    //     }
+
+    //     console.assert(array1.length === array2.length);
+
+    //     let resultValueArray = [];
+
+    //     for(let i = 0; i < array1.length; i++){
+    //         resultValueArray.push(evaluateMethodExprForBinaryOp(token, evalType, array1[i], array2[i]));
+    //     }
+
+    //     return {
+    //         type: TokenType.ARRAY,
+    //         value: resultValueArray,
+    //         uncertainty: Array(a.value.length).fill(0)
+    //     }
+    // }
+
+    // if(a.type === TokenType.TUPLE || b.type === TokenType.TUPLE){
+    //     let array1, array2;
+
+    //     if(a.type === b.type) [array1, array2] = [a,b];
+    //     else if(a.type === TokenType.TUPLE){
+    //         array1 = a.value;
+    //         array2 = Array(a.value.length).fill(b.value);
+    //     }else{
+    //         array1 = b.value;
+    //         array2 = Array(b.value.length).fill(a.value);
+    //     }
+
+    //     console.assert(array1.length === array2.length);
+
+    //     let resultValueArray = [];
+
+    //     for(let i = 0; i < array1.length; i++){
+    //         const elementEval = evaluateMethodExprForBinaryOp(
+    //             token, 
+    //             evalType, 
+    //             {type: TokenType.NUM, value: array1[i]}, 
+    //             {type: TokenType.NUM, value: array2[i]}
+    //         );
+    //         resultValueArray.push(elementEval.value);
+    //     }
+
+    //     return {
+    //         type: TokenType.TUPLE,
+    //         value: resultValueArray,
+    //         uncertainty: Array(a.value.length).fill(0)
+    //     }
+    // }
+
     const arga = a.value;
     const argb = b.value;
 
@@ -3225,12 +3666,13 @@ function evaluateMethodExprForBinaryOp(token, evalType, a,b){
 
     if(token.code === OpCode.PM){
         //console.log(a,'±',b);
-        const unc = (b.interpret === 'pct') ? arga*argb : (argb+uncb);
+        const previousUnc = a.uncertainty ?? 0;
+        const unc = (b.interpret === 'pct') ? Math.abs(arga*argb) : Math.abs(argb+uncb);
         //console.log(unc);
 
         //const out = {type: TokenType.NUM, value: arga, uncertainty: unc, interpret: a.interpret ?? undefined};
 
-        return {type: TokenType.NUM, value: arga, uncertainty: unc, interpret: a.interpret ?? undefined};
+        return {type: TokenType.NUM, value: arga, uncertainty: previousUnc+unc, interpret: a.interpret ?? undefined};
     }
 
     const unc = evaluateBinaryOpUncertainty(token.code,evalType,arga,unca,argb,uncb);
@@ -3284,9 +3726,8 @@ function evaluateBinaryOpUncertainty(opcode, evalType, a, aUnc, b, bUnc){
         case OpCode.AND:
         case OpCode.OR:
         case OpCode.XOR:
-            const v = (aUnc/a + bUnc/b);
-            //console.log(v,aUnc,bUnc,a,b);
-            return v*(a*b);
+            if(a===0 || b===0) return 0;
+            return (aUnc/a + bUnc/b)*(a*b);
         case OpCode.DIV:
             return (aUnc/a + bUnc/b)*(b/a);
         case OpCode.POW:
@@ -3305,13 +3746,81 @@ function evaluateBinaryOpUncertainty(opcode, evalType, a, aUnc, b, bUnc){
  * @returns the output token
  */
 function evaluateMethodExprForFunc(token, evalType, rawargs, attributes){
+    const returnType = FuncInfoByCode[token.code].returnType;
+    const args = rawargs.map((arg) => arg.value);
+
+    if(returnType === TokenHandleType.TUPLE){
+        //
+    }
+
+    if(returnType === TokenHandleType.ARRAY){
+        let returnValue;
+        switch(token.code){
+            case FuncCode.ARRAY:
+                returnValue = token.fnexp(...args);
+                break;
+            case FuncCode.FACTOR:
+                returnValue = func_factor(Math.floor(args[0]));
+        }
+
+        return {
+            type: TokenType.ARRAY,
+            value: returnValue,
+            uncertainty: Array(args.length).fill(0),
+            outputType: TokenHandleType.ARRAY
+        }
+    }
+
+    // array operations
+    if(rawargs.length === 1 && rawargs[0].type === TokenType.ARRAY && FuncInfoByCode[token.code].staticArgs === false){
+        const value = evaluateMethodExprForFunc(token, evalType, rawargs[0].value, attributes);
+
+        console.log(value);
+        return value;
+    }
+
+    //any raw arg is of array type
+    const arrayIndex = rawargs.findIndex((rawarg) => rawarg.outputType === TokenHandleType.ARRAY || rawarg.outputType === TokenHandleType.TUPLE);
+    if(arrayIndex !== -1){
+        const outputType = rawargs[arrayIndex].type;
+        const length = rawargs[arrayIndex].value.length;
+
+        let argsAsArrays = [];
+        for(let i = 0; i < rawargs.length; i++){
+            argsAsArrays.push(rawargs.type === TokenType.ARRAY ? rawargs[i].value : Array(length).fill(rawargs[i].value));
+        }
+
+        const arrayArguments = rawargs.filter((rawarg) => rawarg.type === TokenType.ARRAY);
+        console.assert(arrayArguments.every((e) => e.value.length === rawargs[arrayIndex].value.length));
+
+        let valueArray = [];
+        for(let i = 0; i < length; i++){
+            const result = evaluateMethodExprForFunc(
+                token, 
+                evalType, 
+                rawargs.map(
+                    (rawarg) => rawarg.outputType === TokenHandleType.ARRAY || rawarg.outputType === TokenHandleType.TUPLE
+                    ? {type: TokenType.NUM, value: rawarg.value[i]}
+                    : {type: TokenType.NUM, value: rawarg.value}
+                ), 
+                attributes
+            );
+            console.log(result); //value: NaN
+            valueArray.push(result.value);
+        }
+
+        //console.log(valueArray);
+
+        return {
+            type: outputType,
+            value: valueArray
+        }
+    }
+
+
     console.assert(rawargs.length !== undefined, rawargs);
-    const args = rawargs.map((tok) => tok.value);
 
-    const argsUnc = rawargs.map((arg) => arg.uncertainty ?? 0);
-
-    const unc = evaluateFuncUncertainty(token,evalType,args,argsUnc); //unneccesary evaluation of a/b for FRAC;
-
+    //console.log(attributes);
     const pow = attributes.get(AttributiveCode.POWER);
     //const base = token.code === FuncCode.LOG ? attributes.get(AttributiveCode.BASE) : undefined;
 
@@ -3319,9 +3828,29 @@ function evaluateMethodExprForFunc(token, evalType, rawargs, attributes){
     if(evalType === TokenType.NUM){
         v = token.fnexp(...args);
         if(pow !== undefined) v = v**pow;
+        //console.log(v,args,token.fnexp);
     }else{
         v = token.fnexp(args);
         if(pow !== undefined) v=v.map((n) => n**pow);
+    }
+
+    const argsUnc = rawargs.map((arg) => arg.uncertainty ?? 0);
+    const unc = evaluateFuncUncertainty(token,evalType,args,argsUnc,v) ?? 0;
+
+    if(token.code === FuncCode.ARRAY){
+        return { 
+            type: TokenType.ARRAY,
+            value: v,
+            // .map((e) => {
+            //     return {type: TokenType.NUM, value: e, uncertainty: 0}
+            // }), 
+            uncertainty: Array(v.length).fill(0),
+            outputType: TokenHandleType.ARRAY
+        };
+    }
+
+    if(token.code === FuncCode.TUPLE){
+        return { type: TokenType.TUPLE, value: v, uncertainty: Array(v.length).fill(0), outputType: TokenHandleType.TUPLE };
     }
 
     switch(evalType){
@@ -3362,12 +3891,13 @@ function evaluateMethodExprForFunc(token, evalType, rawargs, attributes){
     }
 }
 
-function evaluateFuncUncertainty(functoken, evalType, args, argsUnc){
+function evaluateFuncUncertainty(functoken, evalType, args, argsUnc, result){
     const funccode = functoken.code;
 
     switch(funccode){
         case FuncCode.FRAC:
-            return (argsUnc[0]/args[0] + argsUnc[1]/args[1])*(args[1]/args[0]); 
+            if(args[0] === 0 || args[1] === 0) return 0;
+            return (argsUnc[0]/args[0] + argsUnc[1]/args[1])*result; 
         case FuncCode.LN:
             return argsUnc[0]/args[0];
         case FuncCode.LOG:
@@ -3380,6 +3910,176 @@ function evaluateFuncUncertainty(functoken, evalType, args, argsUnc){
             return 0;
     }
     return 0;
+}
+
+function convertConstantToToken(constCode){
+    return { type: TokenType.NUM, value: ConstInfoByCode[constCode].value };
+}
+
+function convertVariableToToken(varName){
+    const varData = getVariableData(varName);
+
+    console.assert(varData !== undefined, varName);
+
+    return varData?.value; //A token, like {type: int, value: int, etc};
+}
+
+function convertToHandleType(tokenType, metadata) {
+    switch(tokenType){
+        case TokenType.NUM:
+            return TokenHandleType.REAL;
+        case TokenType.CNST:
+            const constantAsToken = convertConstantToToken(metadata);
+            return convertToHandleType(constantAsToken.type, constantAsToken.value);
+        case TokenType.VAR:
+            const varAsToken = convertVariableToToken(metadata);
+            if(varAsToken === undefined) return 0;
+            const r = convertToHandleType(varAsToken.type, varAsToken.value);
+            //console.log(r);
+            return r;
+        case TokenType.OP:
+            return OpInfoByCode[metadata].arity === 2 ? TokenHandleType.BINARY_OP : TokenHandleType.UNARY_OP;
+        case TokenType.FUNC:
+            return TokenHandleType.FUNCTION;
+        case TokenType.UNKN:
+        case TokenType.QUAD:
+        case TokenType.DUAL:
+            return TokenHandleType.INPUT_TUPLE;
+        case TokenType.ARRAY:
+            return TokenHandleType.ARRAY;
+        case TokenType.TUPLE:
+            return TokenHandleType.TUPLE;
+        default:
+            console.log('failed to convert to handle type',tokenType,metadata)
+            return 0;
+    }
+}
+
+// -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+/**
+ * Tests evaluation to check which types of operations are performed. For example, '*' could be real*real, vector * vector, quad*real, etc which all have different behavior
+ * @param {*} tokens 
+ * @param {*} inputType 
+ */
+function testEvaluation(inputTokens, inputType){
+    let tokens = inputTokens.slice();
+
+    let solve = [];
+    let expectedTokenMetadata = [];
+
+    for(let i = 0; i < tokens.length; i++){
+        let token = tokens[i];
+        token.index = i;
+        let tokenHandleType = convertToHandleType(token.type, token.code ?? token.value); //HACK
+
+        switch(tokenHandleType){
+            case TokenHandleType.REAL: 
+                token.outputType = TokenHandleType.REAL;
+
+                solve.push(token);
+                expectedTokenMetadata.push({ outputType: TokenHandleType.REAL });
+                break;
+            case TokenHandleType.TUPLE:
+                token.outputType = TokenHandleType.TUPLE;
+
+                solve.push(token);
+                expectedTokenMetadata.push({ outputType: TokenHandleType.TUPLE });
+                break;
+            case TokenHandleType.ARRAY:
+                token.outputType = TokenHandleType.ARRAY;
+
+                solve.push(token);
+                expectedTokenMetadata.push({ outputType: TokenHandleType.ARRAY });
+                break;
+            case TokenHandleType.INPUT_TUPLE:
+                token.outputType = TokenHandleType.INPUT_TUPLE;
+
+                solve.push(token);
+                expectedTokenMetadata.push({ outputType: TokenHandleType.INPUT_TUPLE, variantCode: inputType });
+                break;
+            case TokenHandleType.UNARY_OP:
+                const arg = solve.pop();
+
+                //unary ops all do not change their output
+                token.outputType = arg.type;
+
+                solve.push(token);
+                expectedTokenMetadata.push({ outputType: arg.outputType, variantCode: toStrictOperatorCodeUnary( arg.outputType ) });
+                break;
+            case TokenHandleType.BINARY_OP:
+                if(solve.length < 2) throw new Error("Solve length insufficient for binary operation: "+token.code);
+
+                const b = solve.pop();
+                const a = solve.pop();
+
+                if(a.outputType >= b.outputType){
+                    token.outputType = a.outputType;
+                }else{
+                    token.outputType = b.outputType;
+                }
+
+                solve.push({outputType: token.outputType});
+                expectedTokenMetadata.push({ outputType: token.outputType, variantCode: toStrictOperatorCodeBinary(a.outputType, b.outputType) });
+                break;
+            case TokenHandleType.FUNCTION:
+                const popCount = getPopCountOfFunction(token);
+
+                let args = [];
+                let argTypes = [];
+                for(let i = 0; i < popCount; i++){
+                    const popped = solve.pop();
+                    args.push(popped);
+                    argTypes.push(popped.outputType)
+                }
+
+                token.outputType = outputTypeOfFunction(token.code, argTypes);
+
+                solve.push({outputType: token.outputType});
+                expectedTokenMetadata.push({ outputType: token.outputType, variantCode: toStrictOperatorCodeFunction(argTypes, token.code) });
+                break;
+            default:
+                console.error('unknown token handle type: ', tokenHandleType);
+                break;
+        }
+    }
+
+    //console.log('metadata: ', expectedTokenMetadata);
+
+    return expectedTokenMetadata;
+}
+
+/**
+ * 
+ * @param {*} a 
+ * @param {*} b 
+ * @param {*} op 
+ * @returns {Array} [Expected return type, extra info]
+ */
+function outputInfoOfBinaryOp(a, b, op){
+    if(a.outputType === b.outputType){
+        if(op.code === OpCode.SUBS) return TokenHandleType.
+        if(op.code === OpCode.PM) 
+    }
+
+    if(a.outputType === TokenHandleType.BRANCH || b.outputType === TokenHandleType.BRANCH) return TokenHandleType.BRANCH;
+
+    if(a.outputType === TokenHandleType.TUPLE || b.outputType === TokenHandleType.TUPLE) return TokenHandleType.TUPLE;
+}
+
+function outputTypeOfFunction(funccode, argTypes){
+    if(FuncInfoByCode[funccode].staticArgs === false){
+        if(funccode === FuncCode.ARRAY) return TokenHandleType.ARRAY;
+        if(funccode === FuncCode.TUPLE) return TokenHandleType.TUPLE;
+
+        return TokenHandleType.REAL; //ASSUMPTION: array operations, collapse
+    }
+
+
+    //ASSUMPTION: these are the only higher-precedence-value functions
+    if(funccode === FuncCode.TUPLE) return TokenHandleType.TUPLE;
+    if(funccode === FuncCode.ARRAY) return TokenHandleType.ARRAY;
+
+    return Math.max(argTypes);
 }
 
 function aggregateEdges(edges){
@@ -3884,6 +4584,24 @@ function handleEdgePairForFunc(funccode, args1, args2, edgeinfo){
             crosses = edgeinfo[0][0] + n;
             holes = edgeinfo[0][1] + n;
             jumps = edgeinfo[0][2] + n;
+            break;
+        case FuncCode.FLOOR:
+        case FuncCode.CEIL:
+            crosses = edgeinfo[0][0];
+            holes = edgeinfo[0][1];
+            jumps = edgeinfo[0][2] + Math.abs(Math.floor(args1[0])-Math.floor(args2[0]));
+            break;
+        case FuncCode.TRUNC:
+            crosses = edgeinfo[0][0];
+            holes = edgeinfo[0][1];
+            jumps = edgeinfo[0][2] + Math.abs(Math.floor(args1[0])-Math.floor(args2[0]));
+            if((args1[0]>0) !== (args2[0]>0)) jumps -= 1;
+            break;
+        case FuncCode.ROUND:
+            crosses = edgeinfo[0][0];
+            holes = edgeinfo[0][1];
+            jumps = edgeinfo[0][2] + Math.abs(Math.floor(args1[0]-0.5)-Math.floor(args2[0]-0.5));
+            break;
 
     }
 
@@ -3969,9 +4687,118 @@ function executeFunc(funccode, args, attributes) {
         case FuncCode.DGAMA: return 0; 
         case FuncCode.PGAMA: return 0; 
         case FuncCode.ZETA: return 0; 
+        case FuncCode.BINOM: return func_gamma(args[1]+1)/(func_gamma(args[0]+1)*func_gamma(args[1]-args[0]+1));
     }
 
     return 0;
+}
+
+/**
+ * Shifts each element in `a` by `b`
+ * @param {Array} a 
+ * @param {number} b 
+ * @returns An array
+ */
+export function tupleShift(a,b){
+    let r = [];
+    for(let i = 0; i < a.length; i++){
+        r.push(a[i]+b);
+    }
+    return r; 
+}
+
+/**
+ * Returns an array r such that r[i] = a[i]+b[i]
+ * @param {*} a 
+ * @param {*} b 
+ * @returns 
+ */
+export function tupleAdd(a,b){ 
+    let r = [];
+    for(let i = 0; i < a.length; i++){
+        r.push(a[i]+b[i]);
+    }
+    return r;
+}
+
+/**
+ * Shifts each element in `a` by -`b`
+ * @param {Array} a 
+ * @param {number} b 
+ * @returns An array
+ */
+export function tupleUnshift(a,b){
+    let r = [];
+    for(let i = 0; i < a.length; i++){
+        r.push(a[i]-b);
+    }
+    return r;
+}
+
+export function tupleSubtract(a,b){
+    let r = [];
+    for(let i = 0; i < a.length; i++){
+        r.push(a[i]-b[i]);
+    }
+    return r;
+}
+
+export function tupleScale(a,s){
+    let r = [];
+    for(let i = 0; i < a.length; i++){
+        r.push(a[i]*s);
+    }
+    return r;
+}
+
+export function tupleMultiply(a,b){
+    let r = [];
+    for(let i = 0; i < a.length; i++){
+        r.push(a[i]*b[i]);
+    }
+    return r;
+}
+
+export function tupleDivide(a,b){
+    let r = [];
+    for(let i = 0; i < a.length; i++){
+        r.push(a[i]/b[i]);
+    }
+    return r;
+}
+
+export function tupleDotProduct(a,b){
+    let r = 0;
+    for(let i = 0; i < a.length; i++){
+        r+=a[i]*b[i];
+    }
+    return r;
+}
+
+export function tupleCrossProduct(a,b){
+    const l = a.length;
+    let matrix = [
+        //i, j, k, ...
+        Array(2*l-1).fill(1),
+        a.concat(a),
+        b.concat(b),
+    ];
+
+    let r = [];
+    for(let i = 0; i < l; i++){
+        let diag1 = 0;
+        for(let j = 0; j < l; j++){
+            diag1*=matrix[i][i+j];
+        }
+
+        let diag2 = 0;
+        for(let j = l-1; j>=0; j--){
+            diag2*=matrix[i][i-j];
+        }
+        
+        r.push(diag1-diag2);
+    }
+    return r;
 }
 
 function blankEdgeObject(){
@@ -3984,6 +4811,7 @@ function blankEdgeObject(){
 }
 
 function func_gamma(n) {
+    if(n-Math.floor(n) === 0 && n<=0) return undefined; 
     //console.log("N",n);
     //recursive gamma function implementation using Lanczos approximation and reflection formula
     const lancoszCoefficients = [
@@ -4013,6 +4841,47 @@ function func_gamma(n) {
         return Math.sqrt(2 * Math.PI) * Math.pow(t, n + 0.5) * Math.exp(-t) * x;    
     }
 
+}
+
+function func_choose(n,k){
+    const result = func_gamma(n+1)/(func_gamma(k+1)*func_gamma(n-k+1));
+
+    //console.log('n,k,r:', n, k, result);
+
+    if(n-Math.floor(n) === 0 && k-Math.floor(k) === 0) return Math.round(result);
+    return result;
+}
+
+function func_factor(n){    
+    if(n-Math.floor(n) !== 0) { 
+        return [];
+    }
+
+    if(n <= 1) {
+        return [n];
+    }
+
+    if(n > 10**11) { 
+        //throw new Error('Number '+n+' is too large to factorize'); 
+        //console.error('Number '+n+' is too large or too small to factorize');
+        return [];
+    }
+
+
+
+    const sqrt = Math.sqrt(n);
+    let a = [],
+    f = 2;
+    while (n > 1) {
+        if (n % f === 0) {
+            a.push(f);
+            //a.push(n/f);
+            n /= f;
+        } else {
+            f++;
+        }
+    }
+    return a;
 }
 
 export function evaluateExpressionSimple(string) {

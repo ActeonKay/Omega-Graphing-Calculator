@@ -81,7 +81,7 @@ export function isValidExpression(expr){
     if(expr.type < -1 || expr.type > 8) {console.log('type not in range'); return false;}
 
     if(typeof expr.varDependencies !== 'object') return false;
-    if(typeof expr.varDependencies.length !== 'number') {console.log('vardependencies not array'); return false;}
+    if(typeof expr.varDependencies.size !== 'number') {console.log('vardependencies not array'); return false;}
 
     if(typeof expr.color !== 'string') {console.log('color not number'); return false;}
 
@@ -134,20 +134,22 @@ function getDependencies(name){
         found.add(d1);
         const r = getDependencies(d1);
 
-        if(r !== undefined) r.forEach((d2) => found.add(d2));
+        if(r !== undefined) found.union(r);
     });
 
     return found;
 }
 
-export function registerVariable(name, varinfo, varDependencies = []){
+export function registerVariable(name, varinfo, varDependencies = new Set()){
     if(variableData.get(name) !== undefined) { console.log(name + ' already defined'); return false;}
 
     let dependencies = new Set();
     varDependencies.forEach((d) => {
-        dependencies.add(getDependencies(d));
+        dependencies.union(getDependencies(d));
         dependencies.add(d);
     });
+
+    console.log(dependencies);
 
     if(typeof varinfo === 'object'){
         variableData.set(name, {value: varinfo, dependencies: dependencies});
@@ -178,4 +180,8 @@ export function getVariable(name){
 
 export function getAllVariables(){
     return variables;
+}
+
+export function registerFunction(name, funcinfo, dependencies = new Set()){
+    // if()
 }
