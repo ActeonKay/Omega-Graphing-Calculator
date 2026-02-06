@@ -1,3 +1,7 @@
+import{
+    evaluateExpression
+} from './evaluator.js';
+
 const ExpressionImageTypes = {
     CARTESIAN_IMPLICIT: 1,
     CARTESIAN_Y_OF_X: 2,
@@ -8,14 +12,28 @@ function translateToGraphCoords(x,y){
 
 }
 
-async function renderCartesianYofX(expression, viewMinX, viewMaxX, viewMinY, viewMaxY){
-    //const dx = 0.5;
+//instructions array of Action objects
+// Action = {shouldDraw: bool, x: float, y: float}
+export function generateDrawInstructionsForCartesianYofX(expression, minX, maxX, xCount, viewMinY, viewMaxY){
+    let instructions = [];
 
-    const scale = (Math.floor(Math.log2(viewMaxX-viewMinX))) << (viewMaxX-viewMinX);
+    const dx = (maxX-minX)/xCount;
 
-    const minX = viewMinX-floor(viewMinX);
+    // use ctx.translate instead of this arithmetic
 
-    for(let x = minX; x+= dx; x<maxX){
+    let input = { min: 0, max: 0};
+    let xprev = minX-dx;
 
+    for(let x = minX; x<maxX; x+= dx){
+        //console.log('x', x);
+        input.min = xprev;
+        input.max = x;
+        let result = evaluateExpression(expression,input);
+
+        console.assert(result.edge !== undefined,result,result.edge);
+
+        instructions.push([(result.edge[1]) === 0,x,result.value[1]]);
     }
+
+    return instructions;
 }

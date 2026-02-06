@@ -460,31 +460,31 @@ const ConstantCode = {
 }
 
 const ConstantInfo = {
-    "i": { code: ConstantCode.I, value: 1 },
-    "pi": { code: ConstantCode.PI, value: Math.PI },
-    "e": { code: ConstantCode.EUL_NUM, value: 2.718281828459045 },
-    "eucon": { code: ConstantCode.EUL_CON, value: 0.577215664901532 },
-    "egrav": { code: ConstantCode.GRV_ERT, value: 9.80665 },
-    "sc": { code: ConstantCode.SOL_CON, value: 1360 },
-    "grav": { code: ConstantCode.GRV_CON, value: 6.67430e-11 },
-    "NA": { code: ConstantCode.AVO_NUM, value: 6.02214076e23 },
-    "gascon": { code: ConstantCode.GAS_CON, value: 8.314462618 },
-    "bmc": { code: ConstantCode.BZM_CON, value: 1.380649e-23 },
-    "sbc": { code: ConstantCode.SBM_CON, value: 5.670374419e-8 },
-    "culuk": { code: ConstantCode.CUL_CON, value: 8.99e9 },
-    "epzo": { code: ConstantCode.EPS_ZRO, value: 8.854187817e-12 },
-    "muzo": { code: ConstantCode.MU_ZRO, value: 1.25663706144e-6 },
-    "speli": { code: ConstantCode.SP_LGHT, value: 299792458 },
-    "plcon": { code: ConstantCode.PLK_CON, value: 6.63e-34 },
-    "elcharge": { code: ConstantCode.Q_ELEM, value: 1.602176634e-19 },
-    "elmas": { code: ConstantCode.M_ELEC, value: 9.1093837015e-31 },
-    "prmas": { code: ConstantCode.M_PROT, value: 1.67262192369e-27 },
-    "numas": { code: ConstantCode.M_NEUT, value: 1.67492749804e-27 },
-    "uam": { code: ConstantCode.UM_ATOM, value: 1.66053906660e-27 },
-    "radfer": { code: ConstantCode.RAD_FRM, value: 1.20e-15 },
-    "true": { code: ConstantCode.TRUE, value: true },
-    "false": { code: ConstantCode.FALSE, value: false },
-    "phi": { code: ConstantCode.PHI, value: 1.61803398875}
+    "i": { code: ConstantCode.I, value: [0,1], outputType: TokenHandleType.COMPLEX },
+    "pi": { code: ConstantCode.PI, value: Math.PI, outputType: TokenHandleType.REAL },
+    "e": { code: ConstantCode.EUL_NUM, value: 2.718281828459045, outputType: TokenHandleType.REAL },
+    "eucon": { code: ConstantCode.EUL_CON, value: 0.577215664901532, outputType: TokenHandleType.REAL },
+    "egrav": { code: ConstantCode.GRV_ERT, value: 9.80665, outputType: TokenHandleType.REAL },
+    "sc": { code: ConstantCode.SOL_CON, value: 1360, outputType: TokenHandleType.REAL },
+    "grav": { code: ConstantCode.GRV_CON, value: 6.67430e-11, outputType: TokenHandleType.REAL },
+    "NA": { code: ConstantCode.AVO_NUM, value: 6.02214076e23, outputType: TokenHandleType.REAL },
+    "gascon": { code: ConstantCode.GAS_CON, value: 8.314462618, outputType: TokenHandleType.REAL },
+    "bmc": { code: ConstantCode.BZM_CON, value: 1.380649e-23, outputType: TokenHandleType.REAL },
+    "sbc": { code: ConstantCode.SBM_CON, value: 5.670374419e-8, outputType: TokenHandleType.REAL },
+    "culuk": { code: ConstantCode.CUL_CON, value: 8.99e9, outputType: TokenHandleType.REAL },
+    "epzo": { code: ConstantCode.EPS_ZRO, value: 8.854187817e-12, outputType: TokenHandleType.REAL },
+    "muzo": { code: ConstantCode.MU_ZRO, value: 1.25663706144e-6, outputType: TokenHandleType.REAL },
+    "speli": { code: ConstantCode.SP_LGHT, value: 299792458, outputType: TokenHandleType.REAL },
+    "plcon": { code: ConstantCode.PLK_CON, value: 6.63e-34, outputType: TokenHandleType.REAL },
+    "elcharge": { code: ConstantCode.Q_ELEM, value: 1.602176634e-19, outputType: TokenHandleType.REAL },
+    "elmas": { code: ConstantCode.M_ELEC, value: 9.1093837015e-31, outputType: TokenHandleType.REAL },
+    "prmas": { code: ConstantCode.M_PROT, value: 1.67262192369e-27, outputType: TokenHandleType.REAL },
+    "numas": { code: ConstantCode.M_NEUT, value: 1.67492749804e-27, outputType: TokenHandleType.REAL },
+    "uam": { code: ConstantCode.UM_ATOM, value: 1.66053906660e-27, outputType: TokenHandleType.REAL },
+    "radfer": { code: ConstantCode.RAD_FRM, value: 1.20e-15, outputType: TokenHandleType.REAL },
+    "true": { code: ConstantCode.TRUE, value: true, outputType: TokenHandleType.REAL },
+    "false": { code: ConstantCode.FALSE, value: false, outputType: TokenHandleType.REAL },
+    "phi": { code: ConstantCode.PHI, value: 1.61803398875, outputType: TokenHandleType.REAL}
 }
 
 const ConstInfoByCode = {};
@@ -2535,6 +2535,18 @@ function generateMethodExprForFunc(funccode, tokType, attributes){
             //
             /* Todo: add handling for variables that are arrays */
             case FuncCode.ARRAY: //{type: TokenType.ARRAY, valueType: TokenType.NUM, values: [], uncertainties: []}
+                return (...args) => {
+                    const type = args[0].type; //can assume args.length > 0
+                    if(args[0].outputType > TokenHandleType.TUPLE) {
+                        console.error('Array elements cannot be of this type');
+                        return [];
+                    }
+                    if(args.some((arg) => arg.type !== type)) {
+                        console.error('All array elements must be of same type. ');
+                        return [];
+                    }
+                    return args;
+                }
             case FuncCode.TUPLE: //{type: TokenType.TUPLE, valueType: TokenType.NUM, values: [], uncertainties: []}
                 return (...args) => args.reverse(); //args are passed in backwards order
             case FuncCode.AVG: 
@@ -3302,6 +3314,7 @@ export function readExpressionWithReplacements(compiledExpression, input) {
     }
 
     if(tokType == TokenType.DUAL){
+        //console.log(toReplace,toReplace.length);
         for(let i = 0; i < toReplace.length; i++){
             action = toReplace[i];
 
@@ -3586,10 +3599,12 @@ function evaluateMethodExprForBinaryOp(token, evalType, a,b){
 
         console.log(result,result.length);
 
-        const t = {
+        let t = {
             type: returnType,
             value: result,
         }
+        if(returnType === TokenType.DUAL) t.edge = [0,0,0];
+        else if(returnType === TokenType.QUAD) t.edges = {top: [0,0,0], btm: [0,0,0], lft: [0,0,0], rgt: [0,0,0]};
 
         console.log(t);
         

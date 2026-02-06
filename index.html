@@ -230,7 +230,11 @@
 
     import {
       getAllExpressions, appendExpression, getNextId, getNextColor, registerVariable, unregisterVariable
-    } from "./expressions.js"
+    } from "./expressions.js";
+
+    import {
+      generateDrawInstructionsForCartesianYofX
+    } from "./renderer.js";
 
     // --- Common Elements ---
     const canvas = document.getElementById('c');
@@ -915,22 +919,37 @@
     }
 
     function drawAsYofX(expr){
-      currentExpression = expr;
-
-      const dx = 1/2;
       const minY = toGraphCoordsY(0);
       const maxY = toGraphCoordsY(window.innerHeight);
+
+      const minX = toGraphCoordsX(0);
+      const maxX = toGraphCoordsX(window.innerWidth);
+
+      const instructions = generateDrawInstructionsForCartesianYofX(expr, minX, maxX, window.innerWidth, minY, maxY);
 
       ctx.beginPath();
       ctx.lineWidth = 3;
       ctx.lineCap = "round";
-      ctx.strokeStyle = currentExpression.color; //FIX to not rely on currentExpression variable
+      ctx.strokeStyle = expr.color;
 
       let gy = evaluateExpression(
-        currentExpression, 
-        {min: toGraphCoordsX(-dx), max: toGraphCoordsX(0)}
+        expr, 
+        {min: toGraphCoordsX(-1), max: toGraphCoordsX(0)}
       );
       ctx.moveTo(0,toScreenCoordsY(gy.value[1]));
+      
+      for(let i = 0; i < instructions.length; i++){
+        const action = instructions[i];
+        if(action[0]) ctx.lineTo(toScreenCoordsX(action[1]),toScreenCoordsY(action[1]));
+        else ctx.lineTo(toScreenCoordsX(action[1]),toScreenCoordsY(action[1]));
+      }
+      
+      ctx.stroke();
+      return;
+
+      currentExpression = expr;
+
+      // const dx = 1/2;
 
       segmentCount = 0;
 

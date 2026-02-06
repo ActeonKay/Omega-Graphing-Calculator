@@ -1,0 +1,89 @@
+//complex numbers a+bi represented as [a, b]
+
+export function complexAdd(a,b){
+    return [a[0]+b[0],a[1]+b[1]];
+}
+
+export function complexSubtract(a,b){
+    return [a[0]-b[0],a[1]-b[1]];
+}
+
+export function complexMultiply(a,b){
+    return [
+        a[0]*b[0]-a[1]*b[1],
+        a[0]*b[1]+a[1]*b[0]
+    ];
+}
+
+export function complexDivide(a,b){
+    const d = complexModulus(b);
+    return [
+        (a[0]*b[0]+a[1]*b[1])/d,
+        (a[1]*b[0]-a[0]*b[1])/d,
+    ];
+}
+
+export function complexPow(a,n){
+    const phi = complexArgument(a);
+    const r = complexModulus(a);
+    return complexRCis(n*phi,r**n);
+}
+
+export function complexRoots(a,n){
+    if(n-Math.floor(n) !== 0) return [];
+
+    const phi = complexArgument(a);
+    const rIn = complexModulus(a);
+    const rOut = rIn**(1/n);
+
+    const dTheta = Math.PI*2/n;
+
+    let roots = [];
+    for(let theta = phi/n; theta<Math.PI*2; theta+=dTheta){
+        roots.push(complexRCis(theta,rOut));
+    }
+    return roots;
+}
+
+export function complexConjugate(a){
+    return [a[0],-a[1]];
+}
+
+export function complexModulus(a){
+    return Math.hypot(a[0],a[1]);
+}
+
+export function complexArgument(a){
+    Math.atan2(a[1],a[0]);
+}
+
+export function complexCis(theta){
+    return [Math.cos(theta),Math.sin(theta)];
+}
+
+export function complexRCis(theta,r){
+    return [r*Math.cos(theta),r*Math.sin(theta)];
+}
+
+//analytic continuations
+
+function complexExp(z){
+    return [
+        Math.exp(z[0])*Math.cos(z[1]),
+        Math.exp(z[0])*Math.sin(z[1])
+    ];
+}
+
+function complexSin(z){
+    return [
+        Math.sin(z[0])*Math.cosh(z[1]),
+        Math.cos(z[0])*Math.sinh(z[1])
+    ];
+}
+
+function complexCos(z){
+    return [
+        Math.sin(z[0])*Math.cosh(z[1]),
+        Math.cos(z[0])*Math.sinh(z[1])
+    ];
+}
