@@ -1,4 +1,46 @@
 //complex numbers a+bi represented as [a, b]
+import{
+    OpCode
+} from '../evaluator.js';
+
+/**
+ * 
+ * @param opcode 
+ * @returns 
+ */
+export function generateComplexOperatorMethodExpression(opcode){
+    switch(opcode){
+        case OpCode.ADD: return (a,b)=>complexAdd(a,b);
+        case OpCode.SUB: return (a,b)=>complexSubtract(a,b);
+        case OpCode.MUL: return (a,b)=>complexMultiply(a,b);
+        case OpCode.DIV: return (a,b)=>complexDivide(a,b);
+        case OpCode.POW: 
+        case OpCode.POWN: return (a,n)=>complexPow(a,n);
+        case OpCode.LT: return (a,b)=>a[0]<b[0];
+        case OpCode.LTE: return (a,b)=>a[0]<=b[0];
+        case OpCode.GT: return (a,b)=>a[0]>b[0];
+        case OpCode.GTE: return (a,b)=>a[0]>=b[0];
+        case OpCode.EQ: return (a,b)=>a[0]==b[0];
+        case OpCode.NEQ: return (a,b)=>a[0]==b[0];
+        case OpCode.AND: return (a,b)=>0;
+        case OpCode.OR: return (a,b)=>0;
+        case OpCode.XOR: return (a,b)=>0;
+        case OpCode.NOT: return (a,b)=>0;
+        case OpCode.FACT: return (a)=>0; //complex gamma?
+        case OpCode.NEG: return (a)=>[-a[0],-a[1]];
+        case OpCode.DPR: return (a,b)=>0;
+        case OpCode.CRP: return (a,b)=>0;
+        case OpCode.ATT: return (a,b)=>0;
+        case OpCode.SUBS: return (a,b)=>0;
+        case OpCode.PM: return (a,b)=>[a[0],a[1]];
+        case OpCode.PCT: return (a)=>[0.01*a[0],0.01*a[1]];
+        case OpCode.DEG: return (a)=>[57.2957795131*a[0],57.2957795131*a[1]];
+        case OpCode.ABS: return (a)=>complexModulus(a);
+        default:
+            console.error('Unknown op code passed to complex methodExpr generator: ', opcode);
+            return (a,b)=>[0,0]; 
+    }
+}
 
 export function complexAdd(a,b){
     return [a[0]+b[0],a[1]+b[1]];

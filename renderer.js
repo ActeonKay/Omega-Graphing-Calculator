@@ -28,11 +28,13 @@ export function generateDrawInstructionsForCartesianYofX(expression, minX, maxX,
         //console.log('x', x);
         input.min = xprev;
         input.max = x;
+        //console.log('eval from x='+input.min+' to x='+input.max);
         let result = evaluateExpression(expression,input);
 
         console.assert(result.edge !== undefined,result,result.edge);
 
         instructions.push([(result.edge[1]) === 0,x,result.value[1]]);
+        xprev=x;
     }
 
     return instructions;

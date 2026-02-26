@@ -628,6 +628,7 @@
     function parseTokenToLatex(token){
       //return '\\frac{1}{\\sqrt{x^2 + 1}}';
       //return '\\begin{array}{cc} a & b \\\\ c & d \\end{array}';
+      console.log(token, token.value === undefined);
 
       if(token.type === 17){ //HARDCODED
         console.log(token.value);
@@ -641,23 +642,31 @@
       const value = token.value;
       const uncertainty = token.uncertainty ?? 0;
       const asPercent = token.interpret === 'pct';
-      //const asRadians = token.interpret === 'rad';
+      const asRadians = token.interpret === 'rad';
+
+      if(value === undefined){
+        console.log('result: ', undefined);
+        return "\\text{undefined}";
+      }
 
       if(isFinite(value)){
         //weird bug where if this is a === V then the expression [1] evaluates to 1±0, instead of just 1
         const strUncertainty = uncertainty == 0 ? '' : '±'+(asPercent ? uncertainty*100+'%' : uncertainty);
-        const strValue = (asPercent?value*100+'%':value);
+
+        let strValue = "";
+
+        if(asPercent) strValue = value*100 + '%';
+        else if(asRadians) strValue = value + '\\quad\\text{rad}';
+        else strValue = value;
+
         return strValue+strUncertainty;
       }
 
       if(value === NaN){
-        return '\\operatorname{NaN}';
+        return '\\text{NaN}';
       }
 
-      if(value === undefined){
-        console.log('result: ', undefined);
-        return '\\operatorname{undefined}'
-      }
+      
 
       if(value === Infinity){
         return '\\infty';
@@ -925,6 +934,11 @@
       const minX = toGraphCoordsX(0);
       const maxX = toGraphCoordsX(window.innerWidth);
 
+      let gy = evaluateExpression(
+        expr, 
+        {min: toGraphCoordsX(-1), max: toGraphCoordsX(0)}
+      );
+
       const instructions = generateDrawInstructionsForCartesianYofX(expr, minX, maxX, window.innerWidth, minY, maxY);
 
       ctx.beginPath();
@@ -932,16 +946,12 @@
       ctx.lineCap = "round";
       ctx.strokeStyle = expr.color;
 
-      let gy = evaluateExpression(
-        expr, 
-        {min: toGraphCoordsX(-1), max: toGraphCoordsX(0)}
-      );
       ctx.moveTo(0,toScreenCoordsY(gy.value[1]));
       
       for(let i = 0; i < instructions.length; i++){
         const action = instructions[i];
-        if(action[0]) ctx.lineTo(toScreenCoordsX(action[1]),toScreenCoordsY(action[1]));
-        else ctx.lineTo(toScreenCoordsX(action[1]),toScreenCoordsY(action[1]));
+        if(action[0]) ctx.lineTo(toScreenCoordsX(action[1]),toScreenCoordsY(action[2]));
+        else ctx.lineTo(toScreenCoordsX(action[1]),toScreenCoordsY(action[2]));
       }
       
       ctx.stroke();
@@ -1217,10 +1227,10 @@
       const v=q.value;
 
       if(
-        ((q.edges.top[1] > 0) || 
-        (q.edges.lft[1] > 0) ||
-        (q.edges.rgt[1] > 0) ||
-        (q.edges.btm[1] > 0)) && !forcePlot
+        ((q.edge.top[1] > 0) || 
+        (q.edge.lft[1] > 0) ||
+        (q.edge.rgt[1] > 0) ||
+        (q.edge.btm[1] > 0)) && !forcePlot
       ){
         if(w > 12 && h > 12){
           //Attempt to iterate further
@@ -1231,10 +1241,10 @@
       }
 
       if(
-        (q.edges.top[0] > 1) || 
-        (q.edges.lft[0] > 1) ||
-        (q.edges.rgt[0] > 1) ||
-        (q.edges.btm[0] > 1)
+        (q.edge.top[0] > 1) || 
+        (q.edge.lft[0] > 1) ||
+        (q.edge.rgt[0] > 1) ||
+        (q.edge.btm[0] > 1)
       ){
         if(!forcePlot){
           //If possible, iterate further
@@ -1244,10 +1254,10 @@
       }
 
       const crossSum = 
-        (q.edges.top[0]) +
-        (q.edges.lft[0]) +
-        (q.edges.rgt[0]) +
-        (q.edges.btm[0]);
+        (q.edge.top[0]) +
+        (q.edge.lft[0]) +
+        (q.edge.rgt[0]) +
+        (q.edge.btm[0]);
 
       const v00 = v[0]; //tplf
       const v10 = v[1]; //tprt
