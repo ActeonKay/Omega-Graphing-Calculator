@@ -281,7 +281,7 @@
     var MQ = MathQuill.getInterface(2);
     const mathQuillConfig = {
       restrictMismatchedBrackets: true,
-      autoCommands: 'pi theta phi Gamma sqrt plusmn degree binom', //add nthroot, sum, int
+      autoCommands: 'pi theta phi Gamma sqrt plusmn degree binom Re Im', //add nthroot, sum, int
       autoOperatorNames: validFunctions.join(' ')
     }
     MQ.config(mathQuillConfig);
@@ -628,15 +628,46 @@
     function parseTokenToLatex(token){
       //return '\\frac{1}{\\sqrt{x^2 + 1}}';
       //return '\\begin{array}{cc} a & b \\\\ c & d \\end{array}';
-      console.log(token, token.value === undefined);
+      //console.log(token);
+      //console.log(token, token.value === undefined);
 
-      if(token.type === 17){ //HARDCODED
+      if(token.type === 17){ //ARRAY, HARDCODED
         console.log(token.value);
-        return '['+token.value.join(', ')+']';
+
+        const items = token.value;
+
+        const asStrings = [];
+        for(let i = 0; i<items.length; i++){
+          const s = parseTokenToLatex({
+            type: token.elementType ?? 1, 
+            value: items[i]
+          });
+
+          console.assert(s !== undefined, token.elementType ?? 1, items[i]);
+          asStrings.push(s);
+        }
+
+        return '['+asStrings.join(', ')+']';
       }
 
       if(token.type === 18){
         return '('+token.value.join(', ')+')';
+      }
+
+      if(token.type === 11){
+        let re = token.value[0];
+        let im = token.value[1];
+
+        if(re === 0 && im === 0) return '0';
+
+        let sign = im < 0 ? '-' : (re === 0 || im === 0 ? '' : '+');
+
+        re = (re === 0) ? '' : re;
+        im = Math.abs(im);
+        im = im === 0 ? '' : (im === 1 ? 'i' : im+'i');
+
+
+        return re+sign+im;
       }
 
       const value = token.value;
@@ -656,7 +687,20 @@
         let strValue = "";
 
         if(asPercent) strValue = value*100 + '%';
-        else if(asRadians) strValue = value + '\\quad\\text{rad}';
+        else if(asRadians) {
+          if(true){
+            const r = value/Math.PI;
+            const factor = Math.pow(10,6);
+
+            const f = (decimalToFraction(r));
+
+            if(Math.abs(f.numerator / f.denominator - r) < 0.0000001) {
+              strValue = '\\frac{'+(f.numerator === 1 ? '' : f.numerator)+'\\pi'+'}{'+f.denominator+'}'+'\\quad\\operatorname{rad}';
+            } else strValue = value+'\\quad\\operatorname{rad}'
+          }else{
+            strValue = value + '\\quad\\text{rad}'
+          }
+        }
         else strValue = value;
 
         return strValue+strUncertainty;
@@ -666,8 +710,6 @@
         return '\\text{NaN}';
       }
 
-      
-
       if(value === Infinity){
         return '\\infty';
       }
@@ -675,6 +717,34 @@
       if(value === -Infinity){
         return '-\\infty';
       }
+    }
+
+    function gcd(a, b) {
+      return b ? gcd(b, a % b) : a;
+    }
+
+    function decimalToFraction(decimal) {
+      // Handle integer case
+      if (decimal % 1 === 0) {
+          return { numerator: decimal, denominator: 1 };
+      }
+
+      // Convert to string to accurately count decimal places, addressing floating point issues
+      const decimalString = decimal.toString();
+      const decimalPlaces = decimalString.includes('.') ? decimalString.split('.')[1].length : 0;
+      const denominator = 180;//Math.pow(10, decimalPlaces);
+
+      // Calculate the numerator by shifting the decimal point
+      // Using Math.round to mitigate minor floating point errors
+      const numerator = Math.round(decimal * denominator);
+
+      // Simplify the fraction by finding the GCD
+      const commonDivisor = gcd(Math.abs(numerator), denominator);
+
+      return {
+          numerator: numerator / commonDivisor,
+          denominator: denominator / commonDivisor
+      };
     }
 
     // function updateExpressionResult(eqRow, expression){
@@ -832,7 +902,7 @@
     }
 
     function toGraphCoordsY(y){
-        return -((y-window.innerHeight/2)*(3/window.innerWidth)-offsetY)*scaleFactor;
+      return -((y-window.innerHeight/2)*(3/window.innerWidth)-offsetY)*scaleFactor;
     }
 
     function toScreenCoordsX(x) {
@@ -883,8 +953,16 @@
 
       const evalResult = evaluateExpression(currentExpression);
 
-      if(evalResult.type === 18 && evalResult.value.length === 2){
+      if( (evalResult.type === 18 || evalResult.type === 11) && evalResult.value.length === 2){
         drawPoint(evalResult.value[0],evalResult.value[1],true);
+      }
+
+      if( (evalResult.type === 17 ) && evalResult.value.length > 0){
+        if(evalResult.elementType === 11){
+          for(let i = 0; i < evalResult.value.length; i++){
+            drawPoint(evalResult.value[i][0], evalResult.value[i][1],true);
+          }
+        }
       }
     }
 
@@ -950,8 +1028,25 @@
       
       for(let i = 0; i < instructions.length; i++){
         const action = instructions[i];
-        if(action[0]) ctx.lineTo(toScreenCoordsX(action[1]),toScreenCoordsY(action[2]));
-        else ctx.lineTo(toScreenCoordsX(action[1]),toScreenCoordsY(action[2]));
+
+        let y = toScreenCoordsY(action[2]);
+
+        if(y < 0) y = -window.innerHeight;
+        if(y>window.innerWidth) y = 2*window.innerHeight;
+
+        // if(y < maxY) {
+        //   y=2*window.innerHeight;
+        // } else if(y > minY) {
+        //   y=-window.innerHeight;
+        // } else {
+        //   y=toScreenCoordsY(y);
+        // }
+
+        if(action[0]) {
+          ctx.lineTo(toScreenCoordsX(action[1]),y);
+        } else {
+          ctx.moveTo(toScreenCoordsX(action[1]),y);
+        }
       }
       
       ctx.stroke();

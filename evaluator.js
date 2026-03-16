@@ -4,7 +4,9 @@ import{
 } from "./expressions.js";
 
 import{
-    generateComplexOperatorMethodExpression
+    generateComplexOperatorMethodExpression,
+    generateComplexFunctionMethodExpression,
+    convertValueToComplex
 } from "./types/complexArithmetic.js"
 
 export const ExpressionType = {
@@ -48,7 +50,8 @@ const TokenType = {
     ALPHANUM: 15,
     ATT: 16,
     ARRAY: 17, //{type: 17, valuetype: int, value: [values], uncertainties: int[] ?? 0[] }
-    TUPLE: 18 //same as array
+    TUPLE: 18, //same as array,
+    DIST: 19
 }
 
 const LatexTokenType = {
@@ -144,7 +147,8 @@ const OpInfo = {
     "pm": { code: OpCode.PM, precedence: 1, associativity: OpAssoc.LEFT, arity: 2 },
     "%": { code: OpCode.PCT, precedence: 6, associativity: OpAssoc.LEFT, arity: 1 },
     "degree": { code: OpCode.DEG, precedence: 6, associativity: OpAssoc.LEFT, arity: 1},
-    "abs": { code: OpCode.ABS, precedence: 6, associativity: OpAssoc.LEFT, arity: 1}
+    "abs": { code: OpCode.ABS, precedence: 6, associativity: OpAssoc.LEFT, arity: 1},
+    "times": { code: OpCode.CRP, precedence: 2, associativity: OpAssoc.LEFT, arity: 2 },
 }
 
 const OpInfoByCode = {};
@@ -165,22 +169,13 @@ const NumType = {
     COMPLEX: 5
 }
 
-const TokenToNumType = {
-    [TokenType.NUM]: NumType.NUM,
-    [TokenType.DUAL]: NumType.DUAL,
-    [TokenType.QUAD]: NumType.QUAD,
-    [TokenType.ARRAY]: NumType.ARRAY,
-    [TokenType.TUPLE]: NumType.TUPLE,
-    [TokenType.CMPLX]: NumType.COMPLEX
-}
-
 //value types: NUM, DUAL, QUAD, ARRAY, TUPLE, COMPLEX, MATRIX?
 
 function toStrictOperatorCodeBinary(leftType, rightType, opcode){
     //left,right have 4 bits, opcode has 8
     const r = leftType << 12 | rightType << 8 | opcode;
     console.assert(r !== undefined, leftType, rightType, opcode);
-    console.log(r);
+    console.log(r,leftType,rightType);
     return r;
 }
 
@@ -189,19 +184,19 @@ function toStrictOperatorCodeUnary(arg, opcode){
     return arg << 8 | opcode;
 }
 
-function toStrictFunctionInfoObject(argTypes, funccode){
+function newFuncInputInfoObject(argTypes, funccode, attributes){
     console.assert(argTypes.length > 0);
 
     const staticArgs = FuncInfoByCode[funccode].staticArgs;
     if(staticArgs){
         const expectedCount = FuncInfoByCode[funccode].args;
-        console.assert(argTypes.count === expectedCount);
+        console.assert(argTypes.length === expectedCount, argTypes, expectedCount);
 
-        return {staticArgs: true, argTypes: argTypes, code: funccode};
+        return {staticArgs: true, argTypes: argTypes, code: funccode, attributes};
     }
 
     //if staticArgs is false, all arguments should be of same type
-    if(argTypes.count === 1) return {staticArgs: false, argTypes: argTypes, code: funccode};
+    if(argTypes.length === 1) return {staticArgs: false, argTypes: argTypes, code: funccode, attributes};
 
     return {argTypes, code: funccode}; 
 }
@@ -247,16 +242,26 @@ const TokenHandleType = {
     REAL: 1, //1-Dimensional values, just a number
     COMPLEX: 2, //2-dimensional number, NOT YET IMPLEMENTED
     TUPLE: 3, //any-dimensional values, operations are performed on each value and a tuple is returned
-    ARRAY: 4, //similar to array
-    INPUT_TUPLE: 5, //like a quad or dual; interact as tuples except for when operated with tuples; which returns a different tuple in each 'branch'
-    BINARY_OP: 6, //2 inputs (l,r)
-    UNARY_OP: 7, //1 input (a)
-    FUNCTION: 8, //n inputs (arg[0],args[1],...)
-    DELIMITER: 9, //like a comma. Probably shouldn't exist
-    BOOL: 10
+    INPUT_TUPLE: 4, //like a quad or dual; interact as tuples except for when operated with tuples; which returns a different tuple in each 'branch'
+    DISTRIBUTION: 5,
+    ARRAY: 6, //similar to array
+    UNARY_OP: -1, //1 input (a)
+    BINARY_OP: -2, //2 inputs (l,r)
+    FUNCTION: -3, //n inputs (arg[0],args[1],...)
+    DELIMITER: -4, //like a comma. Probably shouldn't exist
+    //BOOL: 10,
 }
 
-const FuncCode = {
+const TokenHandleToType = {
+    [TokenHandleType.REAL]: TokenType.NUM,
+    [TokenHandleType.COMPLEX]: TokenType.CMPLX,
+    [TokenHandleType.QUAD]: NumType.QUAD,
+    [TokenType.ARRAY]: NumType.ARRAY,
+    [TokenType.TUPLE]: NumType.TUPLE,
+    [TokenType.CMPLX]: NumType.COMPLEX
+}
+
+export const FuncCode = {
     FRAC: 100, //maybe temporary
     SIN: 101,
     COS: 102,
@@ -320,7 +325,11 @@ const FuncCode = {
     BINOM: 160,
     IN: 161, //∈
     NOTIN: 162, //∉
-    FACTOR: 163
+    FACTOR: 163,
+    CIS: 164,
+
+    D_NORM: 170,
+    D_BINM: 171
 }
 
 const FuncArgumentInputType = {
@@ -341,13 +350,13 @@ const FuncArgumentInputType = {
 }
 
 const FuncInfo = {
-    "frac": { code: FuncCode.FRAC, staticArgs: true, args: 2, inputType: FuncArgumentInputType.ALL_REAL, returnType: TokenHandleType.REAL },
-    "sin": { code: FuncCode.SIN, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.REAL },
-    "cos": { code: FuncCode.COS, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.REAL },
-    "tan": { code: FuncCode.TAN, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.REAL },
-    "sec": { code: FuncCode.SEC, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.REAL },
-    "csc": { code: FuncCode.CSC, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.REAL },
-    "cot": { code: FuncCode.COT, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.REAL },
+    "frac": { code: FuncCode.FRAC, staticArgs: true, args: 2, inputType: FuncArgumentInputType.ALL_NUMERIC, returnType: TokenHandleType.REAL },
+    "sin": { code: FuncCode.SIN, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_NUMERIC, returnType: TokenHandleType.REAL },
+    "cos": { code: FuncCode.COS, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_NUMERIC, returnType: TokenHandleType.REAL },
+    "tan": { code: FuncCode.TAN, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_NUMERIC, returnType: TokenHandleType.REAL },
+    "sec": { code: FuncCode.SEC, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_NUMERIC, returnType: TokenHandleType.REAL },
+    "csc": { code: FuncCode.CSC, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_NUMERIC, returnType: TokenHandleType.REAL },
+    "cot": { code: FuncCode.COT, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_NUMERIC, returnType: TokenHandleType.REAL },
     "arcsin": { code: FuncCode.ASIN, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.REAL },
     "arccos": { code: FuncCode.ACOS, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.REAL },
     "arctan": { code: FuncCode.ATAN, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.REAL },
@@ -368,41 +377,44 @@ const FuncInfo = {
     "arccoth": { code: FuncCode.ACOTH, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.REAL },
     "gd": { code: FuncCode.GD, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.REAL  },
     "lam": { code: FuncCode.LAM, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.REAL  },
-    "abs": { code: FuncCode.ABS, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.REAL  },
+    "abs": { code: FuncCode.ABS, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_NUMERIC, returnType: TokenHandleType.REAL  },
     "sign": { code: FuncCode.SIGN, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.REAL  },
     "floor": { code: FuncCode.FLOOR, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.REAL  },
     "ceil": { code: FuncCode.CEIL, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.REAL  },
     "round": { code: FuncCode.ROUND, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.REAL  },
     "trunc": { code: FuncCode.TRUNC, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.REAL  },
     "mod": { code: FuncCode.MOD, staticArgs: true, args: 2, inputType: FuncArgumentInputType.ALL_REAL, returnType: TokenHandleType.REAL  },
-    "min": { code: FuncCode.MIN, staticArgs: false, minArgs: 1, inputType: FuncArgumentInputType.ARRAY_OR_REALS, returnType: TokenHandleType.REAL  },
-    "max": { code: FuncCode.MAX, staticArgs: false, minArgs: 1, inputType: FuncArgumentInputType.ARRAY_OR_REALS, returnType: TokenHandleType.REAL  },
-    "avg": { code: FuncCode.AVG, staticArgs: false, minArgs: 1, inputType: FuncArgumentInputType.ARRAY_OR_NUMERICS, returnType: TokenHandleType.REAL  },
-    "med": { code: FuncCode.MED, staticArgs: false, minArgs: 1, inputType: FuncArgumentInputType.ARRAY_OR_NUMERICS, returnType: TokenHandleType.REAL  },
+    "min": { code: FuncCode.MIN, staticArgs: false, minArgs: 1, inputType: FuncArgumentInputType.ARRAY_SOFT_REALS, returnType: TokenHandleType.REAL  },
+    "max": { code: FuncCode.MAX, staticArgs: false, minArgs: 1, inputType: FuncArgumentInputType.ARRAY_SOFT_REALS, returnType: TokenHandleType.REAL  },
+    "avg": { code: FuncCode.AVG, staticArgs: false, minArgs: 1, inputType: FuncArgumentInputType.ARRAY_SOFT_NUMBERS, returnType: TokenHandleType.REAL  },
+    "med": { code: FuncCode.MED, staticArgs: false, minArgs: 1, inputType: FuncArgumentInputType.ARRAY_SOFT_REALS, returnType: TokenHandleType.REAL  },
     "mode": { code: FuncCode.MODE, staticArgs: false, minArgs: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.REAL  },
-    "exp": { code: FuncCode.EXP, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
-    "ln": { code: FuncCode.LN, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
-    "log": { code: FuncCode.LOG, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
-    "logn": { code: FuncCode.LOGN, staticArgs: true, args: 2, returnType: TokenHandleType.REAL  },
-    "sqrt": { code: FuncCode.SQRT, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
-    "cbrt": { code: FuncCode.CBRT, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
-    "nthrt": { code: FuncCode.NTHRT, staticArgs: true, args: 2, returnType: TokenHandleType.REAL  },
-    "Gamma": { code: FuncCode.GAMMA, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
-    "dgama": { code: FuncCode.DGAMA, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
-    "pgama": { code: FuncCode.PGAMA, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
-    "zeta": { code: FuncCode.ZETA, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
-    "atan2": { code: FuncCode.ATAN2, staticArgs: true, args: 2, returnType: TokenHandleType.REAL  },
-    "Re": { code: FuncCode.REAL, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
-    "Im": { code: FuncCode.IMAG, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
-    "Conj": { code: FuncCode.CONJ, staticArgs: true, args: 1, returnType: TokenHandleType.COMPLEX  },
-    "abscp": { code: FuncCode.ABSCP, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
-    "arg": { code: FuncCode.ARG, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
-    "ampl": { code: FuncCode.AMPL, staticArgs: true, args: 1, returnType: TokenHandleType.REAL  },
-    "sinc": { code: FuncCode.SINC, staticArgs: true, args: 1, returnType: TokenHandleType.REAL },
-    "array": { code: FuncCode.ARRAY, staticArgs: false, returnType: TokenHandleType.ARRAY },
-    "tuple": { code: FuncCode.TUPLE, staticArgs: false, returnType: TokenHandleType.TUPLE },
-    "binom": { code: FuncCode.BINOM, staticArgs: true, args: 2, returnType: TokenHandleType.REAL },
-    "factor": { code: FuncCode.FACTOR, staticArgs: true, args: 1, returnType: TokenHandleType.ARRAY }
+    "exp": { code: FuncCode.EXP, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_NUMERIC, returnType: TokenHandleType.REAL  },
+    "ln": { code: FuncCode.LN, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.REAL  },
+    "log": { code: FuncCode.LOG, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.REAL  },
+    "logn": { code: FuncCode.LOGN, staticArgs: true, args: 2, inputType: FuncArgumentInputType.ALL_REAL, returnType: TokenHandleType.REAL  },
+    "sqrt": { code: FuncCode.SQRT, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_NUMERIC, returnType: TokenHandleType.COMPLEX  },
+    "cbrt": { code: FuncCode.CBRT, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_NUMERIC, returnType: TokenHandleType.COMPLEX  },
+    "nthrt": { code: FuncCode.NTHRT, staticArgs: true, args: 2, inputType: FuncArgumentInputType.ALL_REAL, returnType: TokenHandleType.COMPLEX  },
+    "Gamma": { code: FuncCode.GAMMA, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.REAL  },
+    "dgama": { code: FuncCode.DGAMA, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.REAL  },
+    "pgama": { code: FuncCode.PGAMA, staticArgs: true, args: 2, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.REAL  },
+    "zeta": { code: FuncCode.ZETA, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.REAL  },
+    //"atan2": { code: FuncCode.ATAN2, staticArgs: true, args: 2, returnType: TokenHandleType.REAL  },
+    "Re": { code: FuncCode.REAL, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_COMPLEX, returnType: TokenHandleType.REAL  },
+    "Im": { code: FuncCode.IMAG, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_COMPLEX, returnType: TokenHandleType.REAL  },
+    "conj": { code: FuncCode.CONJ, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_COMPLEX, returnType: TokenHandleType.COMPLEX  },
+    "abscp": { code: FuncCode.ABSCP, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_COMPLEX, returnType: TokenHandleType.REAL  },
+    "arg": { code: FuncCode.ARG, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_COMPLEX, returnType: TokenHandleType.REAL  },
+    "ampl": { code: FuncCode.AMPL, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_COMPLEX, returnType: TokenHandleType.REAL  },
+    "sinc": { code: FuncCode.SINC, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.REAL },
+    "array": { code: FuncCode.ARRAY, staticArgs: false, minArgs: 1, inputType: FuncArgumentInputType.ALL_REAL, returnType: TokenHandleType.ARRAY },
+    "tuple": { code: FuncCode.TUPLE, staticArgs: false, minArgs: 1, inputType: FuncArgumentInputType.ALL_REAL, returnType: TokenHandleType.TUPLE },
+    "binom": { code: FuncCode.BINOM, staticArgs: true, args: 2, inputType: FuncArgumentInputType.ALL_REAL, returnType: TokenHandleType.REAL },
+    "factor": { code: FuncCode.FACTOR, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.ARRAY },
+    "cis": { code: FuncCode.CIS, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.COMPLEX  },
+    "Norm": { code: FuncCode.D_NORM, staticArgs: true, args: 2, inputType: FuncArgumentInputType.ALL_REAL, returnType: TokenHandleType.DISTRIBUTION },
+    "Binm": { code: FuncCode.D_BINM, staticArgs: true, args: 2, inputType: FuncArgumentInputType.ALL_REAL, returnType: TokenHandleType.DISTRIBUTION }
 }
 
 const FuncInfoByCode = {};
@@ -517,10 +529,10 @@ const ConstantInfo = {
     "muzo": { code: ConstantCode.MU_ZRO, value: 1.25663706144e-6, outputType: TokenHandleType.REAL },
     "speli": { code: ConstantCode.SP_LGHT, value: 299792458, outputType: TokenHandleType.REAL },
     "plcon": { code: ConstantCode.PLK_CON, value: 6.63e-34, outputType: TokenHandleType.REAL },
-    "elcharge": { code: ConstantCode.Q_ELEM, value: 1.602176634e-19, outputType: TokenHandleType.REAL },
-    "elmas": { code: ConstantCode.M_ELEC, value: 9.1093837015e-31, outputType: TokenHandleType.REAL },
-    "prmas": { code: ConstantCode.M_PROT, value: 1.67262192369e-27, outputType: TokenHandleType.REAL },
-    "numas": { code: ConstantCode.M_NEUT, value: 1.67492749804e-27, outputType: TokenHandleType.REAL },
+    "q_e": { code: ConstantCode.Q_ELEM, value: 1.602176634e-19, outputType: TokenHandleType.REAL },
+    "m_e": { code: ConstantCode.M_ELEC, value: 9.1093837015e-31, outputType: TokenHandleType.REAL },
+    "m_p": { code: ConstantCode.M_PROT, value: 1.67262192369e-27, outputType: TokenHandleType.REAL },
+    "m_n": { code: ConstantCode.M_NEUT, value: 1.67492749804e-27, outputType: TokenHandleType.REAL },
     "uam": { code: ConstantCode.UM_ATOM, value: 1.66053906660e-27, outputType: TokenHandleType.REAL },
     "radfer": { code: ConstantCode.RAD_FRM, value: 1.20e-15, outputType: TokenHandleType.REAL },
     "true": { code: ConstantCode.TRUE, value: true, outputType: TokenHandleType.REAL },
@@ -542,11 +554,17 @@ const AttributiveCode = {
     POWER: 2,
     LOW_BOUND: 3,
     UPP_BOUND: 4,
+    AUTO_FUNC: 5
 }
 
 const FunctionAttributiveInfo = {
     "_": {code: AttributiveCode.BASE},
     "^": {code: AttributiveCode.POWER}
+}
+
+const DistributionCode = {
+    NORMAL: 1,
+    BINOMIAL: 2
 }
 
 const validOperators = ["+", "-", "*", "/", "^", "<", "<=", ">", ">=", "=", "!=", "&&", "||", "!", "u-", "#", "_"];
@@ -570,6 +588,8 @@ export const validFunctions = [
     "Ei", "Ti", "Li", "erf",
     "fresnelS", "fresnelC", "Si", "Ci",
     "dawsonP", "dawsonM", "Ai",
+    "conj","arg","cis",
+    "Norm","Binm"
     //"sum", "integral",
     //"not", "or", "and", "xor", "bool"
 ];
@@ -1312,7 +1332,10 @@ export function tokenizeLatexExpression(latex, tryIsolateUnknown){
  * @returns 
  */
 function getLatexExpressionType(tokens){
-    const eqtoken = tokens.findIndex((t) => t.type === TokenType.OP && t.code === OpCode.EQ);
+    const eqtoken = tokens.findIndex(
+        (t) => 
+            (t.type === TokenType.OP && t.code === OpCode.EQ)
+    );
 
     //console.log(eqtoken, 'eqtoken');
     if(eqtoken < 0){
@@ -1325,6 +1348,17 @@ function getLatexExpressionType(tokens){
 
         if(!tokens.some((t) => t.type === TokenType.UNKN)){
             console.log('no unknowns');
+
+            const distFunc = tokens.find((t) => (t.type === TokenType.FUNC && t.attributes.get(AttributiveCode.AUTO_FUNC) !== undefined));
+
+            if(distFunc !== undefined){
+                const type = distFunc.attributes.get(AttributiveCode.AUTO_FUNC);
+
+                console.assert(type > 1 && type < 6); //2,3,4,5 --> ?=f(?)
+
+                return { type: distFunc.attributes.get(AttributiveCode.AUTO_FUNC), tokens: tokens};
+            }
+
             return { type: ExpressionType.EVAL, tokens: tokens}; //no '=' tokens
         }
 
@@ -1490,10 +1524,22 @@ export function latexToTokenObjects(latexTokens){
                 compilerTokens.push({ type: TokenType.UNKN, code: UnknownInfo[str] }); 
                 break;
             case FuncInfo[str] !== undefined:
-                compilerTokens.push({ type: TokenType.FUNC, code: FuncInfo[str].code, attributes: new Map() }); 
+                let attributes = new Map();
+                if(FuncInfo[str].returnType === TokenHandleType.DISTRIBUTION) {
+                    attributes.set(AttributiveCode.AUTO_FUNC, ExpressionType.EXP_F_X);
+                }
+
+                compilerTokens.push({ type: TokenType.FUNC, code: FuncInfo[str].code, attributes: attributes }); 
                 break;
             case ConstantInfo[str] !== undefined:
-                compilerTokens.push({ type: TokenType.NUM, value: ConstantInfo[str].value }); 
+                const staticConstantInfo = ConstantInfo[str];
+
+                const outputHandleType = staticConstantInfo.outputType;
+                const outputType = convertToTokenType(outputHandleType, TokenType.NUM);
+
+                console.log(staticConstantInfo.symbol, '| type:', outputType);
+
+                compilerTokens.push({ type: outputType, value: ConstantInfo[str].value, outputType: outputHandleType }); 
                 break;
             default:
                 compilerTokens.push({ type: TokenType.VAR, code: str });
@@ -1507,11 +1553,13 @@ export function latexToTokenObjects(latexTokens){
         
         return (
             prev.type === TokenType.NUM || 
+            prev.type === TokenType.CMPLX ||
             prev.type === TokenType.UNKN ||
             prev.type === TokenType.VAR || 
             (prev.type === TokenType.BRKT && (prev.code % 2 === 0))
         ) && (
             next.type === TokenType.NUM || 
+            prev.type === TokenType.CMPLX ||
             next.type === TokenType.UNKN ||
             next.type === TokenType.VAR ||
             next.type === TokenType.FUNC ||
@@ -1581,6 +1629,7 @@ export function latexToTokenObjects(latexTokens){
             if(op !== undefined){
                 const validWithPrev = (
                     prev.type === TokenType.NUM || 
+                    prev.type === TokenType.CMPLX ||
                     prev.type === TokenType.UNKN ||
                     prev.type === TokenType.VAR ||
                     isRightBracket(latexTokens[i-1])
@@ -1680,7 +1729,15 @@ export function latexToTokenObjects(latexTokens){
                     prev.type === TokenType.FUNC || 
                     prev.type === TokenType.DELIM
                 );
-                const token = { type: TokenType.NUM, value: ConstantInfo[str].value };
+
+                const staticConstantInfo = ConstantInfo[str];
+
+                const outputHandleType = staticConstantInfo.outputType;
+                const outputType = convertToTokenType(outputHandleType, TokenType.NUM);
+
+                //console.log(staticConstantInfo.symbol, '| type:', outputType);
+
+                const token = { type: outputType, value: ConstantInfo[str].value, outputType: outputHandleType }; 
 
                 if(!validWithPrev){
                     console.assert(tryInsertImplicitTimes(prev, token),prev,token);
@@ -1730,7 +1787,12 @@ export function latexToTokenObjects(latexTokens){
             if(FuncInfo[current.str] !== undefined){
                 const validWithPrev = (prev.type === TokenType.OP || prev.type === TokenType.DELIM || isLeftBracket(latexTokens[i-1]));
 
-                const token = { type: TokenType.FUNC, code: FuncInfo[current.str].code, attributes: new Map() };
+                let attributes = new Map();
+                if(FuncInfo[str].returnType === TokenHandleType.DISTRIBUTION) {
+                    attributes.set(AttributiveCode.AUTO_FUNC, ExpressionType.EXP_F_X);
+                }
+
+                const token = { type: TokenType.FUNC, code: FuncInfo[current.str].code, attributes: attributes };
 
                 if(!validWithPrev){
                     console.assert(tryInsertImplicitTimes(prev, token),prev,token);
@@ -1764,6 +1826,7 @@ export function latexToTokenObjects(latexTokens){
             if(OpInfo[str] !== undefined){
                 const validWithPrev = (
                     prev.type === TokenType.NUM || 
+                    prev.type === TokenType.CMPLX ||
                     prev.type === TokenType.UNKN ||
                     prev.type === TokenType.VAR ||
                     isRightBracket(latexTokens[i-1])
@@ -1785,7 +1848,15 @@ export function latexToTokenObjects(latexTokens){
                     prev.type === TokenType.FUNC || 
                     prev.type === TokenType.DELIM
                 );
-                const token = { type: TokenType.NUM, value: ConstantInfo[str].value };
+                
+                const staticConstantInfo = ConstantInfo[str];
+
+                const outputHandleType = staticConstantInfo.outputType;
+                const outputType = convertToTokenType(outputHandleType, TokenType.NUM);
+
+                //console.log(staticConstantInfo.symbol, '| type:', outputType);
+
+                const token = { type: outputType, value: ConstantInfo[str].value, outputType: outputHandleType }; 
 
                 if(!validWithPrev){
                     console.assert(tryInsertImplicitTimes(prev, token),prev,token);
@@ -1839,6 +1910,7 @@ export function latexToTokenObjects(latexTokens){
                 //right bracket: )
                 const validWithPrev = (
                     prev.type === TokenType.NUM ||
+                    prev.type === TokenType.CMPLX ||
                     prev.type === TokenType.UNKN || 
                     prev.type === TokenType.VAR ||
                     isRightBracket(latexTokens[i-1]) || 
@@ -1975,6 +2047,7 @@ function addMetadataToExpression(expression){
                 break;
 
             case TokenType.NUM:
+            case TokenType.CMPLX:
             case TokenType.STRG:
             case TokenType.UNKN:
             case TokenType.CNST:
@@ -2260,24 +2333,54 @@ function generateStrictMethodExprForOp(strictOpCode, evalType){
     console.log(strictOpCode, '=>', opId, right, left);
 
     if(OpInfoByCode[opId].arity === 1){
+        console.log('unary:'+right);
+
         if(opId === OpCode.PCT){
-            return (a) => { return {type: TokenType.NUM, value: a.value*0.01, uncertainty: 0.01*(a.uncertainty??0), interpret: 'pct' }; }
+            return (a) => { 
+                console.assert(a.type === TokenType.NUM);
+
+                console.log()
+
+                return {type: TokenType.NUM, value: a.value*0.01, uncertainty: 0.01*(a.uncertainty??0), interpret: 'pct', outputType: TokenHandleType.REAL }; 
+            }
         }
 
         if(opId === OpCode.DEG){
-            return (a) => { return {type: TokenType.NUM, value: a.value*0.01745329251, uncertainty: 0.01745329251*(a.uncertainty??0), interpret: 'rad' }; }
+            return (a) => { 
+                console.assert(a.type === TokenType.NUM);
+
+                const k = a.value*0.01745329251;
+                console.log(k);
+
+                return {type: TokenType.NUM, value: k, uncertainty: 0.01745329251*(a.uncertainty??0), interpret: 'rad', outputType: TokenHandleType.REAL }; 
+            }
         }
 
-        //arg = right
+        if(opId === OpCode.ABS){
+            if(right === TokenHandleType.REAL) return (a) => {return {type: TokenType.NUM, value: Math.abs(a.value), outputType: TokenHandleType.REAL}; };
+
+            const fnComplex = generateComplexOperatorMethodExpression(opId);
+
+            return (a) => {
+                return {type: TokenType.NUM, value: fnComplex(a.value), outputType: TokenHandleType.REAL};
+            }
+        }
+
         switch(right){
             case TokenHandleType.REAL:
                 const fn = generateRealOperatorMethodExpression(opId);
-                return (a) => { return {type: TokenType.NUM, value: fn(a.value), uncertainty: evaluateUnaryOpUncertainty(opId, TokenType.NUM,a.value,a.uncertainty??0)};}
+                return (a) => { return {type: TokenType.NUM, value: fn(a.value), uncertainty: evaluateUnaryOpUncertainty(opId, TokenType.NUM,a.value,a.uncertainty??0), outputType: TokenHandleType.REAL};}
+                break;
             case TokenHandleType.COMPLEX:
                 const fnComplex = generateComplexOperatorMethodExpression(opId);
-                return (a) => {return {type: TokenType.CMPLX, value: TokenType.fn(a.value)};}
+                return (a) => {
+                    return {type: TokenType.CMPLX, value: fnComplex(a.value), outputType: TokenHandleType.COMPLEX};
+                }
+                break;
         }
     }
+
+    console.log(OpInfoByCode[opId].arity);
 
     //same type:
         //case real/real
@@ -2294,7 +2397,7 @@ function generateStrictMethodExprForOp(strictOpCode, evalType){
         //case input/real
         //case input/complex
 
-    if(left === right){
+    if(left === right && left !== TokenHandleType.TUPLE){
         const fn = generateRealOperatorMethodExpression(opId);
 
         if(opId === OpCode.PM){
@@ -2316,6 +2419,7 @@ function generateStrictMethodExprForOp(strictOpCode, evalType){
                 }
             case TokenHandleType.INPUT_TUPLE:
                 return generateOperatorMethodExpressionBetweenSoloTypes(opId,left,right);
+
                 const edgeHandler = evalType === TokenType.QUAD 
                     ? (a,b) => handleEdgesForBinaryOp(opId, a.value, b.value, a.edge, b.edge)
                     : (a,b) => handleEdgePairForBinaryOp(opId, a.value[0],b.value[0],a.value[1],b.value[1]);
@@ -2343,10 +2447,7 @@ function generateStrictMethodExprForOp(strictOpCode, evalType){
 
     }
 
-    if(
-        left === TokenHandleType.TUPLE || 
-        left === TokenHandleType.ARRAY
-    ){
+    if(left === TokenHandleType.ARRAY){
         console.log('left=list');
 
         switch(right){
@@ -2376,22 +2477,22 @@ function generateStrictMethodExprForOp(strictOpCode, evalType){
 
                     const complex = tokenB.value;
 
+                    let results = [];
+
                     if(typeof tokenA.value[0] === 'number'){
                         //tokenA is of type Real[]
                         const n = tokenA.value.length;
-                        let results = [];
+
                         for(let i = 0; i < n; i++){
                             results.push(fnComplex([tokenA.value[i], 0],complex));
                         }
-                        // return results;
                     }else{
                         //tokenA is of type Complex[]
                         const n = tokenA.value.length;
-                        let results = [];
+
                         for(let i = 0; i < n; i++){
                             results.push(fnComplex(tokenA.value[i],complex));
                         }
-                        // return results;
                     }
 
                     return {type: tokenA.type, value: results}; //TODO: finish later with outputType and other fields
@@ -2427,10 +2528,7 @@ function generateStrictMethodExprForOp(strictOpCode, evalType){
         }
     }  
 
-    if(
-        right === TokenHandleType.TUPLE || 
-        right === TokenHandleType.ARRAY
-    ){
+    if(right === TokenHandleType.ARRAY){
         console.log('right=list');
 
         switch(left){
@@ -2438,6 +2536,9 @@ function generateStrictMethodExprForOp(strictOpCode, evalType){
                 const fn = generateRealOperatorMethodExpression(opId);
 
                 return (tokenB,tokenA) => {
+                    //tokenB -> real
+                    //tokenA -> list
+
                     console.assert(tokenA.type === TokenType.ARRAY);
 
                     const real = tokenB.value;
@@ -2448,33 +2549,46 @@ function generateStrictMethodExprForOp(strictOpCode, evalType){
                     for(let i = 0; i < n; i++){
                         results.push(fn(tokenA.value[i],real));
                     }
+
+                    return {type: TokenType.ARRAY, value: results, outputType: TokenHandleType.ARRAY, elementType: TokenType.NUM};
                 }
                 break;
             case TokenHandleType.COMPLEX:
-                const fnComplex = generateComplexOperatorMethodExpression(opId);
+                let fnComplex = generateComplexOperatorMethodExpression(opId);
 
                 return (tokenB,tokenA) => {
                     console.assert(tokenA.type === TokenType.ARRAY);
 
+                    const input = tokenA.value;
+
                     const complex = tokenB.value;
 
-                    if(typeof tokenA.value[0] === 'number'){
+                    let results = [];
+
+                    const elementType = typeof input[0] === 'number' ? TokenType.NUM : TokenType.CMPLX;
+
+                    if(elementType === TokenType.NUM){
                         //tokenA is of type Real[]
-                        const n = tokenA.value.length;
-                        let results = [];
+                        console.log('real list');
+
+                        const n = input.length;
+
                         for(let i = 0; i < n; i++){
-                            results.push(fnComplex([tokenA.value[i], 0],complex));
+                            const k = fnComplex(complex,[input[i], 0]);
+                            console.log(k)
+                            results.push(k);
                         }
-                        return results;
                     }else{
+                        console.log('complex list');
                         //tokenA is of type Complex[]
-                        const n = tokenA.value.length;
-                        let results = [];
+                        const n = input.length;
+
                         for(let i = 0; i < n; i++){
-                            results.push(fnComplex(tokenA.value[i],complex));
+                            results.push(fnComplex(complex,input[i]));
                         }
-                        return results;
                     }
+
+                    return {type: TokenType.ARRAY, value: results, outputType: TokenHandleType.ARRAY, elementType: TokenType.CMPLX};
                 }
                 break;
             case TokenHandleType.INPUT_TUPLE:
@@ -2505,9 +2619,59 @@ function generateStrictMethodExprForOp(strictOpCode, evalType){
                 //should return list of input tuples
         }
     }  
+
+    if(left === TokenHandleType.TUPLE || right === TokenHandleType.TUPLE){
+        const fn = generateOperatorMethodExpressionBetweenTuples(opId,left,right);
+        const returnHandleType = ((opId === OpCode.MUL) && (left === right)) ? TokenHandleType.REAL : TokenHandleType.TUPLE;
+        const returnType = returnHandleType === TokenHandleType.TUPLE ? TokenType.TUPLE : TokenType.NUM;
+
+        return (a,b) => {
+            return {
+                type: returnType,
+                value: fn(a.value,b.value),
+                outputType: returnHandleType
+            };
+        }
+    }
     
     console.log('between solo types');
     return generateOperatorMethodExpressionBetweenSoloTypes(opId,left,right);
+}
+
+function generateOperatorMethodExpressionBetweenTuples(opcode, left, right){
+    console.log('tuple op');
+    if(left === right){
+        console.log('both tuples');
+
+        switch(opcode){
+            case OpCode.ADD: return tupleAdd;
+            case OpCode.SUB: return tupleSubtract;
+            case OpCode.MUL: return tupleDotProduct;
+            case OpCode.CRP: return tupleCrossProduct;
+            default: 
+                console.error('Invalid Tuple operation: ', opcode);
+                return (a,b) => [0,0];
+        }
+    }
+
+    if(left === TokenHandleType.TUPLE){
+        switch(opcode){
+            case OpCode.MUL: return (t,s) => tupleScale(t,s);
+            case OpCode.DIV: return (t,s) => tupleScale(t,1/s);
+            default: 
+                console.error('Invalid Tuple operation: ', opcode);
+        }
+    }
+
+    if(right === TokenHandleType.TUPLE){
+        switch(opcode){
+            case OpCode.MUL: return (s,t) => tupleScale(t,s);
+            default: 
+                console.error('Invalid Tuple operation: ', opcode);
+        }
+    }
+
+    console.error('Invalid type attempted to operate as Tuple.');
 }
 
 /**
@@ -2619,7 +2783,7 @@ function generateOperatorMethodExpressionBetweenSoloTypes(opcode,left,right){
                     const real = b.value;
                     let results = [];
                     for(let i=0; i<n; i++){
-                        results.push(fn(input[i],real));
+                        results.push(fn(real,input[i]));
                     }
 
                     //console.log(input,real,'=>',results);
@@ -2666,11 +2830,17 @@ function generateOperatorMethodExpressionBetweenSoloTypes(opcode,left,right){
     if(left === TokenHandleType.COMPLEX || right === TokenHandleType.COMPLEX){
         const fnComplex = generateComplexOperatorMethodExpression(opcode);
 
-        return (a,b) => {
-            const aComplex = typeof a.value[0] === 'number' ? [a, 0] : a;
-            const bComplex = typeof b.value[0] === 'number' ? [b, 0] : b;
+        console.log(fnComplex);
 
-            return {type: TokenType.CMPLX, value: fnComplex(aComplex,bComplex), outputType: TokenHandleType.COMPLEX};
+        return (a,b) => {
+            const aComplex = typeof a.value === 'number' ? [a.value, 0] : a.value;
+            const bComplex = typeof b.value === 'number' ? [b.value, 0] : b.value;
+
+            const r = {type: TokenType.CMPLX, value: fnComplex(aComplex,bComplex), outputType: TokenHandleType.COMPLEX};
+
+            console.log(aComplex,bComplex,r);
+
+            return r;
         }
     }
 
@@ -2688,6 +2858,8 @@ function generateOperatorMethodExpressionBetweenSoloTypes(opcode,left,right){
             }; 
         }
     }
+
+    console.assert(left === TokenHandleType.REAL && right === TokenHandleType.REAL, left, right);
 
     return (a,b) => {
         const unc = evaluateBinaryOpUncertainty(opcode, TokenType.NUM, a.value, a.uncertainty??0, b.value, b.uncertainty ?? 0);
@@ -2742,8 +2914,465 @@ function generateRealOperatorMethodExpression(opcode,evaluateDiff=true){
     }
 }
 
-function generateStrictMethodExprForFunc(strictFuncCode, evalType){
+/**
+ * 
+ * @param {*} functionInfo {staticArgs: bool, argTypes: array, code: int};
+ * @param {*} evalType 
+ */
+function generateStrictMethodExprForFunc(funcInputInfo, evalType){
+    const funccode = funcInputInfo.code;
+    const argTypes = funcInputInfo.argTypes;
 
+    const staticFuncInfo = FuncInfoByCode[funccode];
+    const inputType = staticFuncInfo.inputType;
+
+    //if input is just one real/complex, then check for
+
+    let fn;
+    var returnHandleType = outputTypeOfFunction(funccode,argTypes);
+    var returnType = convertToTokenType(returnHandleType, evalType); 
+
+    switch(inputType){
+        case FuncArgumentInputType.ONE_REAL:
+        case FuncArgumentInputType.ONE_COMPLEX:
+        case FuncArgumentInputType.ONE_NUMERIC:
+            console.assert(argTypes.length === 1);
+            console.log('one r/c/n',argTypes);
+
+            fn = 
+                (inputType === FuncArgumentInputType.ONE_REAL) 
+                ? generateRealFunctionMethodExpression(funccode,funcInputInfo) 
+                : generateComplexFunctionMethodExpression(funccode,funcInputInfo);
+
+            console.log(fn,inputType);
+
+            switch(argTypes[0]){
+                case TokenHandleType.REAL:
+                    console.log('real input');
+
+                    console.assert(inputType === FuncArgumentInputType.ONE_REAL || inputType === FuncArgumentInputType.ONE_NUMERIC, inputType);
+
+                    //ONE_NUMERIC have both real- and complex-defined functions (sin(x) vs. sin(z))
+                    if(inputType === FuncArgumentInputType.ONE_NUMERIC){
+                        fn = generateRealFunctionMethodExpression(funccode,funcInputInfo);
+                        returnType = TokenType.NUM;
+                        returnHandleType = TokenHandleType.REAL;
+                    }
+
+                    return (args) => {
+                        const result = fn(args[0].value);
+                        return {
+                            type: returnType,
+                            value: result,
+                            outputType: returnHandleType,
+                            uncertainty: evaluateFuncUncertainty(args[0],evalType,[args[0]],[args[0].uncertainty??0],result)
+                        }
+                    }
+                case TokenHandleType.COMPLEX:
+                    console.log('complex input');
+
+                    return (args) => {
+                        const result = fn(args[0].value);
+
+                        return {
+                            type: returnType,
+                            value: result,
+                            outputType: returnHandleType
+                        }
+                    }
+                case TokenHandleType.INPUT_TUPLE:
+
+                    if(inputType === FuncArgumentInputType.ONE_NUMERIC){
+                        fn = generateRealFunctionMethodExpression(funccode,funcInputInfo);
+                    }
+
+                    return (args) => {
+                        const arg = args[0];
+                        const input = arg.value;
+                        const n = input.length;
+
+                        let results = []; //Can assume real values
+                        for(let i=0; i<n; i++){
+                            results.push(fn(input[i]));
+                        }
+
+                        console.assert(arg.edge !== undefined, arg);
+
+                        const edge = 
+                            (args[0].type === TokenType.NUM) 
+                            ? handleEdgesForFunc(funccode, [input], [arg.edge])
+                            : handleEdgePairForFunc(funccode, [input[0]], [input[1]], [arg.edge]);
+
+                        if(edge != [0,0,0]) console.log(edge);
+
+                        return {
+                            type: arg.type,
+                            value: results,
+                            outputType: TokenHandleType.INPUT_TUPLE,
+                            edge: edge
+                        };
+                    }
+                case TokenHandleType.ARRAY:
+                    return (args) => {
+                        const input = args[0].value;
+                        const n = input.length;
+
+                        console.log(input);
+
+                        let results = []; //TODO: add array/tuple element type checking
+                        if(typeof input[0] === 'number'){
+                            fn = generateRealFunctionMethodExpression(funccode,funcInputInfo);
+
+                            //entire array is num type
+                            console.log('numtype',n);
+                            for(let i=0; i<n; i++){
+                                console.log('i:',i);
+                                const r = fn(input[i]);
+                                console.log(r);
+                                results.push(r);
+                            }
+                        }else{
+                            console.log('comptype');
+                            //entire array is complex type
+                            console.assert(inputType !== FuncArgumentInputType.ONE_REAL);
+                            for(let i=0; i<n; i++){
+                                results.push(fn(input[n]));
+                            }
+                        }
+
+                        return {
+                            type: args[0].type,
+                            value: results,
+                            outputType: args[0].outputType
+                        };
+                    }
+                    
+                case TokenHandleType.TUPLE:
+                    console.error('Invalid input type (Tuple) for function: ', FuncInfoByCode[funccode].symbol);
+                    return (a) => 0;
+            }
+            break;
+
+        case FuncArgumentInputType.ARRAY_SOFT_REALS:
+        case FuncArgumentInputType.ALL_REAL:
+        case FuncArgumentInputType.ARRAY_SOFT_NUMBERS:
+        case FuncArgumentInputType.ALL_COMPLEX:
+        case FuncArgumentInputType.ALL_NUMERIC:
+            console.log('func: all numeric/complex',funcInputInfo);
+
+            fn = 
+                (inputType === FuncArgumentInputType.ARRAY_SOFT_REALS || inputType === FuncArgumentInputType.ALL_REAL) 
+                ? generateRealFunctionMethodExpression(funccode,funcInputInfo) 
+                : generateComplexFunctionMethodExpression(funccode,funcInputInfo);
+
+            // if input and expected is real then input as real
+            // otherwise convert to complex
+
+            //returnHandleType = outputTypeOfFunction(funccode, argTypes);
+            //returnType = convertToTokenType(returnHandleType, evalType); 
+
+
+            const areAllReal = argTypes.every((arg) => arg === TokenHandleType.REAL);
+            const hasInputTuple = argTypes.some((arg) => arg === TokenHandleType.INPUT_TUPLE);
+            const hasComplex = argTypes.some((arg) => arg === TokenHandleType.COMPLEX);
+
+            console.log(returnHandleType);
+
+            if(FuncInfoByCode[funccode].returnType === TokenHandleType.DISTRIBUTION){
+                console.assert(!hasInputTuple && !hasComplex);
+
+                return (args) => {
+                    //assumption: last arg is of INPUT_TUPLE type
+
+                    let inputValues = [];
+                    for(let i = 0; i < args.length-1; i++){
+                        inputValues.push(args[i].value);
+                    }
+
+                    const x = args[args.length-1];
+                    const n = x.value.length;
+
+                    //console.log('evaluated for: ', x.value);
+
+                    let results = [];
+                    for(let i = 0; i<n; i++){
+                        results.push(fn(...(inputValues.concat(x.value[i]))));
+                    }
+
+                    const k = {type: x.type, value: results, edge: [0,0,0], outputType: TokenHandleType.INPUT_TUPLE};
+                    return k;
+                }
+            }
+
+            if(!hasComplex) fn = generateRealFunctionMethodExpression(funccode,funcInputInfo);
+
+            console.assert(!(hasInputTuple && hasComplex));
+
+            let unpackArray = false;
+
+            if(
+                argTypes.length === 1 
+                && (inputType === FuncArgumentInputType.ARRAY_SOFT_NUMBERS || inputType === FuncArgumentInputType.ARRAY_SOFT_REALS)
+            ){
+                console.assert(argTypes[0] === TokenHandleType.ARRAY);
+                
+                unpackArray = true;
+            }
+
+            if(areAllReal){
+                console.log('func: all real');
+
+                return (args) => {
+                    const unpackedArgs = unpackArray ? args[0].value : args;
+
+                    const inputValues = unpackedArgs.map((arg) => arg.value);
+
+                    const value = fn(...inputValues);
+
+                    //console.log(inputValues,'=>',fn,'=>', value);
+
+                    const r = {type: returnType, value: value, outputType: returnHandleType};
+
+                    if(staticFuncInfo.returnType === TokenHandleType.ARRAY) r.elementType = TokenType.NUM;
+
+                    return r;
+                }
+            }
+
+
+            if(hasInputTuple){
+                const n = (evalType === TokenType.DUAL) ? 2 : 4;
+
+                const edge = 
+                    (evalType === TokenType.DUAL) 
+                    ? [0,0,0]
+                    : {top: [0,0,0], btm: [0,0,0], lft: [0,0,0], rgt: [0,0,0]};
+
+                return (args) => {
+                    let vertices = [];
+
+                    for(let i=0; i<n; i++){
+                        const verticeI = argTypes.map((type,j) => {
+                            if(type === TokenHandleType.REAL) return args[j].value;
+                            else if (type === TokenHandleType.INPUT_TUPLE) return args[j].value[i];
+                            else return 0;
+                        });
+
+                        vertices.push(fn(...verticeI))
+                    }
+
+                    return {type: evalType, value: vertices, edge: edge, outputType: returnHandleType};
+                }
+            }
+
+            if(hasComplex){
+                console.assert(inputType === FuncArgumentInputType.ARRAY_SOFT_NUMBERS || inputType === FuncArgumentInputType.ALL_COMPLEX || inputType === FuncArgumentInputType.ALL_NUMERIC);
+
+                return (args) => {
+                    const argsComplex = args.map((arg) => {
+                        return convertValueToComplex(arg.value);
+                        // const newArg = structuredClone(arg);
+                        // newArg.value = convertValueToComplex(arg.value);
+
+                        // return newArg.value;
+                    });
+
+                    console.log(argsComplex,fn);
+
+                    const v = fn(...argsComplex);
+
+                    console.log(v);
+
+                    const r = {type: returnType, value: v, outputType: returnHandleType};
+
+                    console.log(r);
+
+                    if(staticFuncInfo.returnType === TokenHandleType.ARRAY) r.elementType = TokenType.CMPLX;
+
+                    return r;
+                }
+            }
+
+            break;
+
+        case FuncArgumentInputType.ALL_REAL:
+            console.assert(argTypes.every((arg) => arg === TokenHandleType.REAL));
+
+            console.log('func: all real');
+
+            return (args) => {
+                const result = fn(args.map((arg) => arg.value));
+
+                return {
+                    type: TokenType.NUM,
+                    value: result,
+                    outputType: TokenHandleType.REAL,
+                    //uncertainty: evaluateFuncUncertainty(args[0],evalType,args,args.map((arg) => arg.uncertainty),result)
+                }
+            }
+
+            break;
+        case FuncArgumentInputType.ALL_NUMERIC:
+        case FuncArgumentInputType.ALL_COMPLEX:
+            console.log('func: all numeric/complex');
+
+            fn = generateComplexFunctionMethodExpression(funccode,funcInputInfo);
+
+            return (args) => {
+                const inputs = args.map((arg) => convertValueToComplex(arg.value));
+
+                console.log(inputs);
+
+                const result = fn(...inputs);
+
+                return {
+                    type: TokenType.NUM,
+                    value: result,
+                    outputType: TokenHandleType.REAL,
+                }
+            }
+    }
+}
+
+function generateFunctionMethodExpressionBetweenSoloTypes(funccode, argTypes){
+
+}
+
+function generateRealFunctionMethodExpression(funccode,funcInputInfo = undefined){
+    if(funcInputInfo !== undefined){
+        const pow = funcInputInfo?.attributes?.get(AttributiveCode.POWER);
+        if(pow !== undefined){
+            const fn = generateRealFunctionMethodExpression(funccode);
+
+            console.log(fn);
+
+            return (...args) => { return fn(...args)**pow };
+        }
+    }
+    
+
+    switch (funccode) {
+        case FuncCode.FRAC: return (a,b) => b/a;
+        case FuncCode.BINOM: return (a,b) => func_choose(b,a);
+        case FuncCode.SIN: 
+            return (a) => {
+                let e = a/Math.PI;
+                if(e===0||isNaN(e)) return e;
+                if(!isFinite(e))return NaN;
+                if(e===Math.floor(e)) 
+                    return e > 0 ? 0 : -0; //sign of e
+                let t = Math.round(2 * e), //double the number, then round that
+                    r = -0.5 * t + e, //num - (num rounded to nearest half)
+                    n = t & 2 ? -1 : 1, //if t is even, -1, else 1
+                    o = t & 1 ? Math.cos(Math.PI*r) : Math.sin(Math.PI*r); //if t is odd: cos, else sin
+                return n*o;
+            }
+        case FuncCode.COS: return (a) => Math.cos(a); 
+        case FuncCode.TAN: return (a) => Math.tan(a); 
+        case FuncCode.SEC: return (a) => 1 / Math.cos(a); 
+        case FuncCode.CSC: return (a) => 1 / Math.sin(a); 
+        case FuncCode.COT: return (a) => 1 / Math.tan(a); 
+        case FuncCode.ASIN: return (a) => Math.asin(a); 
+        case FuncCode.ACOS: return (a) => Math.acos(a); 
+        case FuncCode.ATAN: return (a) => Math.atan(a); 
+        case FuncCode.ASEC: return (a) => Math.acos(1 / a); 
+        case FuncCode.ACSC: return (a) => Math.asin(1 / a); 
+        case FuncCode.ACOT: return (a) => Math.atan(1 / a); 
+        case FuncCode.SINH: return (a) => 0.5*(Math.exp(a)-Math.exp(-a)); 
+        case FuncCode.COSH: return (a) => 0.5*(Math.exp(a)+Math.exp(-a)); 
+        case FuncCode.TANH: return (a) => (Math.exp(a)-Math.exp(-a))/(Math.exp(a)+Math.exp(-a));
+        case FuncCode.SECH: return (a) => 2/(Math.exp(a)+Math.exp(-a)); 
+        case FuncCode.CSCH: return (a) => 2/(Math.exp(a)-Math.exp(-a)); 
+        case FuncCode.COTH: return (a) => (Math.exp(a)+Math.exp(-a))/(Math.exp(a)-Math.exp(-a));
+        case FuncCode.ASINH: return (a) => Math.log(a+Math.sqrt(a*a+1));
+        case FuncCode.ACOSH: return (a) => Math.log(a+Math.sqrt(a*a-1));
+        case FuncCode.ATANH: return (a) => 0.5*Math.log((1+a)/(1-a));
+        case FuncCode.ASECH: return (a) => Math.log(1/a+Math.sqrt(1/(a*a)-1));
+        case FuncCode.ACSCH: return (a) => Math.log(1/a+Math.sqrt(1/(a*a)+1));
+        case FuncCode.ACOTH: return (a) => 0.5*Math.log((a+1)/(a-1));
+        case FuncCode.GD: return (a) => Math.atan(Math.sinh(a)); 
+        case FuncCode.LAM: return (a) => a; 
+        case FuncCode.ABS: return (a) => Math.abs(a); 
+        case FuncCode.SIGN: return (a) => Math.sign(a); 
+        case FuncCode.FLOOR: return (a) => Math.floor(a); 
+        case FuncCode.CEIL: return (a) => Math.ceil(a); 
+        case FuncCode.ROUND: return (a) => Math.round(a); 
+        case FuncCode.TRUNC: return (a) => Math.trunc(a); 
+        case FuncCode.MOD: return (a,b) => a % b; 
+        case FuncCode.MIN: return (...a) => Math.min(...a); 
+        case FuncCode.MAX: return (...a) => Math.max(...a); 
+        //sum()
+        //
+        /* Todo: add handling for variables that are arrays */
+        case FuncCode.ARRAY: //{type: TokenType.ARRAY, valueType: TokenType.NUM, values: [], uncertainties: []}
+            return (...args) => {
+                const type = args[0].type; //can assume args.length > 0
+
+                if(args[0].outputType > TokenHandleType.TUPLE) {
+                    console.error('Array elements cannot be of this type');
+                    return [];
+                }
+
+                if(args.some((arg) => arg.type !== type)) {
+                    console.error('All array elements must be of same type. ');
+                    return [];
+                }
+
+                if(args[0].outputType === TokenHandleType.TUPLE){
+                    const expectedLength = args[0].value.length;
+                    if(args.some((arg) => arg.value.length !== expectedLength)){
+                        console.error('All array elements must be of same length. ');
+                        return [];
+                    }
+                }
+                return args.reverse();
+            }
+        case FuncCode.TUPLE: //{type: TokenType.TUPLE, valueType: TokenType.NUM, values: [], uncertainties: []}
+            return (...args) => {
+
+                return args.reverse();
+            } //args are passed in backwards order
+        case FuncCode.AVG: 
+            return (...args) => {
+                var sum = 0;
+                for (var i = 0; i < args.length; i++) {
+                    sum += args[i];
+                }
+                return sum / args.length;
+            }   
+        case FuncCode.MED:
+            return (...args) => {
+                if (args.length % 2 == 1) return args[(args.length - 1) / 2];
+                else {
+                    var mid = args.length / 2;
+                    return args[mid - 1] + args[mid]
+                }
+            }
+        case FuncCode.MODE: return (a) => a; 
+        case FuncCode.EXP: return (a) => Math.exp(a); 
+        case FuncCode.LN: return (a) => Math.log(a); 
+        case FuncCode.LOG: 
+            if(attributes.get(AttributiveCode.BASE) === undefined) return (a) => Math.log(a) / Math.log(10); 
+            else return (a) => Math.log(a) / Math.log(attributes.get(AttributiveCode.BASE));
+        
+        case FuncCode.LOGN: return (a,b) => Math.log(a) / Math.log(b); 
+        case FuncCode.SQRT: return (a) => Math.sqrt(a); 
+        case FuncCode.CBRT: return (a) => Math.cbrt(a); 
+        case FuncCode.NTHRT: return (a,b) => Math.pow(a, 1 / b); 
+        case FuncCode.GAMMA: return (a) => func_gamma(a); 
+        case FuncCode.DGAMA: return (a)=>0; 
+        case FuncCode.PGAMA: return (a)=>0; 
+        case FuncCode.ZETA: return (a)=>0; 
+        case FuncCode.SINC: return (a)=>a===0?1:Math.sin(a)/a;
+        case FuncCode.FACTOR: return (a) => func_factor(Math.floor(a));
+        case FuncCode.D_NORM: return (s,m,x) => dist_normal(m,s,x);
+        default: 
+            return generateComplexFunctionMethodExpression(funccode);
+
+            console.error("Unknown function code", funccode);
+            return ()=>0;
+            break;
+    }
 }
 
 /**
@@ -3004,7 +3633,7 @@ function generateMethodExprForFunc(funccode, tokType, attributes){
                             return [];
                         }
                     }
-                    return args;
+                    return args.reverse();
                 }
             case FuncCode.TUPLE: //{type: TokenType.TUPLE, valueType: TokenType.NUM, values: [], uncertainties: []}
                 return (...args) => {
@@ -3144,8 +3773,8 @@ export function compileExpression(expression) {
         switch (meta) {
             case TokenType.NUM:
             case TokenType.DUAL:
-            //case TokenType.CMPLX:
             case TokenType.QUAD:
+            case TokenType.CMPLX:
                 //popPrefixOperators(operators); // %%POPPREFIX
 
                 // if(value.type !== evalType){
@@ -3345,12 +3974,27 @@ export function compileExpression(expression) {
                 break;
             case TokenType.CNST: //constants
                 //value: value.value --> value: token.value
-                if (value.code == ConstantCode.I) {
-                    //only complex constant
-                    outputs.push({ type: TokenType.CMPLX, a: 0, b: 1 }); //%%TOKEN
-                }else{
-                    outputs.push({ type: TokenType.NUM, value: value.value }); //%%TOKEN
-                }
+
+                const staticConstantInfo = ConstInfoByCode[value.code];
+
+                const outputValue = staticConstantInfo.value;
+                const outputHandleType = staticConstantInfo.outputType;
+                const outputType = convertToTokenType(outputHandleType, evalType);
+
+                console.log(staticConstantInfo.symbol, '| type:', outputType);
+
+                outputs.push({
+                    type: outputType,
+                    value: outputValue,
+                    outputType: outputHandleType
+                });
+
+                // if (value.code == ConstantCode.I) {
+                //     //only complex constant
+                //     outputs.push({ type: TokenType.CMPLX, a: 0, b: 1 }); //%%TOKEN
+                // }else{
+                //     outputs.push({ type: TokenType.NUM, value: value.value }); //%%TOKEN
+                // }
 
                 //functions without brackets surrounding their argument
                 if(unBracketedFuncArg){
@@ -3456,11 +4100,21 @@ export function compileExpression(expression) {
     for(let i = 0; i < outputs.length; i++){
         const metaInfo = tokenMetaInfo[i];
         outputs[i].outputType = metaInfo.outputType;
+
+        console.assert(outputs[i].outputType !== undefined, metaInfo);
+
         if(outputs[i].type === TokenType.OP || outputs[i].type === TokenType.FUNC) {
             outputs[i].variantCode = metaInfo.variantCode;
 
-            const methodExpr = generateStrictMethodExprForOp(metaInfo.variantCode,evalType);
+            console.log(metaInfo.variantCode);
+
+            const methodExpr = 
+                (outputs[i].type === TokenType.OP) 
+                ? generateStrictMethodExprForOp(metaInfo.variantCode,evalType)
+                : generateStrictMethodExprForFunc(metaInfo.variantCode,evalType);
+
             console.assert(typeof methodExpr === 'function',methodExpr,metaInfo.variantCode,evalType);
+
             outputs[i].fnexp = methodExpr;
         }
     }
@@ -3503,6 +4157,7 @@ export function evaluateExpression(compiledExpression, input, options) {
             //case TokenType.STRG:
             case TokenType.QUAD:
             case TokenType.DUAL:
+            case TokenType.CMPLX:
             //case TokenType.CNST: //should already be converted to number
                 // if(value.type !== evalType){
                 //     console.warn("Incompatible token types. Wanted: "+evalType+", got: "+ value.type);
@@ -3546,17 +4201,17 @@ export function evaluateExpression(compiledExpression, input, options) {
                         break;
                     }
 
-                    if (arg.type == TokenType.NUM) {
-                        solve.push({ type: TokenType.NUM, value: unaryOp(arg.value, opcode)}) //%%TOKEN
-                    } else if (arg.type == TokenType.QUAD) {
-                        solve.push(executeUnaryOpOnQuad(opcode, arg, arg.edge ?? {top: [0,0,0], lft: [0,0,0], rgt: [0,0,0], btm: [0,0,0]})); //%%TOKEN
-                    } else if (arg.type == TokenType.CMPLX) {
-                        if (opcode == OpCode.NOT || opcode == OpCode.NEG) solve.push({ type: TokenType.CMPLX, a: -arg.a, b: -arg.b }); //%%TOKEN
-                        else if (opcode == OpCode.FACT) solve.push({ type: TokenType.CMPLX, a: 1, b: 1 }); //%%TOKEN
-                        else solve.push({ type: TokenType.CMPLX, a: 1, b: 1 }); //%%TOKEN
-                    } else {
-                        console.error("Unary op performed on invalid argument type. Arg:", arg);
-                    }
+                    // if (arg.type == TokenType.NUM) {
+                    //     solve.push({ type: TokenType.NUM, value: unaryOp(arg.value, opcode)}) //%%TOKEN
+                    // } else if (arg.type == TokenType.QUAD) {
+                    //     solve.push(executeUnaryOpOnQuad(opcode, arg, arg.edge ?? {top: [0,0,0], lft: [0,0,0], rgt: [0,0,0], btm: [0,0,0]})); //%%TOKEN
+                    // } else if (arg.type == TokenType.CMPLX) {
+                    //     if (opcode == OpCode.NOT || opcode == OpCode.NEG) solve.push({ type: TokenType.CMPLX, a: -arg.a, b: -arg.b }); //%%TOKEN
+                    //     else if (opcode == OpCode.FACT) solve.push({ type: TokenType.CMPLX, a: 1, b: 1 }); //%%TOKEN
+                    //     else solve.push({ type: TokenType.CMPLX, a: 1, b: 1 }); //%%TOKEN
+                    // } else {
+                    //     console.error("Unary op performed on invalid argument type. Arg:", arg);
+                    // }
 
                     break;
                 }
@@ -3575,8 +4230,6 @@ export function evaluateExpression(compiledExpression, input, options) {
                     console.assert(a !== undefined, a); 
                     console.assert(b !== undefined, b);
                     result = evaluateMethodExprForBinaryOp(value, ExpressionInfoByType[compiledExpression.type].tokType, a, b);
-
-                    //console.log(result, 'from', a, opcode, b);
 
                     solve.push(result);
                     break;
@@ -3630,7 +4283,9 @@ export function evaluateExpression(compiledExpression, input, options) {
                     console.assert(value.attributes !== undefined, value);
                     //console.log(value, value.attributes);
 
-                    result = evaluateMethodExprForFunc(value, evalType, args, value.attributes);
+                    //console.log(args);
+
+                    result = evaluateMethodExprForFunc(value, evalType, args, value.attributes, input);
                     //console.log(result);
                     // if(needQuad){
                     //     let quadargs = args.map((arg) => {
@@ -3762,7 +4417,7 @@ export function readExpressionWithReplacements(compiledExpression, input) {
                 let token = tokenList[action.index];
 
                 console.log(token);
-                console.assert(typeof evalResult.value === 'number',evalResult);
+                console.assert(typeof evalResult.value === 'number' || (evalResult.value.length > 0) ,evalResult);
 
                 token.type = evalResult.type;
                 token.value = evalResult.value;
@@ -3804,6 +4459,12 @@ export function readExpressionWithReplacements(compiledExpression, input) {
                 let newtoken = {type: TokenType.NUM, value: getVariable(action.varId).value, outputType: tokenList[action.index].outputType};
                 tokenList.splice(action.index, 1, newtoken);
             }
+            // if(action.type === TokenType.DIST){
+            //     let token = tokenList[action.index];
+
+            //     let newtoken = {type: TokenType.DUAL, value: [token.fnexp(input.min), token.fnexp(input.max)], edge: [0,0,0], outputType: TokenHandleType.INPUT_TUPLE};
+            //     tokenList.splice(action.index, 1, newtoken);
+            // }
         }
         return tokenList;
     }
@@ -3948,11 +4609,15 @@ function getPopCountOfFunction(token){
  * @returns 
  */
 function evaluateMethodExprForUnaryOp(token, evalType, a){
-    return token.fnexp(a);
+    const k = token.fnexp(a);
+    console.log(a,'->',k);
+    return k;
 }
 
 function evaluateUnaryOpUncertainty(opcode, evalType, a, aUnc){
     if(evalType !== TokenType.NUM) return 0;
+
+    //if()
 
     switch(opcode){
         case OpCode.NOT:
@@ -3975,7 +4640,9 @@ function evaluateUnaryOpUncertainty(opcode, evalType, a, aUnc){
  * @returns 
  */
 function evaluateMethodExprForBinaryOp(token, evalType, a,b){
-    return token.fnexp(a,b);
+    const k = token.fnexp(a,b);
+    //console.log(a,b,'->',k);
+    return k;
 }
 
 function evaluateBinaryOpUncertainty(opcode, evalType, a, aUnc, b, bUnc){
@@ -4014,7 +4681,20 @@ function evaluateBinaryOpUncertainty(opcode, evalType, a, aUnc, b, bUnc){
  * @param {*} rawargs function arguments in the form `token[]`
  * @returns the output token
  */
-function evaluateMethodExprForFunc(token, evalType, rawargs, attributes){
+function evaluateMethodExprForFunc(token, evalType, rawargs, attributes, input){
+    const j = (attributes.get(AttributiveCode.AUTO_FUNC)); 
+
+    if(j !== undefined && evalType === TokenType.DUAL) {
+        const x = {type: TokenType.DUAL, value: [input.min, input.max], edge: [0,0,0], outputType: TokenHandleType.INPUT_TUPLE}; 
+        //console.log(x);
+        rawargs.push(x);
+        //console.log(rawargs);
+    } //return token.fnexp(rawargs.concat([input.min, input.max]));
+
+    const k = token.fnexp(rawargs);
+
+    return k;
+
     const returnType = FuncInfoByCode[token.code].returnType;
     const args = rawargs.map((arg) => arg.value);
 
@@ -4197,6 +4877,8 @@ function convertToHandleType(tokenType, metadata) {
     switch(tokenType){
         case TokenType.NUM:
             return TokenHandleType.REAL;
+        case TokenType.CMPLX:
+            return TokenHandleType.COMPLEX;
         case TokenType.CNST:
             const constantAsToken = convertConstantToToken(metadata);
             return convertToHandleType(constantAsToken.type, constantAsToken.value);
@@ -4224,6 +4906,16 @@ function convertToHandleType(tokenType, metadata) {
     }
 }
 
+function convertToTokenType(tokenHandleType, evalType){
+    switch(tokenHandleType){
+        case TokenHandleType.REAL: return TokenType.NUM;
+        case TokenHandleType.COMPLEX: return TokenType.CMPLX;
+        case TokenHandleType.TUPLE: return TokenType.TUPLE;
+        case TokenHandleType.ARRAY: return TokenType.ARRAY;
+        case TokenHandleType.INPUT_TUPLE: return evalType;
+    }
+}
+
 // -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 /**
  * Tests evaluation to check which types of operations are performed. For example, '*' could be real*real, vector * vector, quad*real, etc which all have different behavior
@@ -4248,6 +4940,12 @@ function testEvaluation(inputTokens, inputType){
                 solve.push(token);
                 expectedTokenMetadata.push({ outputType: TokenHandleType.REAL });
                 break;
+            case TokenHandleType.COMPLEX:
+                token.outputType = TokenHandleType.COMPLEX;
+
+                solve.push(token);
+                expectedTokenMetadata.push({ outputType: TokenHandleType.COMPLEX });
+                break;
             case TokenHandleType.TUPLE:
                 token.outputType = TokenHandleType.TUPLE;
 
@@ -4267,12 +4965,16 @@ function testEvaluation(inputTokens, inputType){
                 expectedTokenMetadata.push({ outputType: TokenHandleType.INPUT_TUPLE, variantCode: inputType });
                 break;
             case TokenHandleType.UNARY_OP:
+                if(solve.length < 1) throw new Error("Solve length insufficient for unary operation: "+token.code);
+
                 const arg = solve.pop();
 
                 //unary ops all do not change their output
-                token.outputType = arg.type;
+                //token.outputType = arg.type;
 
-                solve.push(token);
+                console.assert(arg.outputType !== undefined, token);
+
+                solve.push({outputType: arg.outputType});
                 expectedTokenMetadata.push({ outputType: arg.outputType, variantCode: toStrictOperatorCodeUnary( arg.outputType & 0b1111, token.code & 0b11111111 ) });
                 break;
             case TokenHandleType.BINARY_OP:
@@ -4304,7 +5006,7 @@ function testEvaluation(inputTokens, inputType){
                 token.outputType = outputTypeOfFunction(token.code, argTypes);
 
                 solve.push({outputType: token.outputType});
-                expectedTokenMetadata.push({ outputType: token.outputType, variantCode: toStrictFunctionInfoObject(argTypes, token.code) });
+                expectedTokenMetadata.push({ outputType: token.outputType, variantCode: newFuncInputInfoObject(argTypes, token.code, token.attributes) });
                 break;
             default:
                 console.error('unknown token handle type: ', tokenHandleType);
@@ -4343,12 +5045,17 @@ function outputTypeOfFunction(funccode, argTypes){
         return TokenHandleType.REAL; //ASSUMPTION: array operations, collapse
     }
 
+    if(FuncInfoByCode[funccode].returnType === TokenHandleType.DISTRIBUTION) return TokenHandleType.INPUT_TUPLE;
 
     //ASSUMPTION: these are the only higher-precedence-value functions
     if(funccode === FuncCode.TUPLE) return TokenHandleType.TUPLE;
     if(funccode === FuncCode.ARRAY) return TokenHandleType.ARRAY;
+    if(funccode === FuncCode.CIS) return TokenHandleType.COMPLEX;
+    if(funccode === FuncCode.ARG) return TokenHandleType.REAL;
+    if(funccode === FuncCode.ABS) return TokenHandleType.REAL;
+    if(funccode === FuncCode.SQRT) return TokenHandleType.COMPLEX;
 
-    return Math.max(argTypes);
+    return Math.max(...argTypes);
 }
 
 function aggregateEdges(edges){
@@ -4741,10 +5448,10 @@ function handleEdgesForFunc(funccode, vertexes, edgeslist){
 
 /**
  * 
- * @param {*} funccode 
- * @param {*} args1 
- * @param {*} args2 
- * @param {*} edgeinfo 
+ * @param {*} funccode function id (int)
+ * @param {*} args1 list of vertex 1 of each arg
+ * @param {*} args2 list of vertex 2 of each arg
+ * @param {*} edgeinfo list of edges of each argument
  * @returns 
  */
 function handleEdgePairForFunc(funccode, args1, args2, edgeinfo){
@@ -4773,6 +5480,8 @@ function handleEdgePairForFunc(funccode, args1, args2, edgeinfo){
             crosses = edgeinfo[0][0];
             holes = edgeinfo[0][1];
             jumps = edgeinfo[0][2];
+
+            console.log(args1[0],args2[0]);
 
             if((args1[0] > 0) !== (args2[0] > 0)){
                 crosses++;
@@ -4803,9 +5512,11 @@ function handleEdgePairForFunc(funccode, args1, args2, edgeinfo){
         case FuncCode.SEC:
             crosses = edgeinfo[0][0];
             n = Math.abs(
-                Math.floor(args1[0]/Math.PI + 0.5)
-                -Math.floor(args2[0]/Math.PI + 0.5)
+                Math.floor(args1[0]/Math.PI + 0)
+                -Math.floor(args2[0]/Math.PI + 0)
             );
+            console.log(edgeinfo[0],args1[0],args2[0], n);
+
             holes = n+edgeinfo[0][1];
             jumps = n+edgeinfo[0][2];
             break;
@@ -4880,7 +5591,7 @@ function handleEdgePairForFunc(funccode, args1, args2, edgeinfo){
 
     //console.log("after", crosses, holes, jumps);
 
-    return [crosses, holes, jumps, undefined];
+    return [crosses, holes, jumps];
 }
 
 function executeFunc(funccode, args, attributes) {
@@ -5045,6 +5756,17 @@ export function tupleDotProduct(a,b){
 }
 
 export function tupleCrossProduct(a,b){
+    if(a.length !== 3 || b.length !== 3){
+        console.error('Cross product only works for 3-dimensional inputs');
+        return Array(a.length).fill(0);
+    }
+
+    return [
+        a[1]*b[2]-a[2]*b[1],
+        -a[0]*b[2]+a[2]*b[0],
+        a[0]*b[1]-a[1]*b[0]
+    ];
+
     const l = a.length;
     let matrix = [
         //i, j, k, ...
@@ -5151,6 +5873,16 @@ function func_factor(n){
         }
     }
     return a;
+}
+
+function dist_normal(mu,sg,x){
+    const c = 1/(sg*Math.sqrt(2*Math.PI));
+    const t = ((x-mu)/sg)**2;
+    const k = c*Math.exp(-0.5*t);
+
+    //console.log('Normal dist N('+mu+','+sg+') at x='+x+'='+c);
+    
+    return k;
 }
 
 export function evaluateExpressionSimple(string) {

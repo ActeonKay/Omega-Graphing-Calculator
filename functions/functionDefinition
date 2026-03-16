@@ -1,0 +1,23 @@
+class FunctionOverload{
+    constructor(argType, argCount, executable){
+        this.argType = argType;
+        this.argCount = argCount;
+        this.executable = executable;
+    }
+}
+
+class Function {
+    constructor(name, overloads, returntype){
+        this.name = name;
+        this.overloads = overloads;
+        this.returntype = returntype;
+    }
+
+    static call(args,argType){
+        const overload = this.overloads.find((overload) => overload.argType === argType);
+
+        if(overload === undefined) throw Error('Invalid input type')
+
+        return overload.executable(...args);
+    }
+}
