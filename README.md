@@ -6,14 +6,14 @@ Omega is a graphing software that supports:
 - Large library of functions
 - Numeric evaluation and result display
 - Variable definition
-- Uncertainty propogation with both absolute and percentage uncertainty
+- Uncertainty propagation with both absolute and percentage uncertainty
 
 ## How to Use
 
 Using the calculator is simple. But here are a few tips: 
 
 - Functions are input like `sin(x)` or `max(1,2)`. 
-- Functions can be defined without parenthesis `cos x`, but this is buggy.
+- Functions can be defined without parentheses: `cos x`, but this is buggy.
 - Functions can also have exponents, like `sec^2 x` or `sin^3 y`, which exponentiates the output of the function. Inverse functions are not supported using this notation.
 - Variables are defined by using `=`, like `a=3!` or `b=2a`. They can be defined either directly or in terms of other variables. When a variable is updated, all of its dependent expressions are also updated.
 - Values can be given uncertainties, as in `24±3` or `2±q`. Resulting operations with these values will propogate the uncertainty. 
