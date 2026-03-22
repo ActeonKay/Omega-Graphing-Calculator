@@ -4,171 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Full-screen Canvas Line</title>
-  <style>
-    html, body { height: 100%; margin: 0; }
-    canvas { display: block; width: 100%; height: 100%; }
-
-    :root {
-      --ui-bg-color: #eee;
-      --ui-bg-color-hover: #ddd;
-
-      --ui-text-color: #333;
-      --ui-text-color-hover: #111;
-
-      --ui-font-size-small: 15px;
-      --ui-font-size-medium: 20px;
-      --ui-font-family-normal: Tahoma, Geneva, Verdana, sans-serif;
-
-      --ui-button-color: #eee;
-      --ui-button-border-radius: 8px;
-    }
-
-    #controls {
-      position: fixed;
-      bottom: 20px;
-      right: 20px;
-      display: flex;
-      gap: 10px;
-    }
-
-    #stats {
-      position: fixed;
-      bottom: 20px;
-      left: 20px;
-      display: flex;
-      gap: 10px;
-      border: none;
-      padding: 10px 15px;
-      border-radius: var(--ui-button-border-radius);
-      background-color: var(--ui-bg-color);
-      color: var(--ui-text-color);
-      font-size: var(--ui-font-size-small);
-      font-family: var(--ui-font-family-normal);
-    }
-
-    button {
-      font-size: var(--ui-font-size-medium);
-      padding: 10px 15px;
-      border: none;
-      border-radius: var(--ui-button-border-radius);
-      background-color: var(--ui-button-color);
-      color: var(--ui-text-color);
-      cursor: pointer;
-      transition: background-color 0.2s;
-    }
-    button:hover {
-      background-color: var(--ui-bg-color-hover);
-    }
-
-    #equationBox {
-      position: fixed;
-      top: 0px;
-      left: 0;
-      width: 300px;
-      height: 100%;
-      background: var(--ui-bg-color);
-      color: var(--ui-text-color);
-      padding: 10px;
-      overflow-y: auto;
-      transform: translateX(0%);
-      transition: transform 0.3s;
-      outline: solid;
-      outline-width: 2px;
-    }
-
-    #equationBox.open {
-      transform: translateX(0);
-    }
-
-    #equationBox h1 {
-      user-select: none;
-    }
-
-    #equationPanel {
-      width: 100%;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .equationRow {
-      width: auto;
-      min-height: 45px;
-      margin-left: 5px;
-      margin-right: 5px;
-      margin-top: 2px;
-      outline: solid;
-      display: flex;
-      flex-direction: row;
-    } 
-
-    .equationEdit {
-      outline: solid;
-      width: 40px;
-      min-width: 40px;
-    }
-
-    .equationEdit button {
-      margin: -5px;
-      width: 30px;
-      height: 30px;
-      border-radius: 15px;
-      position: relative;
-      margin-top: 50%; 
-      margin-left: 50%; 
-      transform: translate(-50%, -50%);
-      outline: solid;
-    }
-
-    .equationWrapper {
-      font-size: 110%;
-      margin-top: auto;
-      margin-bottom: 6px;
-      margin-left: 15px;
-      margin-right: 15px;
-      padding-top: 12px;
-      vertical-align: baseline;
-    }
-
-    .equationResult {
-      position: relative;
-      right: 0;
-      margin-top: 2px;
-      max-width: 218px;
-      overflow: visible;
-    }
-
-    .equation {
-      min-width: 218px;
-      max-width: 218px;
-      border-bottom: 0;
-      overflow: hidden;
-    }
-
-    #equationBox button {
-      font-family: serif;
-    }
-
-    #equationBox h1 {
-      margin-top: 0;
-      text-align: center;
-      font-family: serif;
-    }
-
-    /* .equationList {
-     
-    } */
-
-    #toggleBox {
-      position: fixed;
-      top: 22px;
-      left: 0;
-      padding: 5px 10px;
-      background: #333;
-      color: white;
-      cursor: pointer;
-      border-radius: 0 4px 4px 0;
-    }
-  </style>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <canvas id="c"></canvas>
@@ -181,6 +17,40 @@
     <!-- <pre id="expDisplay">No loaded expression</pre> -->
     <button id="zoomIn">+</button>
     <button id="zoomOut">−</button>
+  </div>
+
+  <div id="controlPanel">
+    <button id="help">?</button>
+    <button id="settings">$</button>
+  </div>
+
+  <div class="modal" id="modal">
+    <div class="modal-inner">
+      <h2>Help</h2>
+      <h3>Equations</h3>
+      <p>You can input equations in terms of y, x, r, and theta.</p>
+      <p>You can also use functions.</p>
+      <h3>Variables</h3>
+      <p>Use 'a=...' to define a variable.</p>
+      <h3>Vectors, Points, and Tuples</h3>
+      <p>Create a vector, point, or tuple using parenthesis: (a,b,c)</p>
+      <p>2D points are displayed on the graph.</p>
+      <p>3D vectors can use the cross '\times' and dot '*' products.</p>
+      <h3>Arrays</h3>
+      <p>Define arrays using square brackets: [a,b,c]</p>
+      <p>Use arrays like a normal variable.</p>
+      <h3>Number Systems</h3>
+      <p>Use complex numbers with i.</p>
+      <p>Complex-valued functions are still in progress.</p>
+      <h3>Uncertainty</h3>
+      <p>This calculator supports propagation of uncertainty.</p>
+      <p>We support a±b or a±b% as valid uncertainty input.</p>
+      <p>Currently, this is done in compliance with the IB syllabus.</p>
+      <h3>Other tips</h3>
+      <p>Use 'deg' to convert from radians into degrees.</p>
+      <p>Use 'Norm(mean,variance)' to display a normal distribution.</p>
+      <button id="closeHelpMenu">Close</button>
+    </div>
   </div>
 
   <div id="toggleBox">Equation</div>
@@ -233,7 +103,8 @@
     } from "./expressions.js";
 
     import {
-      generateDrawInstructionsForCartesianYofX
+      generateDrawInstructionsForCartesianYofX,
+      generateDrawInstructionsForCartesianXofY
     } from "./renderer.js";
 
     // --- Common Elements ---
@@ -1005,6 +876,36 @@
       });
     }
 
+    function drawFromInstructions(instructions, color){
+      ctx.beginPath();
+      ctx.lineWidth = 3;
+      ctx.lineCap = "round";
+      ctx.strokeStyle = color;
+
+      ctx.moveTo(toScreenCoordsX([0][1]),toScreenCoordsY([0][2]));
+
+      for(let i = 0; i < instructions.length; i++){
+        const instruction = instructions[i];
+
+        let x = toScreenCoordsX(instruction[1]);
+        let y = toScreenCoordsY(instruction[2]);
+
+        if(y < 0) y = -window.innerHeight;
+        if(y>window.innerHeight) y = 2*window.innerHeight;
+
+        if(x<0) x = -window.innerWidth;
+        if(x>window.innerWidth) x = 2*window.innerWidth;
+
+        if(instruction[0]) {
+          ctx.lineTo(x,y);
+        } else {
+          ctx.moveTo(x,y);
+        }
+      }
+
+      ctx.stroke();
+    }
+
     function drawAsYofX(expr){
       const minY = toGraphCoordsY(0);
       const maxY = toGraphCoordsY(window.innerHeight);
@@ -1018,6 +919,9 @@
       );
 
       const instructions = generateDrawInstructionsForCartesianYofX(expr, minX, maxX, window.innerWidth, minY, maxY);
+
+      drawFromInstructions(instructions,expr.color);
+      return;
 
       ctx.beginPath();
       ctx.lineWidth = 3;
@@ -1132,55 +1036,16 @@
     }
 
     function drawAsXofY(expr){
-      currentExpression = expr;
-
-      const dy = 1;
       const minX = toGraphCoordsX(0);
       const maxX = toGraphCoordsX(window.innerWidth);
 
-      ctx.beginPath();
-      ctx.lineWidth = 2.5;
-      ctx.strokeStyle = currentExpression.color; //r 3,4,5,6
+      const minY = toGraphCoordsY(0);
+      const maxY = toGraphCoordsY(window.innerHeight);
 
-      let gx = evaluateExpression(
-        currentExpression, 
-        { min: toGraphCoordsY(window.innerHeight+dy), max: toGraphCoordsY(window.innerHeight) }
-      );
-      ctx.moveTo(toScreenCoordsX(gx.value[0] ?? gx.value), window.innerHeight);
+      const instructions = generateDrawInstructionsForCartesianXofY(expr, maxY, minY, window.innerHeight, minX, maxX);
 
-      var py = window.innerHeight; // previous y
-      var px = toScreenCoordsX(gx.value[0] ?? gx.value);
-      for(let y=window.innerHeight-dy; y>0; y -= dy){
-        let gx = evaluateExpression(
-          currentExpression, 
-          { min: toGraphCoordsY(py), max: toGraphCoordsY(y) }
-        );
-
-        let x = toScreenCoordsX(gx.value[0] ?? gx.value);
-
-        if(Math.log10(Math.abs(window.innerWidth/2-x)) > 3){
-          if(x>window.innerWidth/2){
-            ctx.moveTo(window.innerWidth,y)
-          }else{
-            ctx.moveTo(0,y)
-          }
-          
-        }else{
-          ctx.lineTo(x,y)
-        }
-
-        //console.log(gy.value[0]);
-
-        //ctx.lineTo(toScreenCoordsX(gx.value[0] ?? gx.value),y)
-
-        // TODO: implement variable quad density, like implicit graph
-        // tryPlotRect(x,0,dx,window.innerHeight,true,true);
-
-        py -= dy;
-        px = x;
-      }
-
-      ctx.stroke();
+      drawFromInstructions(instructions,expr.color);
+      return;
     }
 
     function getRenderState(edge, allowSubdivision = true, d){
@@ -1809,6 +1674,13 @@
         draw();
     });
 
+    document.getElementById('help').addEventListener('click', () => {
+      document.getElementById('modal').classList.add('open');
+    });
+
+    document.getElementById('closeHelpMenu').addEventListener('click', () => {
+      document.getElementById('modal').classList.remove('open');
+    });
   </script>
 </body>
 </html>

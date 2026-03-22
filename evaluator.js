@@ -1824,15 +1824,15 @@ function generateStrictMethodExprForOp(strictOpCode, evalType){
             }
         }
 
-        if(opId === OpCode.ABS){
-            if(right === TokenHandleType.REAL) return (a) => {return {type: TokenType.NUM, value: Math.abs(a.value), outputType: TokenHandleType.REAL}; };
+        // if(opId === OpCode.ABS){
+        //     if(right === TokenHandleType.REAL) return (a) => {return {type: TokenType.NUM, value: Math.abs(a.value), edge: a.edge, outputType: TokenHandleType.REAL}; };
 
-            const fnComplex = generateComplexOperatorMethodExpression(opId);
+        //     const fnComplex = generateComplexOperatorMethodExpression(opId);
 
-            return (a) => {
-                return {type: TokenType.NUM, value: fnComplex(a.value), outputType: TokenHandleType.REAL};
-            }
-        }
+        //     return (a) => {
+        //         return {type: TokenType.NUM, value: fnComplex(a.value), edge: a.edge, outputType: TokenHandleType.REAL};
+        //     }
+        // }
 
         switch(right){
             case TokenHandleType.REAL:
@@ -1845,6 +1845,24 @@ function generateStrictMethodExprForOp(strictOpCode, evalType){
                     return {type: TokenType.CMPLX, value: fnComplex(a.value), outputType: TokenHandleType.COMPLEX};
                 }
                 break;
+            case TokenHandleType.INPUT_TUPLE:
+                const fnTuple = generateRealOperatorMethodExpression(opId);
+                const handleEdge = evalType === TokenType.DUAL 
+                    ? (a) => handleEdgePairForUnaryOp(opId,a.value[0],a.value[1])
+                    : (a) => handleEdgesForUnaryOp(opId,a.value,a.edge);
+                
+                return (a) => { 
+                    return {
+                        type: a.type, 
+                        value: a.value.map((val) => fnTuple(val)), 
+                        edge: handleEdge(a),
+                        outputType: TokenHandleType.TUPLE
+                    };
+                };
+                break;
+            default:
+                console.error('Unary op could not be applied to token handle type: ' + right);
+                return (a) => (a);
         }
     }
 
@@ -1869,7 +1887,7 @@ function generateStrictMethodExprForOp(strictOpCode, evalType){
         const fn = generateRealOperatorMethodExpression(opId);
 
         if(opId === OpCode.PM){
-            const c = generateOperatorMethodExpressionBetweenSoloTypes(opId, left, right);
+            const c = generateOperatorMethodExpressionBetweenSoloTypes(opId, left, right,evalType);
             console.log(c);
             return c;
         }
@@ -1886,7 +1904,7 @@ function generateStrictMethodExprForOp(strictOpCode, evalType){
                     return {type: TokenType.CMPLX, value: fnComplex(tokenA.value, tokenB.value), outputType: TokenHandleType.COMPLEX};
                 }
             case TokenHandleType.INPUT_TUPLE:
-                return generateOperatorMethodExpressionBetweenSoloTypes(opId,left,right);
+                return generateOperatorMethodExpressionBetweenSoloTypes(opId,left,right,evalType);
 
                 const edgeHandler = evalType === TokenType.QUAD 
                     ? (a,b) => handleEdgesForBinaryOp(opId, a.value, b.value, a.edge, b.edge)
@@ -1974,7 +1992,7 @@ function generateStrictMethodExprForOp(strictOpCode, evalType){
                     //check for if list item is input type
                     const itemHandleType = typeof tokenA.value[0] === 'number' ? TokenHandleType.REAL : TokenHandleType.COMPLEX;
 
-                    const fn = generateOperatorMethodExpressionBetweenSoloTypes(opId,itemHandleType,right);
+                    const fn = generateOperatorMethodExpressionBetweenSoloTypes(opId,itemHandleType,right,evalType);
 
                     const input = tokenB.values;
 
@@ -2067,7 +2085,7 @@ function generateStrictMethodExprForOp(strictOpCode, evalType){
                     //check for if list item is input type
                     const itemHandleType = typeof tokenA.value[0] === 'number' ? TokenHandleType.REAL : TokenHandleType.COMPLEX;
 
-                    const fn = generateOperatorMethodExpressionBetweenSoloTypes(opId,itemHandleType,right);
+                    const fn = generateOperatorMethodExpressionBetweenSoloTypes(opId,itemHandleType,right,evalType);
 
                     const input = tokenB.values;
 
@@ -2103,7 +2121,7 @@ function generateStrictMethodExprForOp(strictOpCode, evalType){
     }
     
     console.log('between solo types');
-    return generateOperatorMethodExpressionBetweenSoloTypes(opId,left,right);
+    return generateOperatorMethodExpressionBetweenSoloTypes(opId,left,right,evalType);
 }
 
 function generateOperatorMethodExpressionBetweenTuples(opcode, left, right){
@@ -2149,20 +2167,22 @@ function generateOperatorMethodExpressionBetweenTuples(opcode, left, right){
  * @param {*} right 
  * @returns 
  */
-function generateOperatorMethodExpressionBetweenSoloTypes(opcode,left,right){
+function generateOperatorMethodExpressionBetweenSoloTypes(opcode,left,right,evalType){
     if(left === TokenHandleType.INPUT_TUPLE){
         console.log('left=tuple');
         switch(right){
             case TokenHandleType.INPUT_TUPLE:
                 if(true){
                     //Assumption that elements of the tuple are real numbers
-                    console.log('right=tuple');
+                    console.log('right=tuple',evalType);
                     const fn = generateRealOperatorMethodExpression(opcode);
 
-                    return (tokenA,tokenB) => {
-                        const edgeHandler = tokenA.type === TokenType.QUAD 
+                    const edgeHandler = evalType === TokenType.QUAD 
                         ? (a,b) => handleEdgesForBinaryOp(opcode, a.value, b.value, a.edge, b.edge)
                         : (a,b) => handleEdgePairForBinaryOp(opcode, a.value[0],b.value[0],a.value[1],b.value[1]);
+
+                    return (tokenA,tokenB) => {
+                        
 
                         let results = [];
                         const n = tokenA.value.length;
@@ -2613,6 +2633,14 @@ function generateStrictMethodExprForFunc(funcInputInfo, evalType){
                     (evalType === TokenType.DUAL) 
                     ? [0,0,0]
                     : {top: [0,0,0], btm: [0,0,0], lft: [0,0,0], rgt: [0,0,0]};
+                const edgeHandler = evalType === TokenType.QUAD 
+                    ? (args) => handleEdgesForFunc(funccode, [
+                            args.map((arg)=>arg.value[0]),
+                            args.map((arg)=>arg.value[1]),
+                            args.map((arg)=>arg.value[2]),
+                            args.map((arg)=>arg.value[3]),
+                        ],args.map((arg) => arg.edge))
+                    : (args) => handleEdgePairForFunc(funccode, args.map((arg)=>arg.value[0]),args.map((arg)=>arg.value[1]),args.map((arg) => arg.edge));
 
                 return (args) => {
                     let vertices = [];
@@ -2627,7 +2655,7 @@ function generateStrictMethodExprForFunc(funcInputInfo, evalType){
                         vertices.push(fn(...verticeI))
                     }
 
-                    return {type: evalType, value: vertices, edge: edge, outputType: returnHandleType};
+                    return {type: evalType, value: vertices, edge: edgeHandler(args), outputType: returnHandleType};
                 }
             }
 
@@ -3637,7 +3665,7 @@ function getPopCountOfFunction(token){
  */
 function evaluateMethodExprForUnaryOp(token, evalType, a){
     const k = token.fnexp(a);
-    console.log(a,'->',k);
+    //console.log(a,'->',k);
     return k;
 }
 
@@ -3976,6 +4004,8 @@ function handleEdgesForUnaryOp(opcode, arg_quad, arg_edges){
 }
 
 function handleEdgePairForUnaryOp(opcode, arg1, arg2){
+    console.assert(arg1 !== undefined && arg2 !== undefined, arg1, arg2);
+
     var crosses = 0;
     var holes = 0;
     var jumps = 0;
@@ -4082,9 +4112,22 @@ function handleEdgePairForBinaryOp(opcode, a1, b1, a2, b2){
             break;
         case OpCode.DIV:
             //  a/b
+
+            console.log(a1,a2,b1,b2);
+
             //TODO: FIX BELOW
-            if((a1 > 0) != (a2 > 0)) {crosses++; }
-            if((b1 > 0) != (b2 > 0)) crosses++, jumps++, undefined = true; //holes++; 
+            if((a1*b1 > 0) !== (a2*b2 > 0)) {
+                crosses++; 
+            }
+
+            //check denominator sign change:
+            if((b1 > 0) !== (b2 > 0)) {
+                console.log('cross:',b1,b2);
+                crosses++;
+                jumps++;
+                holes++;
+            }
+            //jumps += crosses of arg2 instead of this ^^
             break;
         case OpCode.POW: 
         case OpCode.POWN:
@@ -4169,9 +4212,9 @@ function handleEdgePairForFunc(funccode, args1, args2, edgeinfo){
     //NOTE: asymptotes for f(x) = crosses for 1/f(x) and vice versa
 
     var n;
-    var crosses;
-    var holes;
-    var jumps;
+    var crosses = 0;
+    var holes = 0;
+    var jumps = 0;
 
     var undefined = false;
 
@@ -4183,11 +4226,10 @@ function handleEdgePairForFunc(funccode, args1, args2, edgeinfo){
 
             //1st argument --> numerator
             //2nd argument --> denominator
-            crosses = 0;
             holes = edgeinfo[0][1];
             jumps = edgeinfo[0][2];
 
-            console.log(args1[0],args2[0]);
+            //console.log(args1[0],args2[0]);
 
             if((args1[0] > 0) !== (args2[0] > 0)){
                 crosses++;
@@ -4210,7 +4252,11 @@ function handleEdgePairForFunc(funccode, args1, args2, edgeinfo){
             //console.log(args1[0], args2[0], "=>", crosses);
             break;
         case FuncCode.COS:
-            crosses = Math.abs(Math.floor(args1[0]/Math.PI+0.5)-Math.floor(args2[0]/Math.PI+0.5));
+            n = Math.abs(
+                Math.round(args1[0]/Math.PI + 0)
+                -Math.round(args2[0]/Math.PI + 0)
+            );
+            crosses = n;
             holes = edgeinfo[0][1];
             jumps = edgeinfo[0][2];
             break;
@@ -4218,10 +4264,10 @@ function handleEdgePairForFunc(funccode, args1, args2, edgeinfo){
         case FuncCode.SEC:
             crosses = 0;
             n = Math.abs(
-                Math.floor(args1[0]/Math.PI + 0)
-                -Math.floor(args2[0]/Math.PI + 0)
+                Math.round(args1[0]/Math.PI + 0)
+                -Math.round(args2[0]/Math.PI + 0)
             );
-            console.log(edgeinfo[0],args1[0],args2[0], n);
+            //console.log(edgeinfo[0],args1[0],args2[0], n);
 
             holes = n+edgeinfo[0][1];
             jumps = n+edgeinfo[0][2];
@@ -4237,13 +4283,18 @@ function handleEdgePairForFunc(funccode, args1, args2, edgeinfo){
             holes = n+edgeinfo[0][1];
             jumps = n+edgeinfo[0][2];
             break;
+        case FuncCode.ASIN:
+        case FuncCode.ACOS:
+            //n = Math.abs(args1[0]<)
         case FuncCode.ASEC:
         case FuncCode.ACSC:
             crosses = 0;
+            holes = edgeinfo[0][1];
+            jumps = edgeinfo[0][2];
             //if they are across the gap, or if either of them is within the gap
             if((Math.sign(args1[0]) != Math.sign(args2[0])) || (Math.abs(args1[0]) < 1) || (Math.abs(args2[0]) < 1)){
-                holes = 1+edgeinfo[0][1];
-                jumps = 1+edgeinfo[0][2];
+                holes += 1;
+                jumps += 1;
             }
             break;
         case FuncCode.CSCH:
@@ -4296,7 +4347,10 @@ function handleEdgePairForFunc(funccode, args1, args2, edgeinfo){
             jumps = holes;
             break;
 
-
+        default:
+            crosses = 0;
+            holes = edgeinfo[0][1];
+            jumps = edgeinfo[0][2];
     }
 
     crosses = crosses ?? edgeinfo[0][0]; //first argument
