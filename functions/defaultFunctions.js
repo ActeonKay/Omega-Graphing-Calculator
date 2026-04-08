@@ -1,4 +1,4 @@
-function gamma(n) {
+export function gamma(n) {
     if(n-Math.floor(n) === 0 && n<=0) return undefined; 
     //console.log("N",n);
     //recursive gamma function implementation using Lanczos approximation and reflection formula
@@ -31,7 +31,7 @@ function gamma(n) {
 
 }
 
-function choose(n,k){
+export function choose(n,k){
     const result = func_gamma(n+1)/(func_gamma(k+1)*func_gamma(n-k+1));
 
     //console.log('n,k,r:', n, k, result);
@@ -40,7 +40,7 @@ function choose(n,k){
     return result;
 }
 
-function factor(n){    
+export function factor(n){    
     if(n-Math.floor(n) !== 0) { 
         return [];
     }

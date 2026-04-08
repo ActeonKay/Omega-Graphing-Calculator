@@ -66,29 +66,96 @@ export function getAllExpressions(){
     return expressions;
 }
 
+export class ExpressionEvaluationInfo {
+    type; //int
+    variableDependencies;
+    functionDependencies; 
+    internalConstants; //Map
+
+    constructor(type, varDeps, funcDeps, inConsts){
+        this.type = type;
+        this.variableDependencies = varDeps;
+        this.functionDependencies = funcDeps;
+        this.internalConstants = inConsts;
+    }
+}
+
+export class Expression {
+    id; /**Id */
+    type;
+    varDependencies;
+    color;
+    visible;
+    latex;
+    tokens;
+    replace;
+    definedVariable;
+    evaluationInfo;
+
+    constructor(id, type, varDependencies, color, visible, latex, tokens, replace, definedVariable = null){
+        this.id = id;
+        this.type = type;
+        this.varDependencies = varDependencies;
+        this.color = color;
+        this.visible = visible;
+        this.latex = latex;
+        this.tokens = tokens;
+        this.replace = replace;
+        this.definedVariable = definedVariable;
+
+        return isValidExpression(this);
+    } 
+
+    static getEvaluationInfo() {
+        return this.evaluationInfo;
+    }
+
+    static getType() {
+        return this.evaluationInfo.type;
+    }
+
+    static getVariableDependencies() {
+        return this.evaluationInfo.variableDependencies;
+    }
+
+    static getFunctionDependencies() {
+        return this.evaluationInfo.functionDependencies;
+    } 
+
+    static getInternalConstants() {
+        return this.evaluationInfo.internalConstants;
+    }
+}
+
 /**
  * Checks if the input is a valid expression
  * @param {Object} expr input to check
  * @returns 
  */
 export function isValidExpression(expr){
-    if(typeof expr !== 'object') {console.log('expression not object'); return false;}
+    if(typeof expr !== 'object') {console.error('expression not object'); return false;}
+    if(!expr instanceof Expression) {console.error('expression not Expression type'); return false;}
 
-    if(typeof expr.id !== 'number') {console.log('id not number'); return false;}
-    if(expr.id < 0 || expr.id > nextId) {console.log('id not in of range'); return false;}
+    if(typeof expr.id !== 'number') {console.error('id not number'); return false;}
+    if(expr.id < 0 || expr.id > nextId) {console.error('id not in of range'); return false;}
 
-    if(typeof expr.type !== 'number') {console.log('type not number'); return false;}
-    if(expr.type < -1 || expr.type > 8) {console.log('type not in range'); return false;}
+    if(typeof expr.type !== 'number') {console.error('type not number'); return false;}
+    if(expr.type < -1 || expr.type > 9) {console.error('type not in range:',expr.type,expr); return false;}
 
-    if(typeof expr.varDependencies !== 'object') return false;
-    if(typeof expr.varDependencies.size !== 'number') {console.log('vardependencies not array'); return false;}
+    if(typeof expr.varDependencies !== 'object') {console.error('vardependencies not object'); return false;}
+    if(!expr.varDependencies instanceof Array) {console.error('vardependencies not array'); return false;}
 
-    if(typeof expr.color !== 'string') {console.log('color not number'); return false;}
+    if(typeof expr.color !== 'string') {console.error('color not number'); return false;}
 
-    if(typeof expr.latex !== 'string') {console.log('latex not string'); return false;}
+    if(typeof expr.visible !== 'boolean') {console.error('visibility not a boolean'); return false;}
 
-    if(typeof expr.tokens !== 'object') {console.log('tokens not boject'); return false;}
-    if(typeof expr.tokens.length !== 'number') {console.log('tokens not array'); return false;}
+    if(typeof expr.latex !== 'string') {console.error('latex not string'); return false;}
+
+    if(typeof expr.tokens !== 'object') {console.error('tokens not boject'); return false;}
+    if(typeof expr.tokens.length !== 'number') {console.error('tokens not array'); return false;}
+
+    if(typeof expr.replace !== 'object') {console.error('replace not object'); return false;}
+    if(!expr.replace instanceof Array) {console.error('replace not array',expr.replace); return false;}
 
     return true;
 }
@@ -149,7 +216,7 @@ export function registerVariable(name, varinfo, varDependencies = new Set()){
         dependencies.add(d);
     });
 
-    console.log(dependencies);
+    //console.log(dependencies);
 
     if(typeof varinfo === 'object'){
         variableData.set(name, {value: varinfo, dependencies: dependencies});

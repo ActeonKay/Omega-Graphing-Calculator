@@ -21,10 +21,10 @@
 
   <div id="controlPanel">
     <button id="help">?</button>
-    <button id="settings">$</button>
+    <button id="settings">⚙︎</button>
   </div>
 
-  <div class="modal" id="modal">
+  <div class="menu" id="modal">
     <div class="modal-inner">
       <h2>Help</h2>
       <h3>Equations</h3>
@@ -50,6 +50,41 @@
       <p>Use 'deg' to convert from radians into degrees.</p>
       <p>Use 'Norm(mean,variance)' to display a normal distribution.</p>
       <button id="closeHelpMenu">Close</button>
+    </div>
+  </div>
+
+  <div class="menu" id="settings-menu">
+    <div class="modal-inner">
+      <h2>Settings</h2>
+      <p> </p>
+      <div class="checkbox-wrapper-28">
+        <input id="tmp-28" type="checkbox" class="promoted-input-checkbox"/>
+        <svg><use xlink:href="#checkmark-28" /></svg>
+        <label for="tmp-28">
+          Complex mode   
+        </label>
+        <svg xmlns="http://www.w3.org/2000/svg" style="display: none">
+          <symbol id="checkmark-28" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-miterlimit="10" fill="none"  d="M22.9 3.7l-15.2 16.6-6.6-7.1">
+            </path>
+          </symbol>
+        </svg>
+      </div>
+      <p> </p>
+      <div class="checkbox-wrapper-28">
+        <input id="tmp-28" type="checkbox" class="promoted-input-checkbox"/>
+        <svg><use xlink:href="#checkmark-28" /></svg>
+        <label for="tmp-28">
+          Uncertainty propagation type   
+        </label>
+        <svg xmlns="http://www.w3.org/2000/svg" style="display: none">
+          <symbol id="checkmark-28" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-miterlimit="10" fill="none"  d="M22.9 3.7l-15.2 16.6-6.6-7.1">
+            </path>
+          </symbol>
+        </svg>
+      </div>
+      <button id="close-settings">Close</button>
     </div>
   </div>
 
@@ -99,12 +134,14 @@
     } from "./evaluator.js";  
 
     import {
+      Expression,
       getAllExpressions, appendExpression, getNextId, getNextColor, registerVariable, unregisterVariable
     } from "./expressions.js";
 
     import {
-      generateDrawInstructionsForCartesianYofX,
-      generateDrawInstructionsForCartesianXofY
+      generateImageForCartesianYofX,
+      generateImageForCartesianXofY,
+      generateImageForCartesianImplicit
     } from "./renderer.js";
 
     // --- Common Elements ---
@@ -113,7 +150,7 @@
     const fpsDisplay = document.getElementById('fps');
 
     // --- Options ---
-    const showQuadOutlines = false;
+    const showQuadOutlines = true;
     const doQuadTooltip = false;
     let quadSelected = []; //[x,y,w,h]
     const maxQuads = 4096;
@@ -162,6 +199,7 @@
     const expRowClass = 'equationRow';
     const expRowId = 'eq-row-';
     const expEditClass = 'equationEdit';
+    const expColorButton = 'colorButton';
     const expWrapperClass = 'equationWrapper';
     const expResultClass = 'equationResult';
     const expMathPlaceholderClass = 'equation';
@@ -187,16 +225,32 @@
     }
 
     function generateEquationRow(expression){
-      console.log('generating: ', expression);
+      //console.log('generating: ', expression);
       let row = newDivWithClass(expRowClass);
       row.id = "eq-row-"+expression.id;
 
       let edit = newDivWithClass(expEditClass);
       
       let colorButton = document.createElement('button');
-      colorButton.className = 'colorButton';
+      colorButton.className = expColorButton;
+      colorButton.classList.add('visible');
       colorButton.textContent = ' ';
       colorButton.style.background = expression.color;
+
+      colorButton.addEventListener("click",() => {
+        const expressions = getAllExpressions();
+        const index = expressions.findIndex((ex) => ex.id === expression.id);
+
+        if(colorButton.classList.contains('visible')){
+          colorButton.classList.remove('visible');
+          expressions[index].visible = false;
+        } else {
+          colorButton.classList.add('visible');
+          expressions[index].visible = true;
+        }
+
+        update();
+      });
       // colorButton.style.outline = 'solid';
 
       edit.appendChild(colorButton);
@@ -311,18 +365,6 @@
       //console.log('called on ', latex);
       console.assert(eqSpan.classList.contains(expMathPlaceholderClass));
 
-      let test = null;
-      try{
-        test = tokenizeLatexExpression(latex);
-      }catch(e){
-        console.log(e);
-      }
-
-      if(test === null && canRecurse){
-        update();
-        return;
-      }
-
       const eqRow = eqSpan.parentElement.parentElement;
 
       const wanted = parseInt(eqRow.id.slice(7));
@@ -330,33 +372,61 @@
       const expressions = getAllExpressions();
       const index = expressions.findIndex((ex) => ex.id === wanted);
       const old = expressions[index];
-
       if(old === undefined) {console.log('----- WEIRD -----',getAllExpressions()); return; }
+
+      let test = null;
+      try{
+        test = tokenizeLatexExpression(latex,old);
+      }catch(e){
+        console.warn('Error occured during tokenization.',e);
+      }
+
+      if(test === null && canRecurse){
+        update();
+        return;
+      }
+
+      //console.log('test -> ', test);
+
+      if(old.definedVariable !== null) unregisterVariable(old.definedVariable);
 
       let compiled;
 
       try{
         compiled = compileExpression(test);
-      }catch(e){
-        console.warn("Invalid compiled expression",e);
 
-        compiled = {
-          id: old.id,
-          type: -1,
-          color: old.color,
-          latex: latex,
-          tokens: [],
-          varDependencies: new Set()
-        }
+        console.log('Compilation successful.');
+      }catch(e){
+        console.warn("Error occurred during compilation.",e.message);
+
+        compiled = new Expression(
+          old.id,
+          -1,
+          old.varDependencies ?? new Set(),
+          old.color,
+          old.visible,
+          latex,
+          [],
+          []
+        );
       }
 
       console.assert(old.varDependencies !== undefined);
       console.assert(compiled.varDependencies !== undefined);
 
-      compiled.id = wanted;
-      compiled.color = old.color; 
-      compiled.latex = latex;
+      compiled = new Expression(
+        wanted,
+        compiled.type,
+        compiled.varDependencies,
+        old.color,
+        old.visible ?? true,
+        old.latex,
+        compiled.tokens,
+        compiled.replace,
+        compiled.definedVariable
+      );
 
+      //console.log('setting1:',compiled);
       expressions[index] = compiled;
 
       // if(compiled.type === -1) return;
@@ -382,17 +452,17 @@
         
        
 
-        console.log(evalResult); 
+        //console.log(evalResult); 
         const value = evalResult.value; 
         const unc = evalResult.uncertainty; 
 
-        console.assert(newExpr.var !== undefined);
+        console.assert(newExpr.definedVariable !== undefined);
         console.assert(newExpr.varDependencies !== undefined);
 
-        if(registerVariable(newExpr.var, evalResult,newExpr.varDependencies)){
-          //console.log('set var ', newExpr.var , ' to ', value);
+        if(registerVariable(newExpr.definedVariable, evalResult,newExpr.varDependencies)){
+          //console.log('set var ', newExpr.definedVariable , ' to ', value);
         }else{
-          console.log('failed to set var ', newExpr.var , ' to ', evalResult);
+          console.log('failed to set var ', newExpr.definedVariable , ' to ', evalResult);
         }
 
         if(canRecurse){
@@ -403,10 +473,10 @@
             console.assert(exp.varDependencies !== undefined);
 
 
-            console.log('exp: ', exp, 'vs', newExpr,'dependencies:', exp.varDependencies);
+            //console.log('exp: ', exp, 'vs', newExpr,'dependencies:', exp.varDependencies);
             if(exp.varDependencies.length === 0) return;
 
-            if(exp.varDependencies.has(newExpr.var)){
+            if(exp.varDependencies.has(newExpr.definedVariable)){
               const depEqRow = document.getElementById(expRowId+exp.id);
 
               console.assert(depEqRow !== undefined);
@@ -537,7 +607,6 @@
         im = Math.abs(im);
         im = im === 0 ? '' : (im === 1 ? 'i' : im+'i');
 
-
         return re+sign+im;
       }
 
@@ -566,7 +635,9 @@
             const f = (decimalToFraction(r));
 
             if(Math.abs(f.numerator / f.denominator - r) < 0.0000001) {
-              strValue = '\\frac{'+(f.numerator === 1 ? '' : f.numerator)+'\\pi'+'}{'+f.denominator+'}'+'\\quad\\operatorname{rad}';
+              if(f.denominator == 1) strValue = (f.numerator === 1 ? '' : f.numerator)+'\\pi'+'\\quad\\operatorname{rad}';
+              else strValue = '\\frac{'+(f.numerator === 1 ? '' : f.numerator)+'\\pi'+'}{'+f.denominator+'}'+'\\quad\\operatorname{rad}';
+
             } else strValue = value+'\\quad\\operatorname{rad}'
           }else{
             strValue = value + '\\quad\\text{rad}'
@@ -672,20 +743,22 @@
       let expressions = getAllExpressions();
       let index = expressions.findIndex((ex) => ex.id === wanted);
 
-      let expression = {
-        id: getNextId(),
-        type: -1,
-        color: getNextColor(),
-        latex: '',
-        tokens: [],
-        varDependencies: new Set()
-      };
+      let expression = new Expression(
+        getNextId(),
+        -1,
+        new Set(),
+        getNextColor(),
+        true,
+        '',
+        [],
+        []
+      );
 
       expressions.splice(index, 0, expression);
 
       let row = generateEquationRow(expression);
 
-      console.log('before, after: ', eqRow, eqRow.nextElementSibling);
+      //console.log('before, after: ', eqRow, eqRow.nextElementSibling);
 
       equationList.insertBefore(row, eqRow.nextElementSibling);
 
@@ -743,7 +816,7 @@
     }
 
     function drawExpression(expr){
-      if(expr === undefined || expr.type === -1){
+      if(expr === undefined || expr.type === -1 || (!expr.visible)){
         return;
       }
 
@@ -852,6 +925,17 @@
 
     function drawAsQuad(expr){
       currentExpression = expr; //replace later with the rect() functions actually taking an expression as input?
+      const maxY = toGraphCoordsY(0);
+      const minY = toGraphCoordsY(window.innerHeight);
+
+      const minX = toGraphCoordsX(0);
+      const maxX = toGraphCoordsX(window.innerWidth);
+
+      const image = generateImageForCartesianImplicit(expr, minX, maxX, minY, maxY, scaleFactor);
+      const instructions = image.instructions;
+
+      drawFromInstructions(instructions,expr.color);
+      return;
 
       quadCount = 0;
       quadOn = 0;
@@ -898,7 +982,9 @@
 
         if(instruction[0]) {
           ctx.lineTo(x,y);
+          if(!(instructions[i-1]??[false])[0] ) ctx.moveTo(x,y);
         } else {
+          
           ctx.moveTo(x,y);
         }
       }
@@ -913,64 +999,11 @@
       const minX = toGraphCoordsX(0);
       const maxX = toGraphCoordsX(window.innerWidth);
 
-      let gy = evaluateExpression(
-        expr, 
-        {min: toGraphCoordsX(-1), max: toGraphCoordsX(0)}
-      );
-
-      const instructions = generateDrawInstructionsForCartesianYofX(expr, minX, maxX, window.innerWidth, minY, maxY);
+      const image = generateImageForCartesianYofX(expr, minX, maxX, window.innerWidth, minY, maxY, scaleFactor);
+      const instructions = image.instructions;
 
       drawFromInstructions(instructions,expr.color);
       return;
-
-      ctx.beginPath();
-      ctx.lineWidth = 3;
-      ctx.lineCap = "round";
-      ctx.strokeStyle = expr.color;
-
-      ctx.moveTo(0,toScreenCoordsY(gy.value[1]));
-      
-      for(let i = 0; i < instructions.length; i++){
-        const action = instructions[i];
-
-        let y = toScreenCoordsY(action[2]);
-
-        if(y < 0) y = -window.innerHeight;
-        if(y>window.innerWidth) y = 2*window.innerHeight;
-
-        // if(y < maxY) {
-        //   y=2*window.innerHeight;
-        // } else if(y > minY) {
-        //   y=-window.innerHeight;
-        // } else {
-        //   y=toScreenCoordsY(y);
-        // }
-
-        if(action[0]) {
-          ctx.lineTo(toScreenCoordsX(action[1]),y);
-        } else {
-          ctx.moveTo(toScreenCoordsX(action[1]),y);
-        }
-      }
-      
-      ctx.stroke();
-      return;
-
-      currentExpression = expr;
-
-      // const dx = 1/2;
-
-      segmentCount = 0;
-
-      let px = 0; //previous x
-      let py = gy;
-      for(let x=dx; x<window.innerWidth; x+= dx){
-        py = trySegYofX(px, x, 0, segmentCount < maxSegments, py);
-
-        px = x;
-      }
-
-      ctx.stroke();
     }
 
     function PZ(e){
@@ -1042,7 +1075,8 @@
       const minY = toGraphCoordsY(0);
       const maxY = toGraphCoordsY(window.innerHeight);
 
-      const instructions = generateDrawInstructionsForCartesianXofY(expr, maxY, minY, window.innerHeight, minX, maxX);
+      const image = generateImageForCartesianXofY(expr, maxY, minY, window.innerHeight, minX, maxX, scaleFactor);
+      const instructions = image.instructions;
 
       drawFromInstructions(instructions,expr.color);
       return;
@@ -1185,15 +1219,31 @@
       }
 
       const v=q.value;
+      const e=q.edge;
+
+      if((e.top[2] > 0) || 
+        (e.lft[2] > 0) ||
+        (e.rgt[2] > 0) ||
+        (e.btm[2] > 0)
+      ){
+        if(w > 3 && h > 3){
+          //Attempt to iterate further
+          
+          return true;
+        }else{
+          //return false;
+        }
+      }
 
       if(
-        ((q.edge.top[1] > 0) || 
-        (q.edge.lft[1] > 0) ||
-        (q.edge.rgt[1] > 0) ||
-        (q.edge.btm[1] > 0)) && !forcePlot
+        ((e.top[1] > 0) || 
+        (e.lft[1] > 0) ||
+        (e.rgt[1] > 0) ||
+        (e.btm[1] > 0)) && !forcePlot
       ){
-        if(w > 12 && h > 12){
+        if(w > 3 && h > 3){
           //Attempt to iterate further
+          
           return true;
         }else{
           return false;
@@ -1201,10 +1251,10 @@
       }
 
       if(
-        (q.edge.top[0] > 1) || 
-        (q.edge.lft[0] > 1) ||
-        (q.edge.rgt[0] > 1) ||
-        (q.edge.btm[0] > 1)
+        (e.top[0] > 1) || 
+        (e.lft[0] > 1) ||
+        (e.rgt[0] > 1) ||
+        (e.btm[0] > 1)
       ){
         if(!forcePlot){
           //If possible, iterate further
@@ -1214,10 +1264,10 @@
       }
 
       const crossSum = 
-        (q.edge.top[0]) +
-        (q.edge.lft[0]) +
-        (q.edge.rgt[0]) +
-        (q.edge.btm[0]);
+        (e.top[0]) +
+        (e.lft[0]) +
+        (e.rgt[0]) +
+        (e.btm[0]);
 
       const v00 = v[0]; //tplf
       const v10 = v[1]; //tprt
@@ -1603,23 +1653,36 @@
 
     window.addEventListener('resize', update, { passive: true });
 
+    //TODO: redo how scrolling works to make it axis-independent
     canvas.addEventListener('wheel', (e) => {
         e.preventDefault(); // prevent page scroll
 
         const zoomSpeed = 1.07; // how fast to zoom
         const mouseGraphX = toGraphCoordsX(e.offsetX);
         const mouseGraphY = toGraphCoordsY(e.offsetY);
+        const mantissaLength = 23; // 52
 
         if (e.deltaY < 0) {
-            // scroll up = zoom in
-            scaleFactor *= zoomSpeed;
-            offsetX /= zoomSpeed;
-            offsetY /= zoomSpeed;
-        } else {
             // scroll down = zoom out
-            scaleFactor /= zoomSpeed;
-            offsetX *= zoomSpeed;
-            offsetY *= zoomSpeed;
+
+            
+            offsetX *= 1/zoomSpeed;
+            offsetY *= 1/zoomSpeed;
+            scaleFactor *= zoomSpeed;
+        } else {
+            let xPrecision = 2**(Math.floor(Math.log2(offsetX))-(mantissaLength)); 
+            let yPrecision = 2**(Math.floor(Math.log2(offsetY))-(mantissaLength)); 
+
+            let newScaleFactor = scaleFactor / zoomSpeed;
+
+            //console.log('scaledata:',scaleFactor,newScaleFactor,xPrecision,yPrecision);
+
+            if(newScaleFactor < xPrecision) newScaleFactor = xPrecision;
+            if(newScaleFactor < yPrecision) newScaleFactor = yPrecision;
+
+            offsetX *= scaleFactor/newScaleFactor;
+            offsetY *= scaleFactor/newScaleFactor;
+            scaleFactor = newScaleFactor;
         }
 
         // Optional: zoom centered on mouse position
@@ -1636,21 +1699,23 @@
       const equationList = document.getElementById('equationList');
 
       const color = getNextColor();
-      console.log('new color: ', color);
+      //console.log('new color: ', color);
 
-      let blankExpression = {
-        id: getNextId(),
-        type: -1,
-        color: color,
-        latex: '',
-        tokens: [],
-        varDependencies: new Set()
-      };
+      let blankExpression = new Expression(
+        getNextId(),
+        -1,
+        [],
+        color,
+        true,
+        '',
+        [],
+        []
+      );
 
       appendExpression(blankExpression);
 
       equationList.appendChild(generateEquationRow(blankExpression));
-      console.log('generated blank',getAllExpressions());
+      //console.log('generated blank',getAllExpressions());
 
       update();
     });
@@ -1659,7 +1724,14 @@
     draw();
 
     document.getElementById('zoomIn').addEventListener('click', () => {
-        scaleFactor /= 1.4142135;
+      const mantissaLength = 23; // 52
+
+      xPrecision = 2**(Math.floor(Math.log2(offsetX))-(mantissaLength)); 
+      yPrecision = 2**(Math.floor(Math.log2(offsetY))-(mantissaLength)); 
+
+      if(scaleFactor / 1.4142135 < xPrecision || scaleFactor / 1.4142135 < yPrecision) return;
+      
+      scaleFactor /= 1.4142135;
         offsetX *= 1.4142135;
         offsetY *= 1.4142135;
         //console.log('Zoom changed to' + scaleFactor);
@@ -1680,6 +1752,14 @@
 
     document.getElementById('closeHelpMenu').addEventListener('click', () => {
       document.getElementById('modal').classList.remove('open');
+    });
+
+    document.getElementById('settings').addEventListener('click', () => {
+      document.getElementById('settings-menu').classList.add('open');
+    });
+
+    document.getElementById('close-settings').addEventListener('click', () => {
+      document.getElementById('settings-menu').classList.remove('open');
     });
   </script>
 </body>
