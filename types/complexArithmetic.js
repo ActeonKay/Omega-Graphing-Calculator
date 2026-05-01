@@ -1,7 +1,8 @@
 //complex numbers a+bi represented as [a, b]
 import{
     OpCode,
-    FuncCode
+    FuncCode,
+    TokenHandleType
 } from '../evaluator.js';
 
 export function convertValueToComplex(value){
@@ -104,6 +105,8 @@ export function generateComplexFunctionMethodExpression(funccode){
         /* Todo: add handling for variables that are arrays */
         case FuncCode.ARRAY: //{type: TokenType.ARRAY, valueType: TokenType.NUM, values: [], uncertainties: []}
             return (...args) => {
+                console.log('compargs',args);
+
                 const type = args[0].type; //can assume args.length > 0
                 if(args[0].outputType > TokenHandleType.TUPLE) {
                     console.error('Array elements cannot be of this type');

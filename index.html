@@ -119,7 +119,7 @@
         evaluateExpression,
         getTokenizedExpressions, 
         getTokenizedExpressionMetas, 
-        getCompiledExpressions//,
+        getCompiledExpressions
         //getCompiledExpressionMetas
     } from "./evaluator.js";
     
@@ -127,10 +127,11 @@
 
   <script type="module">
     import { 
-        evaluateExpression, 
+        evaluateExpression, evaluate,
         //tokenizeExpression, getTokenizedExpressions, getTokenizedExpressionMetas,
         compileExpression, getCompiledExpressions, tokenizeLatexExpression, latexToTokenObjects,
-        validFunctions
+        validFunctions,
+        ExpressionType
     } from "./evaluator.js";  
 
     import {
@@ -143,6 +144,10 @@
       generateImageForCartesianXofY,
       generateImageForCartesianImplicit
     } from "./renderer.js";
+
+    import {
+      convertTokenToLatex
+    } from "./latexutils/tokenToLatexConverter.js";
 
     // --- Common Elements ---
     const canvas = document.getElementById('c');
@@ -189,7 +194,7 @@
     var MQ = MathQuill.getInterface(2);
     const mathQuillConfig = {
       restrictMismatchedBrackets: true,
-      autoCommands: 'pi theta phi Gamma sqrt plusmn degree binom Re Im', //add nthroot, sum, int
+      autoCommands: 'pi theta phi Gamma sqrt plusmn degree binom Re Im infty', //add nthroot, sum, int
       autoOperatorNames: validFunctions.join(' ')
     }
     MQ.config(mathQuillConfig);
@@ -395,9 +400,9 @@
       try{
         compiled = compileExpression(test);
 
-        console.log('Compilation successful.');
+        console.log('Compilation successful:',compiled);
       }catch(e){
-        console.warn("Error occurred during compilation.",e.message);
+        console.warn("Error occurred during compilation.",e);
 
         compiled = new Expression(
           old.id,
@@ -437,22 +442,67 @@
     }
 
     function onExpressionChange(eqRow, newExpr, oldExpr, canRecurse){
-      //console.log('expression change to', newExpr.type);
+      //get expression
       let wrapperElement = eqRow.childNodes[1]; //HACK
+      const prevRequiredResultDisplay = requiresExpressionResult(oldExpr.type);
+      const requireResultDisplay = requiresExpressionResult(newExpr.type);
 
-      if(oldExpr.type === 7){
+      //oldtype = previous expression type
+      //if old expression was a definition -> delete definition
+      if(oldExpr.type === ExpressionType.ASGNMT){
         unregisterVariable(oldExpr.var);
       }
+
+      //compile expression
+      //type = new expression type
+
+      //type: evaluation
+        //evaluate and display result
+      //type: definition
+        //evaluate, set variable, update dependent expressions, and display result
+      //type: expression
+        //call render algorithm
+
+      switch(newExpr.type){
+        case ExpressionType.EVAL:
+        case ExpressionType.ASGNMT:
+          console.log('++ Evaluating expression ++');
+          const evalObj = evaluate(newExpr, {},-1);
+          console.log('++ Eval result:',evalObj.result,'++');
+
+          if(newExpr.type === ExpressionType.ASGNMT) registerVariable(newExpr.definedVariable, evalObj.result, newExpr.varDependencies);
+
+          const resultLatex = '='+parseTokenToLatex(evalObj.result);
+
+          const indexOfDisplayElement = findIndexInNodeList(
+            wrapperElement.childNodes, 
+            function (n) { 
+              return n.classList.contains(expResultClass);
+            }
+          );
+
+          //if no display element 'resultMathField' exists, create 'resultMathField'
+          //update 'resultMathField' with latex
+
+          let resultMathField = indexOfDisplayElement === -1 ? newExpressionResultElement(wrapperElement, resultLatex) : MQ(wrapperElement.childNodes[indexOfDisplayElement]);
+
+          resultMathField.latex(resultLatex);
+
+          drawResult(evalObj.result);
+          
+          return; //DELETE LATER
+          break;
+      }
+
+      //console.log('expression change to', newExpr.type);
 
       if(newExpr.type === 7){
         //console.log('registering');
 
-        const evalResult = evaluateExpression(newExpr);
+        console.log('-- Evaluating Result of Definition ('+newExpr.definedVariable+') --');
+        const evalResult = evaluateExpression(newExpr, {},-1);
 
-        
-       
-
-        //console.log(evalResult); 
+        console.log('-- Set Variable '+newExpr.definedVariable+' to result of evaluation:',evalResult,' --'); 
         const value = evalResult.value; 
         const unc = evalResult.uncertainty; 
 
@@ -510,7 +560,15 @@
             return n.classList.contains(expResultClass);
           }
         );
-        const displayedResult = '='+parseTokenToLatex(evaluateExpression(newExpr));
+
+        console.log('-- Evaluating expression result for rendering --');
+        const evalObj = evaluate(newExpr, {}, -1);
+
+        console.log('-- Rendering evaluation result: ',evalObj,'--');
+        const displayedResult = '='+ (
+          evalObj.didByIndexEvaluation 
+          ? '['+evalObj.result.map((t)=>t.value).join(', ')+']'
+          : parseTokenToLatex(evalObj.result));
         //console.log(displayedResult);
 
         let result;
@@ -525,6 +583,9 @@
           wrapperElement.appendChild(result);
           
           resultMathField = generateStaticMath(result,displayedResult); 
+
+          const autoOpNames = validFunctions.concat('undefined','NaN').join(' ');
+          resultMathField.autoOperatorNames = autoOpNames;
         }else{
           //replace current exp result element
 
@@ -549,6 +610,20 @@
       }
     }
 
+    function newExpressionResultElement(parentElement, latex){
+      let result = newDivWithClass(expResultClass);
+      result.style.outline = 'solid';
+
+      parentElement.appendChild(result);
+      
+      let resultMathField = generateStaticMath(result,latex); 
+
+      const autoOpNames = validFunctions.concat('undefined','NaN').join(' ');
+      resultMathField.autoOperatorNames = autoOpNames;
+
+      return resultMathField;
+    }
+
     function findIndexInNodeList(nodeList, fn){
       //console.log(nodeList.values());
       let i = 0;
@@ -567,6 +642,8 @@
     }
 
     function parseTokenToLatex(token){
+      return convertTokenToLatex(token);
+
       //return '\\frac{1}{\\sqrt{x^2 + 1}}';
       //return '\\begin{array}{cc} a & b \\\\ c & d \\end{array}';
       //console.log(token);
@@ -610,14 +687,15 @@
         return re+sign+im;
       }
 
-      const value = token.value;
+      console.warn('token:',token);
+      const value = makeNumberNice(token.value); //TODO: 
       const uncertainty = token.uncertainty ?? 0;
       const asPercent = token.interpret === 'pct';
       const asRadians = token.interpret === 'rad';
 
       if(value === undefined){
         console.log('result: ', undefined);
-        return "\\text{undefined}";
+        return "\\operatorname{undefined}";
       }
 
       if(isFinite(value)){
@@ -626,7 +704,7 @@
 
         let strValue = "";
 
-        if(asPercent) strValue = value*100 + '%';
+        if(asPercent) strValue = makeNumberNice(value*100) + '%';
         else if(asRadians) {
           if(true){
             const r = value/Math.PI;
@@ -635,21 +713,21 @@
             const f = (decimalToFraction(r));
 
             if(Math.abs(f.numerator / f.denominator - r) < 0.0000001) {
-              if(f.denominator == 1) strValue = (f.numerator === 1 ? '' : f.numerator)+'\\pi'+'\\quad\\operatorname{rad}';
-              else strValue = '\\frac{'+(f.numerator === 1 ? '' : f.numerator)+'\\pi'+'}{'+f.denominator+'}'+'\\quad\\operatorname{rad}';
+              if(f.denominator == 1) strValue = (f.numerator === 1 ? '' : f.numerator)+'\\pi'+'\\operatorname{rad}';
+              else strValue = '\\frac{'+(f.numerator === 1 ? '' : f.numerator)+'\\pi'+'}{'+f.denominator+'}'+'\\operatorname{rad}';
 
-            } else strValue = value+'\\quad\\operatorname{rad}'
+            } else strValue = value+'\\operatorname{rad}'
           }else{
-            strValue = value + '\\quad\\text{rad}'
+            strValue = value + '\\operatorname{rad}'
           }
         }
-        else strValue = value;
+        else strValue = makeNumberNice(value);
 
         return strValue+strUncertainty;
       }
 
       if(value === NaN){
-        return '\\text{NaN}';
+        return '\\operatorname{NaN}';
       }
 
       if(value === Infinity){
@@ -659,6 +737,28 @@
       if(value === -Infinity){
         return '-\\infty';
       }
+
+      return value;
+    }
+
+    function makeNumberNice(n){
+      const string = ""+n;
+      console.warn(string);
+
+      if(string.indexOf('e+') !== -1) {
+        let exponent = string.slice(string.indexOf('e+')+2);
+        let base = string.slice(0,string.indexOf('e+'));
+        console.log(base,exponent);
+        return base+'\\times 10^{'+exponent+'}';
+      }
+
+      if(string.indexOf('e-') !== -1) {
+        let exponent = string.slice(string.indexOf('e-')+2);
+        let base = string.slice(0,string.indexOf('e-'));
+        return base+'\\times 10^{'+exponent+'}';
+      }
+
+      return string;
     }
 
     function gcd(a, b) {
@@ -885,7 +985,7 @@
                 minY: y2,
                 maxY: y1, //TODO: HACK. y1 & y2 are flipped, because screen y is flipped from graph y
             },
-            {evaluateDiff: true}
+            -1
         );
 
     }
@@ -895,8 +995,15 @@
 
       currentExpression = expr;
 
-      const evalResult = evaluateExpression(currentExpression);
+      console.log('-- Evaluating Expression to Draw --');
+      const evalResult = evaluate(currentExpression, {}, -1);
 
+      console.log('-- Draw result:',evalResult,'--');
+
+      drawResult(evalResult);
+    }
+
+    function drawResult(evalResult){
       if( (evalResult.type === 18 || evalResult.type === 11) && evalResult.value.length === 2){
         drawPoint(evalResult.value[0],evalResult.value[1],true);
       }
@@ -1032,7 +1139,7 @@
 
       const result = evaluateExpression(currentExpression, {
         min: toGraphCoordsX(lx), max: toGraphCoordsX(rx)
-      });
+      }, -1);
 
       // if(!isFinite(result.value[1])){
       //   moveTo(rx,

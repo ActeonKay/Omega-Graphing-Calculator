@@ -1,6 +1,11 @@
 import{
-    evaluateExpression
+    evaluateExpression,
+    TokenType
 } from './evaluator.js';
+
+import{
+    getVariable
+} from './expressions.js';
 
 const ExpressionImageTypes = {
     CARTESIAN_IMPLICIT: 1,
@@ -41,44 +46,78 @@ function getInstructionFrom(hideLine,x,y,depth){
     return [hideLine,x,y,depth];
 }
 
+export function generateImageForCartesianYofX(expression, minX, maxX, xCount, viewMinY, viewMaxY, viewScale){
+    if(!expression.tokens.some((t) => t.inputElementsSeparately === true)){
+        return new ExpressionImage(
+            generateInstructionsForCartesianYofX(expression, -1, minX, maxX, xCount, viewMinY, viewMaxY, viewScale),
+            (minX + maxX)*0.5,
+            (viewMinY + viewMaxY)*0.5,
+            viewScale
+        );
+    }
+
+    const elementsToBeAutoIndexed = expression.tokens.filter((t) => t.inputElementsSeparately === true);
+
+    const n = Math.min(elementsToBeAutoIndexed.map((t) => {
+        switch(t.type){
+            case TokenType.VAR: return getVariable(t.code).value.length; //assume variable is array type
+            case TokenType.FUNC: return t.argCount;
+            default:
+                throw new Error('Could not automatically index token.');
+        }
+    }));
+
+    let instructions = [];
+    for(let k = 0; k<n; k++){
+        let instructionsAtK = generateInstructionsForCartesianYofX(expression, k, minX, maxX, xCount, viewMinY, viewMaxY, viewScale);
+        instructions = instructions.concat(instructionsAtK);
+    }
+
+    //console.log(instructions);
+
+    return new ExpressionImage(
+        instructions,
+        (minX + maxX)*0.5,
+        (viewMinY + viewMaxY)*0.5,
+        viewScale
+    );
+}
+
 //instructions array of Action objects
 // Action = {shouldDraw: bool, x: float, y: float}
-export function generateImageForCartesianYofX(expression, minX, maxX, xCount, viewMinY, viewMaxY, viewScale){
+export function generateInstructionsForCartesianYofX(expression, arrayIndex, minX, maxX, xCount, viewMinY, viewMaxY, viewScale){
     let instructions = [];
 
     const dx = (maxX-minX)/xCount;
 
-    if(dx === 0) return;
+    if(dx === 0) return [];
 
     // use ctx.translate instead of this arithmetic
 
     let input = { min: 0, max: 0};
     let xprev = minX-dx;
 
-    let result = evaluateExpression(expression, {min: xprev, max: minX});
+    let result = evaluateExpression(expression, {min: xprev, max: minX}, arrayIndex);
+    //console.log('initial test result',result);
     if(result.type == 1){
-        return new ExpressionImage(
-            [
-                [true,minX,result.value,0],
-                [true,maxX,result.value,0]
-            ],
-            (minX+maxX)*0.5,
-            (viewMinY+viewMaxY)*0.5,
-            viewScale
-        );
+        //console.log('real result: ',result);
+        return [
+            [false,minX,result.value,0],
+            [true,maxX,result.value,0]
+        ];
     }
 
     xprev = minX;
     for(let x = minX; x<=maxX; x+= dx){
         input.min = xprev;
         input.max = x;
-        result = evaluateExpression(expression,input);
+        result = evaluateExpression(expression,input, arrayIndex);
 
         console.assert(result.edge !== undefined,result,result.edge);
 
         //if(result.edge[1] !== 0) console.log(result.edge);
 
-        instructions.push(getInstructionFrom((result.edge[1]) === 0,x,result.value[1],0));
+        instructions.push(getInstructionFrom((result.edge[1]) === 0 && !(x === minX),x,result.value[1],0));
         xprev=x;
     }
 
@@ -106,8 +145,8 @@ export function generateImageForCartesianYofX(expression, minX, maxX, xCount, vi
                 midpoint = 0.5*(currentInstruction[1]+nextInstruction[1]);
 
                 if(!nextInstruction[0] && currentInstruction[3] < maxDepth){
-                    let leftHalf = evaluateExpression(expression,{min: currentInstruction[1], max: midpoint});
-                    let rightHalf = evaluateExpression(expression,{min: midpoint, max: nextInstruction[1]});
+                    let leftHalf = evaluateExpression(expression,{min: currentInstruction[1], max: midpoint},arrayIndex);
+                    let rightHalf = evaluateExpression(expression,{min: midpoint, max: nextInstruction[1]},arrayIndex);
 
                     instructions.splice(i+1,1,
                         getInstructionFrom(leftHalf.edge[1] === 0, midpoint, leftHalf.value[1], currentInstruction[3]+1),
@@ -126,12 +165,7 @@ export function generateImageForCartesianYofX(expression, minX, maxX, xCount, vi
 
     }
 
-    return new ExpressionImage(
-        instructions,
-        (minX+maxX)*0.5,
-        (viewMinY+viewMaxY)*0.5,
-        viewScale
-    );
+    return instructions;
 }
 
 export function generateImageForCartesianXofY(expression, minY, maxY, yCount, viewMinX, viewMaxX, viewScale){

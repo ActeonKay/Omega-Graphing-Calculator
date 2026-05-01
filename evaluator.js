@@ -35,7 +35,7 @@ export const ExpressionType = {
 //ASSGNMT: num-based evaluation
 //FUNCDEF: quad-based evaluation
 
-const TokenType = {
+export const TokenType = {
     INVLD: -1, //invalid/error
     NUL: 0, //blank
     NUM: 1,
@@ -243,7 +243,7 @@ function toStrictOperatorCodeFunction(argTypes, opcode){
     return max << 8 | min << 4 | opcode;
 }
 
-const TokenHandleType = {
+export const TokenHandleType = {
     REAL: 1, //1-Dimensional values, just a number
     COMPLEX: 2, //2-dimensional number, NOT YET IMPLEMENTED
     TUPLE: 3, //any-dimensional values, operations are performed on each value and a tuple is returned
@@ -514,7 +514,8 @@ const ConstantCode = {
     RAD_FRM: 21,
     TRUE: 22,
     FALSE: 23,
-    PHI: 24
+    PHI: 24,
+    INFTY: 25
 }
 
 const ConstantInfo = {
@@ -542,7 +543,8 @@ const ConstantInfo = {
     "radfer": { code: ConstantCode.RAD_FRM, value: 1.20e-15, outputType: TokenHandleType.REAL },
     "true": { code: ConstantCode.TRUE, value: true, outputType: TokenHandleType.REAL },
     "false": { code: ConstantCode.FALSE, value: false, outputType: TokenHandleType.REAL },
-    "phi": { code: ConstantCode.PHI, value: 1.61803398875, outputType: TokenHandleType.REAL}
+    "phi": { code: ConstantCode.PHI, value: 1.61803398875, outputType: TokenHandleType.REAL},
+    "infty": { code: ConstantCode.INFTY, value: Infinity, outputType: TokenHandleType.REAL}
 }
 
 const ConstInfoByCode = {};
@@ -606,7 +608,7 @@ const validConstants = [
     "grav", "NA", "gascon",
     "bmc", "sbc", "culuk", "epzo", "muzo", "speli", "plcon",
     "elcharge", "elmas", "prmas", "numas", "uam",
-    "radfer"
+    "radfer", "infty"
 ];
 
 //in operators, functions, etc, store a func expression that does what the operator does
@@ -1018,22 +1020,22 @@ export function tokenizeLatexExpression(latex, oldExpression){
 
     //TODO: redo this whole process. It is confusing.
 
-    log('tokens: ', tokens);
+    console.log('tokens: ', tokens);
 
     const compilerTokens = latexToTokenObjects(tokens);
 
-    log('compset: ', compilerTokens);
+    console.log('compset: ', compilerTokens);
 
     const typeset = getLatexExpressionType(compilerTokens);
 
-    log('typset: ', typeset);
+    console.log('typset: ', typeset);
 
     const typesetType = typeset.type;
     const typsetTokens = typeset.tokens;
     const typesetVar = typeset.var ?? null;
 
     const metaData = addMetadataToExpression({type: typesetType, tokens: typsetTokens, var: typesetVar});
-    log(metaData);
+    console.log(metaData);
 
     return new Expression(
         oldExpression.id, 
@@ -1070,7 +1072,7 @@ function getLatexExpressionType(tokens){
         // }
 
         if(!tokens.some((t) => t.type === TokenType.UNKN)){
-            log('no unknowns');
+            console.log('no unknowns');
 
             const distFunc = tokens.find((t) => (t.type === TokenType.FUNC && t.attributes.get(AttributiveCode.AUTO_FUNC) !== undefined));
 
@@ -1098,7 +1100,7 @@ function getLatexExpressionType(tokens){
         while(i >= 0){
             //if this unknown is not equal to first, then it cannot be converted to a ...=f(...) expression type
             if(tokens[i].code != c1){
-                log('invalid, both tokens')
+                console.log('invalid, both tokens')
                 return { type: ExpressionType.INVLD, tokens: tokens };
             }
             i = nextUnkn(i);
@@ -1122,10 +1124,10 @@ function getLatexExpressionType(tokens){
             && t.code === OpCode.EQ
         }) > 0
     ){
-        log('multiple = or != tokens',tokens);
+        console.log('multiple = or != tokens',tokens);
         return { type: ExpressionType.EVAL, tokens: tokens }; //multiple '=' or '!=' tokens
     }else if( tokens.some((t) => t.type === TokenType.OP && (t.code === OpCode.AND || t.code === OpCode.OR || t.code === OpCode.XOR)) ){
-        log('logical implicit', tokens);
+        console.log('logical implicit', tokens);
         return { type: ExpressionType.IMPLICIT, tokens: tokens }; //logical implicit
     }else{
         if(tokens.some((t) => {
@@ -1188,7 +1190,7 @@ function getLatexExpressionType(tokens){
                 ids[tk.code] !== undefined && 
                 lhs.every((t) => !(t.type === TokenType.UNKN && exclusive[tk.code].includes(t.code)))
             ){
-                log('function lhs=?');
+                console.log('function lhs=?');
                 return {type: ids[tk.code], tokens: lhs};
             }
         }
@@ -1260,7 +1262,7 @@ export function latexToTokenObjects(latexTokens){
                 const outputHandleType = staticConstantInfo.outputType;
                 const outputType = convertToTokenType(outputHandleType, TokenType.NUM);
 
-                log(staticConstantInfo.symbol, '| type:', outputType);
+                console.log(staticConstantInfo.symbol, '| type:', outputType);
 
                 compilerTokens.push({ type: outputType, value: ConstantInfo[str].value, outputType: outputHandleType }); 
                 break;
@@ -1279,12 +1281,14 @@ export function latexToTokenObjects(latexTokens){
             prev.type === TokenType.CMPLX ||
             prev.type === TokenType.UNKN ||
             prev.type === TokenType.VAR || 
+            next.type === TokenType.CNST ||
             (prev.type === TokenType.BRKT && (prev.code % 2 === 0))
         ) && (
             next.type === TokenType.NUM || 
             prev.type === TokenType.CMPLX ||
             next.type === TokenType.UNKN ||
             next.type === TokenType.VAR ||
+            next.type === TokenType.CNST ||
             next.type === TokenType.FUNC ||
             (next.type === TokenType.BRKT && (next.code % 2 === 1)) ||
             (
@@ -1493,7 +1497,7 @@ export function latexToTokenObjects(latexTokens){
                 continue;
             }
 
-            log('token anyways: ', str);
+            console.log('token anyways: ', str);
             if(true){
                 const validWithPrev = (
                     prev.type === TokenType.OP || 
@@ -1862,16 +1866,16 @@ function generateStrictMethodExprForOp(strictOpCode, evalType){
     const right = strictOpCode >> 8 & 0b1111;
     const left = strictOpCode >> 12 & 0b1111;
 
-    log(strictOpCode, '=>', opId, right, left);
+    console.log(strictOpCode, '=>', opId, right, left);
 
     if(OpInfoByCode[opId].arity === 1){
-        log('unary:'+right);
+        console.log('unary:'+right);
 
         if(opId === OpCode.PCT){
             return (a) => { 
                 console.assert(a.type === TokenType.NUM);
 
-                log()
+                //log()
 
                 return {type: TokenType.NUM, value: a.value*0.01, uncertainty: 0.01*(a.uncertainty??0), interpret: 'pct', outputType: TokenHandleType.REAL }; 
             }
@@ -1882,7 +1886,7 @@ function generateStrictMethodExprForOp(strictOpCode, evalType){
                 console.assert(a.type === TokenType.NUM);
 
                 const k = a.value*0.01745329251;
-                log(k);
+                console.log(k);
 
                 return {type: TokenType.NUM, value: k, uncertainty: 0.01745329251*(a.uncertainty??0), interpret: 'rad', outputType: TokenHandleType.REAL }; 
             }
@@ -1930,7 +1934,7 @@ function generateStrictMethodExprForOp(strictOpCode, evalType){
         }
     }
 
-    log(OpInfoByCode[opId].arity);
+    console.log(OpInfoByCode[opId].arity);
 
     //same type:
         //case real/real
@@ -1952,7 +1956,7 @@ function generateStrictMethodExprForOp(strictOpCode, evalType){
 
         if(opId === OpCode.PM){
             const c = generateOperatorMethodExpressionBetweenSoloTypes(opId, left, right,evalType);
-            log(c);
+            console.log(c);
             return c;
         }
 
@@ -1998,11 +2002,11 @@ function generateStrictMethodExprForOp(strictOpCode, evalType){
     }
 
     if(left === TokenHandleType.ARRAY){
-        log('left=list');
+        console.log('left=list');
 
         switch(right){
             case TokenHandleType.REAL:
-                log('right=real');
+                console.log('right=real');
                 const fn = generateRealOperatorMethodExpression(opId);
 
                 return (tokenA,tokenB) => {
@@ -2051,7 +2055,9 @@ function generateStrictMethodExprForOp(strictOpCode, evalType){
             case TokenHandleType.INPUT_TUPLE:
 
                 return (tokenA, tokenB) => {
-                    console.assert(tokenA.type === TokenType.ARRAY);
+                    if(tokenA.type !== TokenType.ARRAY){
+
+                    }
 
                     //check for if list item is input type
                     const itemHandleType = typeof tokenA.value[0] === 'number' ? TokenHandleType.REAL : TokenHandleType.COMPLEX;
@@ -2079,7 +2085,7 @@ function generateStrictMethodExprForOp(strictOpCode, evalType){
     }  
 
     if(right === TokenHandleType.ARRAY){
-        log('right=list');
+        console.log('right=list');
 
         switch(left){
             case TokenHandleType.REAL:
@@ -2119,7 +2125,7 @@ function generateStrictMethodExprForOp(strictOpCode, evalType){
 
                     if(elementType === TokenType.NUM){
                         //tokenA is of type Real[]
-                        log('real list');
+                        console.log('real list');
 
                         const n = input.length;
 
@@ -2129,7 +2135,7 @@ function generateStrictMethodExprForOp(strictOpCode, evalType){
                             results.push(k);
                         }
                     }else{
-                        log('complex list');
+                        console.log('complex list');
                         //tokenA is of type Complex[]
                         const n = input.length;
 
@@ -2142,7 +2148,7 @@ function generateStrictMethodExprForOp(strictOpCode, evalType){
                 }
                 break;
             case TokenHandleType.INPUT_TUPLE:
-                log('left=input');
+                console.log('left=input');
                 return (tokenB, tokenA) => {
                     console.assert(tokenA.type === TokenType.ARRAY);
 
@@ -2184,7 +2190,7 @@ function generateStrictMethodExprForOp(strictOpCode, evalType){
         }
     }
     
-    log('between solo types');
+    console.log('between solo types',left,right);
     return generateOperatorMethodExpressionBetweenSoloTypes(opId,left,right,evalType);
 }
 
@@ -2233,12 +2239,12 @@ function generateOperatorMethodExpressionBetweenTuples(opcode, left, right){
  */
 function generateOperatorMethodExpressionBetweenSoloTypes(opcode,left,right,evalType){
     if(left === TokenHandleType.INPUT_TUPLE){
-        log('left=tuple');
+        console.log('left=tuple');
         switch(right){
             case TokenHandleType.INPUT_TUPLE:
                 if(true){
                     //Assumption that elements of the tuple are real numbers
-                    log('right=tuple',evalType);
+                    console.log('right=tuple',evalType);
                     const fn = generateRealOperatorMethodExpression(opcode);
 
                     const edgeHandler = evalType === TokenType.QUAD 
@@ -2321,13 +2327,13 @@ function generateOperatorMethodExpressionBetweenSoloTypes(opcode,left,right,eval
     }
 
     if(right === TokenHandleType.INPUT_TUPLE){
-        log('right=tuple');
+        console.log('right=tuple');
         switch(left){
             case TokenHandleType.REAL:
-                log('left=real');
+                console.log('left=real');
                 const fn = generateRealOperatorMethodExpression(opcode);
 
-                log(fn);
+                console.log(fn);
 
                 const k = (b,a) => {
                     const input = a.value;
@@ -2348,7 +2354,7 @@ function generateOperatorMethodExpressionBetweenSoloTypes(opcode,left,right,eval
                     };
                 }
 
-                log(k);
+                console.log(k);
                 return k;
                 break;
             case TokenHandleType.COMPLEX:
@@ -2382,7 +2388,7 @@ function generateOperatorMethodExpressionBetweenSoloTypes(opcode,left,right,eval
     if(left === TokenHandleType.COMPLEX || right === TokenHandleType.COMPLEX){
         const fnComplex = generateComplexOperatorMethodExpression(opcode);
 
-        log(fnComplex);
+        console.log(fnComplex);
 
         return (a,b) => {
             const aComplex = typeof a.value === 'number' ? [a.value, 0] : a.value;
@@ -2390,7 +2396,7 @@ function generateOperatorMethodExpressionBetweenSoloTypes(opcode,left,right,eval
 
             const r = {type: TokenType.CMPLX, value: fnComplex(aComplex,bComplex), outputType: TokenHandleType.COMPLEX};
 
-            log(aComplex,bComplex,r);
+            console.log(aComplex,bComplex,r);
 
             return r;
         }
@@ -2416,7 +2422,7 @@ function generateOperatorMethodExpressionBetweenSoloTypes(opcode,left,right,eval
     return (a,b) => {
         const unc = evaluateBinaryOpUncertainty(opcode, TokenType.NUM, a.value, a.uncertainty??0, b.value, b.uncertainty ?? 0);
         const r= {type: TokenType.NUM, value: fn(a,b), outputType: TokenHandleType.REAL, uncertainty: unc};
-        log(r);
+        console.log(r);
         return r;
     }
 
@@ -2478,6 +2484,8 @@ function generateStrictMethodExprForFunc(funcInputInfo, evalType){
     const staticFuncInfo = FuncInfoByCode[funccode];
     const inputType = staticFuncInfo.inputType;
 
+    //console.log('inp type:',inputType);
+
     //if input is just one real/complex, then check for
 
     let fn;
@@ -2489,18 +2497,18 @@ function generateStrictMethodExprForFunc(funcInputInfo, evalType){
         case FuncArgumentInputType.ONE_COMPLEX:
         case FuncArgumentInputType.ONE_NUMERIC:
             console.assert(argTypes.length === 1);
-            log('one r/c/n',argTypes);
+            console.log('one r/c/n',argTypes);
 
             fn = 
                 (inputType === FuncArgumentInputType.ONE_REAL) 
                 ? generateRealFunctionMethodExpression(funccode,funcInputInfo) 
                 : generateComplexFunctionMethodExpression(funccode,funcInputInfo);
 
-            log(fn,inputType);
+            console.log(fn,inputType);
 
             switch(argTypes[0]){
                 case TokenHandleType.REAL:
-                    log('real input');
+                    console.log('real input');
 
                     console.assert(inputType === FuncArgumentInputType.ONE_REAL || inputType === FuncArgumentInputType.ONE_NUMERIC, inputType);
 
@@ -2521,7 +2529,7 @@ function generateStrictMethodExprForFunc(funcInputInfo, evalType){
                         }
                     }
                 case TokenHandleType.COMPLEX:
-                    log('complex input');
+                    console.log('complex input');
 
                     return (args) => {
                         const result = fn(args[0].value);
@@ -2533,7 +2541,7 @@ function generateStrictMethodExprForFunc(funcInputInfo, evalType){
                         }
                     }
                 case TokenHandleType.INPUT_TUPLE:
-                    log('tuple input');
+                    console.log('tuple input');
                     if(inputType === FuncArgumentInputType.ONE_NUMERIC){
                         fn = generateRealFunctionMethodExpression(funccode,funcInputInfo);
                     }
@@ -2543,12 +2551,17 @@ function generateStrictMethodExprForFunc(funcInputInfo, evalType){
                         const input = arg.value;
                         const n = input.length;
 
+                        //console.log(input);
+
                         let results = []; //Can assume real values
                         for(let i=0; i<n; i++){
                             results.push(fn(input[i]));
                         }
 
                         console.assert(arg.edge !== undefined, arg);
+                        console.assert(typeof input[0] === 'number' && !isNaN(input[0]), input[0]);
+                        console.assert(typeof input[1] === 'number' && !isNaN(input[1]), input[1]);
+                        //console.assert(typeof arg.edge === 'number' && !isNaN(arg.edge), arg.edge);
 
                         const edge = 
                             (args[0].type === TokenType.QUAD) 
@@ -2569,22 +2582,22 @@ function generateStrictMethodExprForFunc(funcInputInfo, evalType){
                         const input = args[0].value;
                         const n = input.length;
 
-                        log(input);
+                        console.log(input);
 
                         let results = []; //TODO: add array/tuple element type checking
                         if(typeof input[0] === 'number'){
                             fn = generateRealFunctionMethodExpression(funccode,funcInputInfo);
 
                             //entire array is num type
-                            log('numtype',n);
+                            console.log('numtype',n);
                             for(let i=0; i<n; i++){
-                                log('i:',i);
+                                console.log('i:',i);
                                 const r = fn(input[i]);
-                                log(r);
+                                console.log(r);
                                 results.push(r);
                             }
                         }else{
-                            log('comptype');
+                            console.log('comptype');
                             //entire array is complex type
                             console.assert(inputType !== FuncArgumentInputType.ONE_REAL);
                             for(let i=0; i<n; i++){
@@ -2610,7 +2623,7 @@ function generateStrictMethodExprForFunc(funcInputInfo, evalType){
         case FuncArgumentInputType.ARRAY_SOFT_NUMBERS:
         case FuncArgumentInputType.ALL_COMPLEX:
         case FuncArgumentInputType.ALL_NUMERIC:
-            log('func: all numeric/complex',funcInputInfo);
+            console.log('func: all numeric/complex',funcInputInfo);
 
             fn = 
                 (inputType === FuncArgumentInputType.ARRAY_SOFT_REALS || inputType === FuncArgumentInputType.ALL_REAL) 
@@ -2628,7 +2641,7 @@ function generateStrictMethodExprForFunc(funcInputInfo, evalType){
             const hasInputTuple = argTypes.some((arg) => arg === TokenHandleType.INPUT_TUPLE);
             const hasComplex = argTypes.some((arg) => arg === TokenHandleType.COMPLEX);
 
-            log(returnHandleType);
+            console.log(returnHandleType);
 
             if(FuncInfoByCode[funccode].returnType === TokenHandleType.DISTRIBUTION){
                 console.assert(!hasInputTuple && !hasComplex);
@@ -2667,12 +2680,30 @@ function generateStrictMethodExprForFunc(funcInputInfo, evalType){
                 && (inputType === FuncArgumentInputType.ARRAY_SOFT_NUMBERS || inputType === FuncArgumentInputType.ARRAY_SOFT_REALS)
             ){
                 console.assert(argTypes[0] === TokenHandleType.ARRAY);
+                console.log('fn: array unpack input method');
                 
                 unpackArray = true;
+
+                if(funcInputInfo.staticArgs === false){
+                    //functions like min, max that allow arrays to be input as max(1,2,3) or max([1,2,3])
+                    return (args) => {
+                        const val = args[0].value;
+
+                        console.log(val);
+
+                        if(val === null || val === undefined) throw Error('I don\'t understand how to use this function.');
+                        if(typeof val[Symbol.iterator] !== 'function') throw Error('This function requires a list of values.');
+
+                        const value = fn(...val);
+
+                        console.log('into value:',value, 'using', fn);
+                        return {type: args[0].elementType, value: value, outputType: returnHandleType};
+                    }
+                }
             }
 
             if(areAllReal){
-                log('func: all real');
+                console.log('func: all real');
 
                 return (args) => {
                     const unpackedArgs = unpackArray ? args[0].value : args;
@@ -2684,6 +2715,8 @@ function generateStrictMethodExprForFunc(funcInputInfo, evalType){
                     //log(inputValues,'=>',fn,'=>', value);
 
                     const r = {type: returnType, value: value, outputType: returnHandleType};
+
+                    if(r.outputType === TokenHandleType.ARRAY) r.elementType = TokenType.NUM;
 
                     if(staticFuncInfo.returnType === TokenHandleType.ARRAY) r.elementType = TokenType.NUM;
 
@@ -2727,28 +2760,26 @@ function generateStrictMethodExprForFunc(funcInputInfo, evalType){
             }
 
             if(hasComplex){
-                console.assert(inputType === FuncArgumentInputType.ARRAY_SOFT_NUMBERS || inputType === FuncArgumentInputType.ALL_COMPLEX || inputType === FuncArgumentInputType.ALL_NUMERIC);
+                fn = generateComplexFunctionMethodExpression(funccode,funcInputInfo);
+
+                //console.assert(inputType === FuncArgumentInputType.ARRAY_SOFT_NUMBERS || inputType === FuncArgumentInputType.ALL_COMPLEX || inputType === FuncArgumentInputType.ALL_NUMERIC);
 
                 return (args) => {
-                    const argsComplex = args.map((arg) => {
-                        return convertValueToComplex(arg.value);
-                        // const newArg = structuredClone(arg);
-                        // newArg.value = convertValueToComplex(arg.value);
+                    const unpackedArgs = unpackArray ? args[0].value : args;
 
-                        // return newArg.value;
-                    });
+                    const inputValues = args.map((arg) => convertValueToComplex(arg.value));
 
-                    log(argsComplex,fn);
+                    //console.log(argsComplex,fn);
 
-                    const v = fn(...argsComplex);
+                    const value = fn(...inputValues);
 
-                    log(v);
+                    console.log(value);
 
-                    const r = {type: returnType, value: v, outputType: returnHandleType};
+                    const r = {type: returnType, value: value, outputType: returnHandleType};
 
-                    log(r);
+                    console.log(r);
 
-                    if(staticFuncInfo.returnType === TokenHandleType.ARRAY) r.elementType = TokenType.CMPLX;
+                    if(r.outputType === TokenHandleType.ARRAY) r.elementType = TokenType.CMPLX;
 
                     return r;
                 }
@@ -2759,7 +2790,7 @@ function generateStrictMethodExprForFunc(funcInputInfo, evalType){
         case FuncArgumentInputType.ALL_REAL:
             console.assert(argTypes.every((arg) => arg === TokenHandleType.REAL));
 
-            log('func: all real');
+            console.log('func: all real');
 
             return (args) => {
                 const result = fn(args.map((arg) => arg.value));
@@ -2775,14 +2806,14 @@ function generateStrictMethodExprForFunc(funcInputInfo, evalType){
             break;
         case FuncArgumentInputType.ALL_NUMERIC:
         case FuncArgumentInputType.ALL_COMPLEX:
-            log('func: all numeric/complex');
+            console.log('func: all numeric/complex');
 
             fn = generateComplexFunctionMethodExpression(funccode,funcInputInfo);
 
             return (args) => {
                 const inputs = args.map((arg) => convertValueToComplex(arg.value));
 
-                log(inputs);
+                console.log(inputs);
 
                 const result = fn(...inputs);
 
@@ -2792,7 +2823,12 @@ function generateStrictMethodExprForFunc(funcInputInfo, evalType){
                     outputType: TokenHandleType.REAL,
                 }
             }
+        case undefined:
+            throw new Error('Function is missing argument input type.');
     }
+
+    console.error('unable to return method expression for funcInputInfo:',funcInputInfo,' and evalType:',evalType);
+    throw new Error('Invalid function.');
 }
 
 function generateRealFunctionMethodExpression(funccode,funcInputInfo = undefined){
@@ -2801,7 +2837,7 @@ function generateRealFunctionMethodExpression(funccode,funcInputInfo = undefined
         if(pow !== undefined){
             const fn = generateRealFunctionMethodExpression(funccode);
 
-            log(fn);
+            console.log(fn);
 
             return (...args) => { return fn(...args)**pow };
         }
@@ -2863,6 +2899,7 @@ function generateRealFunctionMethodExpression(funccode,funcInputInfo = undefined
         /* Todo: add handling for variables that are arrays */
         case FuncCode.ARRAY: //{type: TokenType.ARRAY, valueType: TokenType.NUM, values: [], uncertainties: []}
             return (...args) => {
+                console.log('realargs:',args)
                 const type = args[0].type; //can assume args.length > 0
 
                 if(args[0].outputType > TokenHandleType.TUPLE) {
@@ -3036,7 +3073,7 @@ export function compileExpression(expression) {
 
                     // Stop if top of stack is not an operator (e.g. left paren)
                     if (topOp.type != TokenType.OP) {
-                        log("broken. Value:", value, "operatorlist:", operators[0],operators[1],operators[2]);
+                        console.log("broken. Value:", value, "operatorlist:", operators[0],operators[1],operators[2]);
                         //log()
                         break;
                     }
@@ -3187,8 +3224,16 @@ export function compileExpression(expression) {
 
                 }
                 break;
+            case TokenType.VAR:
+                value.outputType = convertToHandleType(meta, value.code);
+
+                //if(value.outputType === TokenHandleType.ARRAY) console.assert(value.elementType !== undefined, value);
+                //if(value.outputType === TokenHandleType.ARRAY) console.assert(value.type === TokenType.ARRAY, value);
+
+                outputs.push(value);
+                break;
             case TokenType.UNKN:
-            case TokenType.VAR: //unknowns and vars
+             //unknowns and vars
                 outputs.push(value); //value is replaced later with the unknowns
                 //append to list of unknowns that need to be replaced
 
@@ -3208,7 +3253,7 @@ export function compileExpression(expression) {
                 const outputHandleType = staticConstantInfo.outputType;
                 const outputType = convertToTokenType(outputHandleType, evalType);
 
-                log(staticConstantInfo.symbol, '| type:', outputType);
+                //log(staticConstantInfo.symbol, '| type:', outputType);
 
                 outputs.push({
                     type: outputType,
@@ -3242,7 +3287,7 @@ export function compileExpression(expression) {
 
             //     break;
             case TokenType.DELIM:
-                log(operators.length);
+                //log(operators.length);
                 const contextIn = bracContext[bracContext.length-1];
 
                 console.assert(
@@ -3283,7 +3328,7 @@ export function compileExpression(expression) {
 
                     outputs.push(topOp);
                 }
-                log(operators.length);
+                //log(operators.length);
                 break;
             case TokenType.ATT:
                 break;
@@ -3321,7 +3366,7 @@ export function compileExpression(expression) {
         }
     }
 
-    log(expression.tokens, "->", outputs);
+    //console.log(expression.tokens, "->", outputs);
 
     const testResult = testEvaluation(outputs, ExpressionInfoByType[type].tokType, evalType);
     const tokenMetaInfo = testResult.expectedMeta;
@@ -3336,7 +3381,7 @@ export function compileExpression(expression) {
         if(outputs[i].type === TokenType.OP || outputs[i].type === TokenType.FUNC) {
             outputs[i].variantCode = metaInfo.variantCode;
 
-            log(metaInfo.variantCode);
+            //log(metaInfo.variantCode);
 
             const methodExpr = 
                 (outputs[i].type === TokenType.OP) 
@@ -3351,7 +3396,7 @@ export function compileExpression(expression) {
         if(metaInfo.inputElementsSeparately !== undefined) outputs[i].inputElementsSeparately = metaInfo.inputElementsSeparately;
     }
 
-    log('after testing: ', outputs); 
+    console.log('after testing: ', outputs); 
 
     if(type === ExpressionType.ASGNMT){
         return new Expression(
@@ -3384,32 +3429,64 @@ export function compileExpression(expression) {
 // }
 
 export function evaluate(expression, input){
-    if(!expression.tokens.some((t) => t.inputElementsSeparately === true)){
+    //replace variables
+
+    //if no auto indexing is needed:
+        //replace unknowns (x,y,etc)
+        //evaluate numerically
+
+    //if auto indexing is needed:
+        //find n = number of indexes (min length of arrays)
+        //replace unknowns
+        //instantiate blank 'results' array
+        //loop from k=0 to k=n
+            //index all arrays at index k
+            //evaluate
+            //add eval result to 'results' array
+        //end loop
+
+        //construct array token out of 'results' array
+
+
+    const tokenList = readExpressionWithReplacements(expression, input);
+
+    if(!tokenList.some((t) => t.inputElementsSeparately === true)){
         return {
             didByIndexEvaluation: false,
             result: evaluateExpression(expression, input, -1)
         };
     }
 
-    const elementsToBeAutoIndexed = expression.tokens.filter((t) => t.inputElementsSeparately === true);
+    const elementsToBeAutoIndexed = tokenList.filter((t) => t.inputElementsSeparately === true);
 
-    const n = Math.min(elementsToBeAutoIndexed.map((t) => {
+    console.log('info on evaluation',expression,elementsToBeAutoIndexed);
+
+    const lengths = elementsToBeAutoIndexed.map((t) => {
         switch(t.type){
             case TokenType.VAR: return getVariable(t.code).value.length; //assume variable is array type
             case TokenType.FUNC: return t.argCount;
+            case TokenType.ARRAY: return t.value.length;
             default:
+                console.log('error token:',t);
                 throw new Error('Could not automatically index token.');
         }
-    }));
+    });
+
+    const n = Math.min(...lengths);
+
+    console.assert(n>0, 'Cannot evaluate array of 0 length.',lengths, elementsToBeAutoIndexed);
 
     let results = [];
+    let values = [];
     for(let k = 0; k<n; k++){
-        results.push(evaluateExpression(expression, input, k));
+        const e = evaluateExpression(expression, input, k);
+        results.push(e);
+        values.push(e.value);
     }
 
     return {
         didByIndexEvaluation: true,
-        result: results
+        result: {type: TokenType.ARRAY, value: values, elementType: results[0].type, outputType: TokenHandleType.ARRAY}
     };
 }
 
@@ -3422,13 +3499,18 @@ export function evaluate(expression, input){
  */
 // -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 export function evaluateExpression(compiledExpression, input, arrayIndex) {
+    //console.log('- Evaluating expression with index:',arrayIndex,' -');
+
+    if(arrayIndex === undefined) throw new Error('invalid array index');
     //let expressionType = compiledExpression.type;
     // console.warn('evaluating: ',compiledExpression);
 
+    //console.log('- replacing: ',compiledExpression.replace,' -');
     let tokenList = readExpressionWithReplacements(compiledExpression, input);
+
     //console.warn(tokenList);
 
-    //log('post-replacement:',tokenList);
+    //console.log('post-replacement:',tokenList[0].type); //STILL value=[1,2]
 
     var solve = []; //Array<number>
 
@@ -3522,7 +3604,9 @@ export function evaluateExpression(compiledExpression, input, arrayIndex) {
                 //console.assert(solve.length >= popCount,solve,popCount,value.argCount);
 
                 for (let i = 0; i < popCount; i++) {
-                    args.push(solve.pop());
+                    const pop = solve.pop()
+                    //console.assert(!isNaN(pop.value[0]),pop);
+                    args.push(pop);
                 }
                 //log(args);
 
@@ -3558,11 +3642,15 @@ export function evaluateExpression(compiledExpression, input, arrayIndex) {
                 break;
             case TokenType.ARRAY:
             case TokenType.TUPLE:
+                //console.warn('array passed:',value.value, arrayIndex); //STILL PROPER ARRAY
                 let token = value;
-                if(value.type === TokenType.ARRAY && arrayIndex >= 0){
-                    token.type = token.elementType ?? TokenType.NUM;
-                    token.value = token.value[arrayIndex];
+                if(token.type === TokenType.ARRAY && arrayIndex >= 0){
+                    //console.log('array being indexed');
+                    //console.assert(token.elementType !== undefined, 'Token element type is undefined.');
+                    token.type = token.elementType;
+                    token.value = token.value[arrayIndex]; //INDEXED CORRECTLY
                 }
+                //console.log('indexed to:',token.value);
                 solve.push(token);
                 break;
             default:
@@ -3597,6 +3685,8 @@ export function evaluateExpression(compiledExpression, input, arrayIndex) {
     // let result = solve[0];
     // if(test)
 
+    //console.log('- eval returned value:',solve[0].value+'-');
+
     return solve[0];
 
 
@@ -3621,7 +3711,7 @@ export function readExpressionWithReplacements(compiledExpression, input) {
     let tokenList = compiledExpression.tokens.slice(); //duplicate array
 
     const tokType = ExpressionInfoByType[compiledExpression.type].tokType;
-    //log(tokType)
+    //console.log(tokType);
 
     let action = 0;
 
@@ -3633,21 +3723,25 @@ export function readExpressionWithReplacements(compiledExpression, input) {
                 //redo later to add greater variety of types that a var can assume
                 const evalResult = getVariable(action.varId);
                 if(evalResult === undefined) console.error('variable '+ action.varId+ ' not found');
+                else console.log('retrieved variable: '+action.varId+', is:',evalResult);
 
-                log(tokenList);
+                //console.log(tokenList);
 
                 let token = tokenList[action.index];
 
-                log(token);
+                //log(token);
                 console.assert(typeof evalResult.value === 'number' || (evalResult.value.length > 0) ,evalResult);
 
                 token.type = evalResult.type;
                 token.value = evalResult.value;
                 token.uncertainty = evalResult.uncertainty ?? 0;
                 token.interpret = evalResult.interpret ?? undefined;
-                token.outputType = evalResult.outputType ?? convertToHandleType(evalResult.type, evalResult.value);
+                token.elementType = evalResult.elementType;
 
-                log(token);
+                token.outputType = (evalResult.outputType ?? convertToHandleType(evalResult.type, evalResult.value));
+
+                console.log('var placeholder replaced with:',token);
+                console.log('check4:',token.value);
 
                 // evalResult.outputType = convertToHandleType(evalResult.type, evalResult.value);
 
@@ -3678,7 +3772,8 @@ export function readExpressionWithReplacements(compiledExpression, input) {
                 tokenList.splice(action.index, 1, newtoken);
             }
             if(action.type === TokenType.VAR){
-                let newtoken = {type: TokenType.NUM, value: getVariable(action.varId).value, outputType: tokenList[action.index].outputType};
+                let newtoken = {type: getVariable(action.varId).type, value: getVariable(action.varId).value, outputType: tokenList[action.index].outputType};
+                if(newtoken.type === TokenType.ARRAY) newtoken.elementType = getVariable(action.varId).elementType;
                 tokenList.splice(action.index, 1, newtoken);
             }
             // if(action.type === TokenType.DIST){
@@ -3903,18 +3998,22 @@ function evaluateBinaryOpUncertainty(opcode, evalType, a, aUnc, b, bUnc){
  * @returns the output token
  */
 function evaluateMethodExprForFunc(token, evalType, rawargs, attributes, input, arrayIndex = -1){
+    //console.assert(typeof input.min === 'number' && !isNaN(input.min),input);
+    //console.assert(typeof input.max === 'number' && !isNaN(input.max),input);
+
     const j = (attributes.get(AttributiveCode.AUTO_FUNC)); 
 
     if(j !== undefined && evalType === TokenType.DUAL) {
+        //console.log(input);
         const x = {type: TokenType.DUAL, value: [input.min, input.max], edge: [0,0,0], outputType: TokenHandleType.INPUT_TUPLE}; 
-        //log(x);
+        //console.log(x);
         rawargs.push(x);
         //log(rawargs);
     } //return token.fnexp(rawargs.concat([input.min, input.max]));
 
+    //console.log(token.fnexp);
+    //console.log('rawargs',rawargs);
     const k = token.fnexp(rawargs);
-
-    //console.log(rawargs,'->',k);
 
     return k;
 }
@@ -3951,7 +4050,7 @@ function convertVariableToToken(varName){
         throw new Error('Var data not found for variable: \''+varName+'\'.');
     }
 
-    return varData?.value; //A token, like {type: int, value: int, etc};
+    return varData.value; //A token, like {type: int, value: int, etc};
 }
 
 function convertToHandleType(tokenType, metadata) {
@@ -3965,6 +4064,7 @@ function convertToHandleType(tokenType, metadata) {
             return convertToHandleType(constantAsToken.type, constantAsToken.value);
         case TokenType.VAR:
             const varAsToken = convertVariableToToken(metadata);
+            console.log(varAsToken);
             if(varAsToken === undefined) return 0;
             const r = convertToHandleType(varAsToken.type, varAsToken.value);
             //log(r);
@@ -3982,7 +4082,7 @@ function convertToHandleType(tokenType, metadata) {
         case TokenType.TUPLE:
             return TokenHandleType.TUPLE;
         default:
-            log('failed to convert to handle type',tokenType,metadata)
+            console.error('failed to convert to handle type',tokenType,metadata)
             return 0;
     }
 }
@@ -4015,8 +4115,26 @@ function testEvaluation(inputTokens, inputType, evalType){
         let tokenHandleType = convertToHandleType(token.type, token.code ?? token.value); //HACK
         
         if(tokenHandleType === 0){
-            console.error(token.type, token.code, token.value);
+            console.error(token);
             throw new Error('Unknown token found during evaluation of type: '+tokenHandleType);
+        }
+
+        const tryToFlagForAutoIndex = (testToken) => {
+            if(testToken.outputType === TokenHandleType.ARRAY){
+                if(testToken.instantiatorIndex !== undefined){
+                    expectedTokenMetadata[testToken.instantiatorIndex].inputElementsSeparately = true;
+                    console.log('array func set',testToken,testToken.instantiatorIndex,expectedTokenMetadata[testToken.instantiatorIndex]);
+                }
+                testToken.inputElementsSeparately = true;
+
+                const runtimeToken = tokens[testToken.index];
+                const elementType = runtimeToken.type === TokenType.VAR ? getVariable(runtimeToken.code).elementType : runtimeToken.elementType;
+
+                console.log('rttoken:',runtimeToken,elementType);
+
+                testToken.outputType = convertToHandleType(elementType,runtimeToken.code??runtimeToken.value); //?metadata
+                console.log('arg=>',testToken.outputType);
+            }
         }
 
         switch(tokenHandleType){
@@ -4041,6 +4159,13 @@ function testEvaluation(inputTokens, inputType, evalType){
             case TokenHandleType.ARRAY:
                 token.outputType = TokenHandleType.ARRAY;
 
+                if(tokens.length === 1) {
+                    token.inputElementsSeparately = true;
+                    //token.outputType = token.elementType;
+                }
+
+                //token.elementType = 
+
                 solve.push(token);
                 expectedTokenMetadata.push({ outputType: TokenHandleType.ARRAY });
                 break;
@@ -4055,8 +4180,7 @@ function testEvaluation(inputTokens, inputType, evalType){
 
                 const arg = solve.pop();
 
-                //unary ops all do not change their output
-                //token.outputType = arg.type;
+                tryToFlagForAutoIndex(arg);
 
                 console.assert(arg.outputType !== undefined, token);
 
@@ -4069,20 +4193,8 @@ function testEvaluation(inputTokens, inputType, evalType){
                 const b = solve.pop();
                 const a = solve.pop();
 
-                if(a.outputType === TokenHandleType.ARRAY) {
-                    if(a.instantiatorIndex !== undefined){
-                        expectedTokenMetadata[a.instantiatorIndex].inputElementsSeparately = true;
-                        console.log('array func set',a.instantiatorIndex,expectedTokenMetadata[a.instantiatorIndex]);
-                    }
-                    a.inputElementsSeparately = true;
-                }
-                if(b.outputType === TokenHandleType.ARRAY) {
-                    if(b.instantiatorIndex !== undefined){
-                        expectedTokenMetadata[b.instantiatorIndex].inputElementsSeparately = true;
-                        console.log('array b func set',b.instantiatorIndex,expectedTokenMetadata[b.instantiatorIndex]);
-                    }
-                    b.inputElementsSeparately = true;
-                }
+                tryToFlagForAutoIndex(a);
+                tryToFlagForAutoIndex(b);
 
                 if(a.outputType >= b.outputType){
                     token.outputType = a.outputType;
@@ -4098,10 +4210,15 @@ function testEvaluation(inputTokens, inputType, evalType){
 
                 let args = [];
                 let argTypes = [];
+                let argElemTypes = [];
                 for(let i = 0; i < popCount; i++){
                     const popped = solve.pop();
+
+                    tryToFlagForAutoIndex(popped);
+                    
                     args.push(popped);
                     argTypes.push(popped.outputType)
+                    argElemTypes.push(popped.elementType);
                 }
 
                 token.outputType = outputTypeOfFunction(token.code, argTypes);
@@ -4112,8 +4229,19 @@ function testEvaluation(inputTokens, inputType, evalType){
 
                 const instantiatorIndex = token.code === FuncCode.ARRAY ? token.index : undefined;
 
-                solve.push({outputType: token.outputType, instantiatorIndex: instantiatorIndex});
+                let solvepush = {outputType: token.outputType, instantiatorIndex: instantiatorIndex, index: token.index};
+                if(token.outputType === TokenHandleType.ARRAY || token.code === FuncCode.ARRAY) {
+                    solvepush.elementType = outputTypeOfFunction(token.code,argElemTypes);
+                    token.elementType = outputTypeOfFunction(token.code,argElemTypes);
+                }
+
+                console.log('pushin: ', solvepush);
+
+                solve.push(solvepush);
                 expectedTokenMetadata.push({ outputType: token.outputType, variantCode: newFuncInputInfoObject(argTypes, token.code, token.attributes) });
+
+                //if last token and is Array() function, set input elements separately to true
+                if(i===tokens.length-1 && instantiatorIndex !== undefined) expectedTokenMetadata[instantiatorIndex].inputElementsSeparately = true;
                 break;
             default:
                 console.error('unknown token handle type: ', tokenHandleType);
@@ -4122,6 +4250,8 @@ function testEvaluation(inputTokens, inputType, evalType){
     }
 
     if(solve.length !== 1) throw new Error('Invalid expression.');
+
+    //if(solve[0].)
 
     let wantedResultType = TokenType.NUL; //default, whatever is returned
     if(evalType === ExpressionType.EXP_F_X || evalType === ExpressionType.EXP_F_Y){
@@ -4249,11 +4379,11 @@ function handleEdgesForBinaryOp(opcode, a_quad, b_quad, edges_a, edges_b){
     const btm = handleEdgePairForBinaryOp(opcode, a_quad[2], b_quad[2], a_quad[3], b_quad[3]);
 
     if(edges_a === undefined){
-        log("undef_a:",edges_a);
+        console.log("undef_a:",edges_a);
     }
 
     if(edges_b === undefined){
-        log("undef_b:",edges_b);
+        console.log("undef_b:",edges_b);
     }
 
     const edges = {
@@ -4317,7 +4447,7 @@ function handleEdgePairForBinaryOp(opcode, a1, b1, a2, b2){
         case OpCode.DIV:
             //  a/b
 
-            log(a1,a2,b1,b2);
+            console.log(a1,a2,b1,b2);
 
             //TODO: FIX BELOW
             if((a1*b1 > 0) !== (a2*b2 > 0)) {
@@ -4326,7 +4456,7 @@ function handleEdgePairForBinaryOp(opcode, a1, b1, a2, b2){
 
             //check denominator sign change:
             if((b1 > 0) !== (b2 > 0)) {
-                log('cross:',b1,b2);
+                console.log('cross:',b1,b2);
                 crosses++;
                 jumps++;
                 holes++;
@@ -4778,16 +4908,16 @@ function dist_normal(mu,sg,x){
 }
 
 export function evaluateExpressionSimple(string) {
-    log("Evaluating: ", string);
+    console.log("Evaluating: ", string);
 
     tokenizeExpression(string);
-    log("Tokens: ", tokenizedExpressions[tokenizedExpressions.length - 1]);
+    console.log("Tokens: ", tokenizedExpressions[tokenizedExpressions.length - 1]);
 
 
     compileExpression(
         tokenizedExpressions.pop(),
     );
-    log("Compiled Expression: ", compiledExpressions[compiledExpressions.length - 1]);
+    console.log("Compiled Expression: ", compiledExpressions[compiledExpressions.length - 1]);
 
     return evaluateExpression(
         compiledExpressions.pop(),
