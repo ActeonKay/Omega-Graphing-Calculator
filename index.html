@@ -146,7 +146,8 @@
     } from "./renderer.js";
 
     import {
-      convertTokenToLatex
+      convertTokenToLatex,
+      convertRealToString
     } from "./latexutils/tokenToLatexConverter.js";
 
     // --- Common Elements ---
@@ -466,6 +467,7 @@
       switch(newExpr.type){
         case ExpressionType.EVAL:
         case ExpressionType.ASGNMT:
+          currentExpression = newExpr;
           console.log('++ Evaluating expression ++');
           const evalObj = evaluate(newExpr, {},-1);
           console.log('++ Eval result:',evalObj.result,'++');
@@ -1611,6 +1613,8 @@
         ctx.strokeStyle = "#ccc";
         ctx.fillStyle = "#000";
 
+        const gridLineDensity = 0.25;
+
         //Find visible graph coordinate bounds
         const graphLeft   = toGraphCoordsX(0);
         const graphRight  = toGraphCoordsX(window.innerWidth);
@@ -1630,7 +1634,7 @@
         //MINOR GRID LINES ----------
         ctx.lineWidth = 0.5;
 
-        const minorGridScale = minorGridScaleToNiceMultiple(scaleFactor/2);
+        const minorGridScale = minorGridScaleToNiceMultiple(scaleFactor*gridLineDensity);
 
         const startXMinor = Math.floor(graphLeft / minorGridScale) * minorGridScale;
         const endXMinor   = Math.ceil(graphRight / minorGridScale) * minorGridScale;
@@ -1658,7 +1662,8 @@
         //MAJOR GRID LINES ----------
         ctx.lineWidth = 1;
 
-        const majorGridScale = majorGridScaleToNiceMultiple(scaleFactor/2);
+        const majorGridScale = majorGridScaleToNiceMultiple(scaleFactor*gridLineDensity);
+        console.log('majorGridScale',majorGridScale);
 
         const startX = Math.floor(graphLeft / majorGridScale) * majorGridScale;
         const endX   = Math.ceil(graphRight / majorGridScale) * majorGridScale;
@@ -1682,9 +1687,11 @@
             ctx.moveTo(sx, 0);
             ctx.lineTo(sx, window.innerHeight);
 
+            //let text = convertRealToString(gx);
+
             let text = Math.round(gx*1_000_000)/1_000_000; //Math.f16round
 
-            ctx.fillText(text, sx+4, labelY);
+            ctx.fillText(text, sx+4, labelY, 0.25*majorGridScale*window.innerWidth/scaleFactor);
         }
 
         ctx.stroke();
@@ -1700,7 +1707,7 @@
 
             let text = Math.round(gy*1_000_000)/1_000_000;
 
-            ctx.fillText(text, labelX, sy-8);
+            ctx.fillText(text, labelX, sy-8, 0.25*majorGridScale*window.innerWidth/scaleFactor);
         }
 
         ctx.stroke();

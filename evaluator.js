@@ -337,7 +337,18 @@ export const FuncCode = {
     D_BINM: 171
 }
 
+//All complex-input functions default to their real counterparts if no complex argument is provided
+
+//A 'bundle' is any way to represent a list of numbers, either by inputting as separate arguments or by inputting one array
+//Bundle-input functions accept either F(x,y,z,...) or F(a) where a=[x,y,z,...]
 const FuncArgumentInputType = {
+    //BUNDLE; REAL
+    //BUNDLE; COMPLEX
+    //BUNDLE; TUPLE
+    //ALL; REAL
+    //ALL; COMPLEX
+    //ALL; TUPLE
+    //ALL; ARRAY
     ONE_REAL: 1,
     ONE_COMPLEX: 2,
     ONE_NUMERIC: 3,
@@ -398,7 +409,7 @@ const FuncInfo = {
     "ln": { code: FuncCode.LN, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.REAL  },
     "log": { code: FuncCode.LOG, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.REAL  },
     "logn": { code: FuncCode.LOGN, staticArgs: true, args: 2, inputType: FuncArgumentInputType.ALL_REAL, returnType: TokenHandleType.REAL  },
-    "sqrt": { code: FuncCode.SQRT, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_NUMERIC, returnType: TokenHandleType.COMPLEX  },
+    "sqrt": { code: FuncCode.SQRT, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.REAL  },
     "cbrt": { code: FuncCode.CBRT, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_NUMERIC, returnType: TokenHandleType.COMPLEX  },
     "nthrt": { code: FuncCode.NTHRT, staticArgs: true, args: 2, inputType: FuncArgumentInputType.ALL_REAL, returnType: TokenHandleType.COMPLEX  },
     "Gamma": { code: FuncCode.GAMMA, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.REAL  },
@@ -413,10 +424,10 @@ const FuncInfo = {
     "arg": { code: FuncCode.ARG, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_COMPLEX, returnType: TokenHandleType.REAL  },
     "ampl": { code: FuncCode.AMPL, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_COMPLEX, returnType: TokenHandleType.REAL  },
     "sinc": { code: FuncCode.SINC, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.REAL },
-    "array": { code: FuncCode.ARRAY, staticArgs: false, minArgs: 1, inputType: FuncArgumentInputType.ALL_REAL, returnType: TokenHandleType.ARRAY },
+    "array": { code: FuncCode.ARRAY, staticArgs: false, minArgs: 1, inputType: FuncArgumentInputType.ALL_REAL, returnType: TokenHandleType.ARRAY, returnElementType: 0 }, //blank return type
     "tuple": { code: FuncCode.TUPLE, staticArgs: false, minArgs: 1, inputType: FuncArgumentInputType.ALL_REAL, returnType: TokenHandleType.TUPLE },
     "binom": { code: FuncCode.BINOM, staticArgs: true, args: 2, inputType: FuncArgumentInputType.ALL_REAL, returnType: TokenHandleType.REAL },
-    "factor": { code: FuncCode.FACTOR, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.ARRAY },
+    "factor": { code: FuncCode.FACTOR, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.ARRAY, returnElementType: TokenHandleType.NUM, canAutoIndexResult: false }, //as result length may vary
     "cis": { code: FuncCode.CIS, staticArgs: true, args: 1, inputType: FuncArgumentInputType.ONE_REAL, returnType: TokenHandleType.COMPLEX  },
     "Norm": { code: FuncCode.D_NORM, staticArgs: true, args: 2, inputType: FuncArgumentInputType.ALL_REAL, returnType: TokenHandleType.DISTRIBUTION },
     "Binm": { code: FuncCode.D_BINM, staticArgs: true, args: 2, inputType: FuncArgumentInputType.ALL_REAL, returnType: TokenHandleType.DISTRIBUTION }
@@ -1866,7 +1877,7 @@ function generateStrictMethodExprForOp(strictOpCode, evalType){
     const right = strictOpCode >> 8 & 0b1111;
     const left = strictOpCode >> 12 & 0b1111;
 
-    console.log(strictOpCode, '=>', opId, right, left);
+    console.log(strictOpCode, '=> (id,r,l)', opId, right, left);
 
     if(OpInfoByCode[opId].arity === 1){
         console.log('unary:'+right);
@@ -2002,6 +2013,7 @@ function generateStrictMethodExprForOp(strictOpCode, evalType){
     }
 
     if(left === TokenHandleType.ARRAY){
+        throw new Error('Unable to autoindex operator. Left operand is un-indexed array.');
         console.log('left=list');
 
         switch(right){
@@ -2085,6 +2097,9 @@ function generateStrictMethodExprForOp(strictOpCode, evalType){
     }  
 
     if(right === TokenHandleType.ARRAY){
+        console.error('unindexed array: ',right);
+        throw new Error('Unable to autoindex operator. Right operand is un-indexed array.');
+
         console.log('right=list');
 
         switch(left){
@@ -2344,7 +2359,7 @@ function generateOperatorMethodExpressionBetweenSoloTypes(opcode,left,right,eval
                         results.push(fn(real,input[i]));
                     }
 
-                    //log(input,real,'=>',results);
+                    console.log(input,real,'=>',results);
 
                     return {
                         type: a.type, 
@@ -2472,17 +2487,27 @@ function generateRealOperatorMethodExpression(opcode,evaluateDiff=true){
     }
 }
 
+//TODO: Redo how method expressions are generated. It should be much more modular and less longwinded and annoying
+//It should also remove handling of Array types and make tuple or input tuple handling simler
+//Thirdly it should be cleared and more modular how function arguments are organized. Like bundles, reals, complex? How does this work
+//Autoindexing???? Hello?
+
 /**
  * 
  * @param {*} functionInfo {staticArgs: bool, argTypes: array, code: int};
  * @param {*} evalType 
  */
-function generateStrictMethodExprForFunc(funcInputInfo, evalType){
+function generateStrictMethodExprForFunc(funcInputInfo, evalType, inputElementsSeparately = false){
     const funccode = funcInputInfo.code;
     const argTypes = funcInputInfo.argTypes;
 
     const staticFuncInfo = FuncInfoByCode[funccode];
     const inputType = staticFuncInfo.inputType;
+
+    if(
+        staticFuncInfo.returnHandleType === TokenHandleType.ARRAY 
+        && inputElementsSeparately
+    ) funcInputInfo.autoIndex = true;
 
     //console.log('inp type:',inputType);
 
@@ -2675,6 +2700,7 @@ function generateStrictMethodExprForFunc(funcInputInfo, evalType){
 
             let unpackArray = false;
 
+            //Check for array unpacking case, ex: 'max(a)' for a=[-2,7,9]
             if(
                 argTypes.length === 1 
                 && (inputType === FuncArgumentInputType.ARRAY_SOFT_NUMBERS || inputType === FuncArgumentInputType.ARRAY_SOFT_REALS)
@@ -2705,7 +2731,7 @@ function generateStrictMethodExprForFunc(funcInputInfo, evalType){
             if(areAllReal){
                 console.log('func: all real');
 
-                return (args) => {
+                return (args, arrayIndex) => {
                     const unpackedArgs = unpackArray ? args[0].value : args;
 
                     const inputValues = unpackedArgs.map((arg) => arg.value);
@@ -2716,9 +2742,19 @@ function generateStrictMethodExprForFunc(funcInputInfo, evalType){
 
                     const r = {type: returnType, value: value, outputType: returnHandleType};
 
-                    if(r.outputType === TokenHandleType.ARRAY) r.elementType = TokenType.NUM;
+                    if(r.outputType === TokenHandleType.ARRAY) {
+                        if(arrayIndex === -1){
+                            r.elementType = TokenType.NUM;
+                        }else{
+                            let type = TokenType.NUM;
+                            r.type = type;
+                            r.value = r.value[arrayIndex];
+                            r.outputType = convertToHandleType(type, funccode)
+                        }
+                    }
 
-                    if(staticFuncInfo.returnType === TokenHandleType.ARRAY) r.elementType = TokenType.NUM;
+                    //Removed but not sure why?
+                    //if(staticFuncInfo.returnType === TokenHandleType.ARRAY) r.elementType = TokenType.NUM;
 
                     return r;
                 }
@@ -2764,12 +2800,10 @@ function generateStrictMethodExprForFunc(funcInputInfo, evalType){
 
                 //console.assert(inputType === FuncArgumentInputType.ARRAY_SOFT_NUMBERS || inputType === FuncArgumentInputType.ALL_COMPLEX || inputType === FuncArgumentInputType.ALL_NUMERIC);
 
-                return (args) => {
+                return (args, arrayIndex) => {
                     const unpackedArgs = unpackArray ? args[0].value : args;
 
-                    const inputValues = args.map((arg) => convertValueToComplex(arg.value));
-
-                    //console.log(argsComplex,fn);
+                    const inputValues = unpackedArgs.map((arg) => convertValueToComplex(arg.value));
 
                     const value = fn(...inputValues);
 
@@ -2779,7 +2813,16 @@ function generateStrictMethodExprForFunc(funcInputInfo, evalType){
 
                     console.log(r);
 
-                    if(r.outputType === TokenHandleType.ARRAY) r.elementType = TokenType.CMPLX;
+                    if(r.outputType === TokenHandleType.ARRAY) {
+                        if(arrayIndex === -1){
+                            r.elementType = TokenType.CMPLX;
+                        }else{
+                            let type = TokenType.CMPLX;
+                            r.type = type;
+                            r.value = r.value[arrayIndex];
+                            r.outputType = convertToHandleType(type, funccode)
+                        }
+                    }
 
                     return r;
                 }
@@ -2831,6 +2874,12 @@ function generateStrictMethodExprForFunc(funcInputInfo, evalType){
     throw new Error('Invalid function.');
 }
 
+/**
+ * 
+ * @param {*} funccode 
+ * @param {*} funcInputInfo Object containing info such special-cases like sin^2(x), log_2(x), or auto indexing like: Array(1,2)+1
+ * @returns 
+ */
 function generateRealFunctionMethodExpression(funccode,funcInputInfo = undefined){
     if(funcInputInfo !== undefined){
         const pow = funcInputInfo?.attributes?.get(AttributiveCode.POWER);
@@ -2897,7 +2946,7 @@ function generateRealFunctionMethodExpression(funccode,funcInputInfo = undefined
         //sum()
         //
         /* Todo: add handling for variables that are arrays */
-        case FuncCode.ARRAY: //{type: TokenType.ARRAY, valueType: TokenType.NUM, values: [], uncertainties: []}
+        case FuncCode.ARRAY: //{type: TokenType.ARRAY, elementType: TokenType.NUM, values: [], uncertainties: []}
             return (...args) => {
                 console.log('realargs:',args)
                 const type = args[0].type; //can assume args.length > 0
@@ -3366,7 +3415,7 @@ export function compileExpression(expression) {
         }
     }
 
-    //console.log(expression.tokens, "->", outputs);
+    console.log('before test eval:',expression.tokens, "->", outputs);
 
     const testResult = testEvaluation(outputs, ExpressionInfoByType[type].tokType, evalType);
     const tokenMetaInfo = testResult.expectedMeta;
@@ -3381,12 +3430,12 @@ export function compileExpression(expression) {
         if(outputs[i].type === TokenType.OP || outputs[i].type === TokenType.FUNC) {
             outputs[i].variantCode = metaInfo.variantCode;
 
-            //log(metaInfo.variantCode);
+            console.log('variantcode',metaInfo.variantCode,'evalType',evalType);
 
             const methodExpr = 
                 (outputs[i].type === TokenType.OP) 
                 ? generateStrictMethodExprForOp(metaInfo.variantCode,evalType)
-                : generateStrictMethodExprForFunc(metaInfo.variantCode,evalType);
+                : generateStrictMethodExprForFunc(metaInfo.variantCode,evalType,outputs[i].inputElementsSeparately);
 
             console.assert(typeof methodExpr === 'function',methodExpr,metaInfo.variantCode,evalType);
 
@@ -4013,7 +4062,7 @@ function evaluateMethodExprForFunc(token, evalType, rawargs, attributes, input, 
 
     //console.log(token.fnexp);
     //console.log('rawargs',rawargs);
-    const k = token.fnexp(rawargs);
+    const k = token.fnexp(rawargs, arrayIndex);
 
     return k;
 }
@@ -4082,7 +4131,7 @@ function convertToHandleType(tokenType, metadata) {
         case TokenType.TUPLE:
             return TokenHandleType.TUPLE;
         default:
-            console.error('failed to convert to handle type',tokenType,metadata)
+            console.warn('failed to convert to handle type',tokenType,metadata)
             return 0;
     }
 }
@@ -4094,6 +4143,7 @@ function convertToTokenType(tokenHandleType, evalType){
         case TokenHandleType.TUPLE: return TokenType.TUPLE;
         case TokenHandleType.ARRAY: return TokenType.ARRAY;
         case TokenHandleType.INPUT_TUPLE: return evalType;
+        case 0: return evalType;
     }
 }
 
@@ -4109,6 +4159,37 @@ function testEvaluation(inputTokens, inputType, evalType){
     let solve = [];
     let expectedTokenMetadata = [];
 
+    //If operations are performed on an array, we ought to flag it for auto-indexing. 
+    //Auto indexing should only NOT happen for operations that accept an array in its entirety like max(), avg(), etc.
+    const tryToFlagForAutoIndex = (testToken, swapHandleType) => {
+        if(testToken.outputType === TokenHandleType.ARRAY){
+            if(testToken.instantiatorIndex !== undefined){
+                //results of Array creation via [] are flagged with instantiatorIndex. 
+                //If the result array is operated on later we flag the original function as auto indexing
+
+                expectedTokenMetadata[testToken.instantiatorIndex].inputElementsSeparately = true;
+                console.log('func auto indexing set',testToken,testToken.instantiatorIndex,expectedTokenMetadata[testToken.instantiatorIndex]);
+            }
+            testToken.inputElementsSeparately = true;
+
+
+            //issue: functions like array() have return type Array, which doesn't specify the elementType for autoindexing
+            const runtimeToken = tokens[testToken.index];
+            const elementType = 
+                runtimeToken.type === TokenType.VAR 
+                ? getVariable(runtimeToken.code).elementType 
+                : runtimeToken.type === TokenType.FUNC
+                    ? convertToTokenType(FuncInfoByCode[runtimeToken.code].returnElementType,evalType)
+                    : runtimeToken.elementType;
+
+            console.log('rttoken:',runtimeToken,elementType);
+
+            //TODO: confusion and unneccesary conversion from handle type to token type to back again? (for TokenType.FUNC)
+            if(swapHandleType) testToken.outputType = convertToHandleType(elementType,runtimeToken.code??runtimeToken.value); //?metadata
+            console.log('testToken=>',testToken,testToken.outputType);
+        }
+    }
+
     for(let i = 0; i < tokens.length; i++){
         let token = tokens[i];
         token.index = i;
@@ -4117,24 +4198,6 @@ function testEvaluation(inputTokens, inputType, evalType){
         if(tokenHandleType === 0){
             console.error(token);
             throw new Error('Unknown token found during evaluation of type: '+tokenHandleType);
-        }
-
-        const tryToFlagForAutoIndex = (testToken) => {
-            if(testToken.outputType === TokenHandleType.ARRAY){
-                if(testToken.instantiatorIndex !== undefined){
-                    expectedTokenMetadata[testToken.instantiatorIndex].inputElementsSeparately = true;
-                    console.log('array func set',testToken,testToken.instantiatorIndex,expectedTokenMetadata[testToken.instantiatorIndex]);
-                }
-                testToken.inputElementsSeparately = true;
-
-                const runtimeToken = tokens[testToken.index];
-                const elementType = runtimeToken.type === TokenType.VAR ? getVariable(runtimeToken.code).elementType : runtimeToken.elementType;
-
-                console.log('rttoken:',runtimeToken,elementType);
-
-                testToken.outputType = convertToHandleType(elementType,runtimeToken.code??runtimeToken.value); //?metadata
-                console.log('arg=>',testToken.outputType);
-            }
         }
 
         switch(tokenHandleType){
@@ -4180,7 +4243,7 @@ function testEvaluation(inputTokens, inputType, evalType){
 
                 const arg = solve.pop();
 
-                tryToFlagForAutoIndex(arg);
+                tryToFlagForAutoIndex(arg, true);
 
                 console.assert(arg.outputType !== undefined, token);
 
@@ -4193,8 +4256,8 @@ function testEvaluation(inputTokens, inputType, evalType){
                 const b = solve.pop();
                 const a = solve.pop();
 
-                tryToFlagForAutoIndex(a);
-                tryToFlagForAutoIndex(b);
+                tryToFlagForAutoIndex(a, true);
+                tryToFlagForAutoIndex(b, true);
 
                 if(a.outputType >= b.outputType){
                     token.outputType = a.outputType;
@@ -4214,12 +4277,16 @@ function testEvaluation(inputTokens, inputType, evalType){
                 for(let i = 0; i < popCount; i++){
                     const popped = solve.pop();
 
-                    tryToFlagForAutoIndex(popped);
-                    
+                    tryToFlagForAutoIndex(popped, true);
+
                     args.push(popped);
                     argTypes.push(popped.outputType)
                     argElemTypes.push(popped.elementType);
                 }
+
+                // for(let i=0; i<popCount; i++){
+                //     tryToFlagForAutoIndex(args[i],true,)
+                // }
 
                 token.outputType = outputTypeOfFunction(token.code, argTypes);
 
@@ -4227,12 +4294,14 @@ function testEvaluation(inputTokens, inputType, evalType){
                     //mark result as "creator: (array index in compiled token stack)""
                     //...result array gets binary operated on --> mark this array function as 'inputElementsSeparately=true'
 
-                const instantiatorIndex = token.code === FuncCode.ARRAY ? token.index : undefined;
+                const instantiatorIndex = FuncInfoByCode[token.code].returnType === TokenHandleType.ARRAY ? token.index : undefined;
+
+                console.warn('inst. index:',instantiatorIndex);
 
                 let solvepush = {outputType: token.outputType, instantiatorIndex: instantiatorIndex, index: token.index};
                 if(token.outputType === TokenHandleType.ARRAY || token.code === FuncCode.ARRAY) {
                     solvepush.elementType = outputTypeOfFunction(token.code,argElemTypes);
-                    token.elementType = outputTypeOfFunction(token.code,argElemTypes);
+                    token.elementType = argTypes[0]; //??
                 }
 
                 console.log('pushin: ', solvepush);
@@ -4241,7 +4310,7 @@ function testEvaluation(inputTokens, inputType, evalType){
                 expectedTokenMetadata.push({ outputType: token.outputType, variantCode: newFuncInputInfoObject(argTypes, token.code, token.attributes) });
 
                 //if last token and is Array() function, set input elements separately to true
-                if(i===tokens.length-1 && instantiatorIndex !== undefined) expectedTokenMetadata[instantiatorIndex].inputElementsSeparately = true;
+                //if(i===tokens.length-1 && instantiatorIndex !== undefined) expectedTokenMetadata[instantiatorIndex].inputElementsSeparately = true;
                 break;
             default:
                 console.error('unknown token handle type: ', tokenHandleType);
@@ -4251,7 +4320,7 @@ function testEvaluation(inputTokens, inputType, evalType){
 
     if(solve.length !== 1) throw new Error('Invalid expression.');
 
-    //if(solve[0].)
+    tryToFlagForAutoIndex(solve[0]);
 
     let wantedResultType = TokenType.NUL; //default, whatever is returned
     if(evalType === ExpressionType.EXP_F_X || evalType === ExpressionType.EXP_F_Y){
