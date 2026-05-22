@@ -9,7 +9,21 @@ export function convertTokenToLatex(token){
         case TokenType.NUM: 
             let r = token.value;
 
-            return convertRealToString(r);
+            const uncertainty = token.uncertainty ?? 0;
+            const asPercent = token.interpret === 'pct';
+            const asRadians = token.interpret === 'rad';
+
+            const strUncertainty = uncertainty == 0 ? '' : '±'+(asPercent ? uncertainty*100+'%' : uncertainty);
+
+            if(asPercent) return convertRealToString(r*100)+'%';
+            else if(asRadians) return 
+
+            const str = convertRealToString(r);
+            if(token.uncertainty !== undefined){
+                return str+'±'+token.uncertainty;
+            }
+
+            return str;
         case TokenType.CMPLX:
             let a = token.value[0];
             let b = token.value[1];

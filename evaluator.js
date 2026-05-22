@@ -2373,6 +2373,7 @@ function generateOperatorMethodExpressionBetweenSoloTypes(opcode,left,right,eval
                 return k;
                 break;
             case TokenHandleType.COMPLEX:
+                const fnComplex = generateComplexFunctionMethodExpression(opcode);
                 return (b,a) => {
                     console.assert(a.type === TokenType.ARRAY);
 
@@ -3096,6 +3097,7 @@ export function compileExpression(expression) {
                 if(unBracketedFuncArg){
                     argCountStack.pop();
                     unBracketedFuncArg = false;
+                    
                 }
 
                 break;
@@ -3105,13 +3107,7 @@ export function compileExpression(expression) {
 
                 //log("value.code = ", OpInfoByCode[value.code]);
 
-                if(unBracketedFuncArg){
-                    console.assert(operators.length > 0);
-                    outputs.push(operators.pop);
-
-                    argCountStack.pop();
-                    unBracketedFuncArg = false;
-                }
+                
 
                 const op = OpInfoByCode[value.code]
                 const opPrecedence = op.precedence;
@@ -3142,6 +3138,15 @@ export function compileExpression(expression) {
                 }
 
                 operators.push(value);
+
+                if(unBracketedFuncArg){
+                    console.log('unbracketedFuncArg',operators[operators.length-1])
+                    console.assert(operators.length > 0);
+                    outputs.push(operators.pop);
+
+                    argCountStack.pop();
+                    unBracketedFuncArg = false;
+                }
                 break;
 
             case TokenType.FUNC: //function
