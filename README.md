@@ -8,6 +8,8 @@ Omega is a graphing software that supports:
 - Variable definition
 - Uncertainty propagation with both absolute and percentage uncertainty
 
+Try it out [here](https://acteonkay.github.io/Omega-Graphing-Calculator/).
+
 ## How to Use
 
 Using the calculator is simple. But here are a few tips: 
