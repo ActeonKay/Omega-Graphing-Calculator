@@ -156,7 +156,7 @@
     const fpsDisplay = document.getElementById('fps');
 
     // --- Options ---
-    const showQuadOutlines = true;
+    const showQuadOutlines = false;
     const doQuadTooltip = false;
     let quadSelected = []; //[x,y,w,h]
     const maxQuads = 4096;
@@ -177,7 +177,9 @@
     let currentColor = "";
 
     // --- Graph Setup ---
-    let scaleFactor = 3;
+    let scaleX = 6; //How many units across the screen is horizontally
+    let scaleY = scaleX * (window.innerHeight / window.innerWidth); //How many units across the screen is vertically
+
     let offsetX = 0.00000001;
     let offsetY = 0.00000001;
     let isDragging = false;
@@ -944,19 +946,19 @@
     }
 
     function toGraphCoordsX(x){
-        return ((x-window.innerWidth/2)*(3/window.innerWidth)-offsetX)*scaleFactor;
+        return (x/window.innerWidth-0.5)*scaleX+offsetX;
     }
 
     function toGraphCoordsY(y){
-      return -((y-window.innerHeight/2)*(3/window.innerWidth)-offsetY)*scaleFactor;
+        return (0.5-y/window.innerHeight)*scaleY+offsetY;
     }
 
     function toScreenCoordsX(x) {
-        return ((x/scaleFactor)+offsetX)*(window.innerWidth/3)+window.innerWidth/2;
+        return ((x-offsetX)/(scaleX)+0.5)*window.innerWidth;
     }
 
     function toScreenCoordsY(y) {
-        return (-(y/scaleFactor)+offsetY)*(window.innerWidth/3)+window.innerHeight/2;
+        return (-(y-offsetY)/(scaleY)+0.5)*window.innerHeight;
     }
 
     function evaluateQuad(quad){
@@ -1040,7 +1042,7 @@
       const minX = toGraphCoordsX(0);
       const maxX = toGraphCoordsX(window.innerWidth);
 
-      const image = generateImageForCartesianImplicit(expr, minX, maxX, minY, maxY, scaleFactor);
+      const image = generateImageForCartesianImplicit(expr, minX, maxX, minY, maxY, scaleX, scaleY);
       const instructions = image.instructions;
 
       drawFromInstructions(instructions,expr.color);
@@ -1080,6 +1082,12 @@
       for(let i = 0; i < instructions.length; i++){
         const instruction = instructions[i];
 
+        // if(instruction[0] == null){
+        //   console.assert(instruction.length === 2);
+
+        //   ctx.strokeStyle = instruction[1]
+        // }
+
         let x = toScreenCoordsX(instruction[1]);
         let y = toScreenCoordsY(instruction[2]);
 
@@ -1108,7 +1116,7 @@
       const minX = toGraphCoordsX(0);
       const maxX = toGraphCoordsX(window.innerWidth);
 
-      const image = generateImageForCartesianYofX(expr, minX, maxX, window.innerWidth, minY, maxY, scaleFactor);
+      const image = generateImageForCartesianYofX(expr, minX, maxX, window.innerWidth, minY, maxY, scaleX, scaleY);
       const instructions = image.instructions;
 
       drawFromInstructions(instructions,expr.color);
@@ -1184,7 +1192,7 @@
       const minY = toGraphCoordsY(0);
       const maxY = toGraphCoordsY(window.innerHeight);
 
-      const image = generateImageForCartesianXofY(expr, maxY, minY, window.innerHeight, minX, maxX, scaleFactor);
+      const image = generateImageForCartesianXofY(expr, maxY, minY, window.innerHeight, minX, maxX, scaleX, scaleY);
       const instructions = image.instructions;
 
       drawFromInstructions(instructions,expr.color);
@@ -1571,40 +1579,34 @@
         }
     }
 
+    function floorPow(x){
+        return Math.pow(10, Math.floor(Math.log10(x)));
+    }
+
     function majorGridScaleToNiceMultiple(scale){
-        let scaleMagnitude = Math.log10(scale);
-        let scaleToRoundedRatio = scale / Math.pow(10,Math.floor(scaleMagnitude));
-        if(scaleToRoundedRatio > 5){
-            //scalefactor is 5x more than floored magnitude
-            //const minorGridScale = Math.pow(10, Math.floor(scaleMagnitude));
-            return Math.pow(10, Math.floor(scaleMagnitude))*5;
-        }
+        let flooredMagnitude = Math.floor(Math.log10(scale));
+        let scaleToRoundedRatio = scale / Math.pow(10,flooredMagnitude);
+        let baseScale = Math.pow(10, flooredMagnitude);
 
-        if(scaleToRoundedRatio > 2){
-            //const minorGridScale = Math.pow(10, Math.floor(scaleMagnitude))/2;
-            return Math.pow(10, Math.floor(scaleMagnitude))*2;
-        }
+        //scale is 5x more than floored magnitude
+        if(scaleToRoundedRatio > 5) return baseScale*5;
 
-        //const minorGridScale = Math.pow(10, Math.floor(scaleMagnitude))/5;
-        return Math.pow(10, Math.floor(scaleMagnitude));
+        if(scaleToRoundedRatio > 2) return baseScale*2;
+
+        return baseScale;
     }
 
     function minorGridScaleToNiceMultiple(scale){
-        let scaleMagnitude = Math.log10(scale);
-        let scaleToRoundedRatio = scale / Math.pow(10,Math.floor(scaleMagnitude));
-        if(scaleToRoundedRatio > 5){
-            //scalefactor is 5x more than floored magnitude
-            return Math.pow(10, Math.floor(scaleMagnitude));
-            //return Math.pow(10, Math.floor(scaleMagnitude))*5;
-        }
+        let flooredMagnitude = Math.floor(Math.log10(scale));
+        let scaleToRoundedRatio = scale / Math.pow(10,flooredMagnitude);
+        let baseScale = Math.pow(10, flooredMagnitude);
 
-        if(scaleToRoundedRatio > 2){
-            return Math.pow(10, Math.floor(scaleMagnitude))/2;
-            //return Math.pow(10, Math.floor(scaleMagnitude))*2;
-        }
+        //scale is 5x more than floored magnitude
+        if(scaleToRoundedRatio > 5) return baseScale;
 
-        return Math.pow(10, Math.floor(scaleMagnitude))/5;
-        //return Math.pow(10, Math.floor(scaleMagnitude));
+        if(scaleToRoundedRatio > 2) return baseScale/2;
+
+        return baseScale/5;
     }
 
     function drawGrid() {
@@ -1622,28 +1624,39 @@
         const graphBottom = toGraphCoordsY(window.innerHeight);
 
         //Compute grid spacing in graph units
-        let scaleMagnitude = Math.log10(scaleFactor);
-
-        /*if(Math.pow(10,(scaleMagnitude % 1)) > 5){
-            scaleMagnitude = Math.floor(scaleMagnitude) * Math.log10(5);
-        }*/
+        let scaleMagnitudeX = Math.log10(scaleX);
+        let scaleMagnitudeY = Math.log10(scaleY);
 
         const xAxis = toScreenCoordsY(0);
         const yAxis = toScreenCoordsX(0);
 
+        //Adjust grid line density based on aspect ratio
+        let xRatio = 1;
+        let yRatio = 1;
+        if(window.innerHeight > window.innerWidth){
+          xRatio = window.innerHeight/window.innerWidth;
+        } else {
+          yRatio = window.innerWidth/window.innerHeight;
+        }
+
         //MINOR GRID LINES ----------
         ctx.lineWidth = 0.5;
 
-        const minorGridScale = minorGridScaleToNiceMultiple(scaleFactor*gridLineDensity);
+        const minorGridScaleX = minorGridScaleToNiceMultiple(scaleX*gridLineDensity/yRatio);
+        const minorGridScaleY = minorGridScaleToNiceMultiple(scaleY*gridLineDensity/xRatio);
 
-        const startXMinor = Math.floor(graphLeft / minorGridScale) * minorGridScale;
-        const endXMinor   = Math.ceil(graphRight / minorGridScale) * minorGridScale;
-        const startYMinor = Math.floor(graphBottom / minorGridScale) * minorGridScale;
-        const endYMinor   = Math.ceil(graphTop / minorGridScale) * minorGridScale;
+        if(minorGridScaleX <= 0 || minorGridScaleY <= 0){
+          throw new Error('minorGridScaleX/Y is <= 0',minorGridScaleX,minorGridScaleY);
+        }
+
+        const startXMinor = Math.floor(graphLeft / minorGridScaleX) * minorGridScaleX;
+        const endXMinor   = Math.ceil(graphRight / minorGridScaleX) * minorGridScaleX;
+        const startYMinor = Math.floor(graphBottom / minorGridScaleY) * minorGridScaleY;
+        const endYMinor   = Math.ceil(graphTop / minorGridScaleY) * minorGridScaleY;
 
         //Draw minor vertical grid lines
         ctx.beginPath();
-        for (let gx = startXMinor; gx <= endXMinor; gx += minorGridScale) {
+        for(let gx = startXMinor; gx <= endXMinor; gx += minorGridScaleX) {
             const sx = toScreenCoordsX(gx);
             ctx.moveTo(sx, 0);
             ctx.lineTo(sx, window.innerHeight);
@@ -1652,7 +1665,7 @@
 
         //Draw minor horizontal grid lines
         ctx.beginPath();
-        for (let gy = startYMinor; gy <= endYMinor; gy += minorGridScale) {
+        for(let gy = startYMinor; gy <= endYMinor; gy += minorGridScaleY) {
             const sy = toScreenCoordsY(gy);
             ctx.moveTo(0, sy);
             ctx.lineTo(window.innerWidth, sy);
@@ -1662,13 +1675,14 @@
         //MAJOR GRID LINES ----------
         ctx.lineWidth = 1;
 
-        const majorGridScale = majorGridScaleToNiceMultiple(scaleFactor*gridLineDensity);
+        const majorGridScaleX = majorGridScaleToNiceMultiple(scaleX*gridLineDensity/yRatio);
+        const majorGridScaleY = majorGridScaleToNiceMultiple(scaleY*gridLineDensity/xRatio);
         //console.log('majorGridScale',majorGridScale);
 
-        const startX = Math.floor(graphLeft / majorGridScale) * majorGridScale;
-        const endX   = Math.ceil(graphRight / majorGridScale) * majorGridScale;
-        const startY = Math.floor(graphBottom / majorGridScale) * majorGridScale;
-        const endY   = Math.ceil(graphTop / majorGridScale) * majorGridScale;
+        const startX = Math.floor(graphLeft / majorGridScaleX) * majorGridScaleX;
+        const endX   = Math.ceil(graphRight / majorGridScaleX) * majorGridScaleX;
+        const startY = Math.floor(graphBottom / majorGridScaleY) * majorGridScaleY;
+        const endY   = Math.ceil(graphTop / majorGridScaleY) * majorGridScaleY;
 
         let labelY = xAxis - 8;
         if(labelY < 20) labelY = 20 ;
@@ -1682,7 +1696,7 @@
         ctx.font = "15px Tahoma";
 
         //Draw vertical grid lines
-        for (let gx = startX; gx <= endX; gx += majorGridScale) {
+        for (let gx = startX; gx <= endX; gx += majorGridScaleX) {
             const sx = toScreenCoordsX(gx);
             ctx.moveTo(sx, 0);
             ctx.lineTo(sx, window.innerHeight);
@@ -1691,7 +1705,7 @@
 
             let text = Math.round(gx*1_000_000)/1_000_000; //Math.f16round
 
-            ctx.fillText(text, sx+4, labelY, 0.25*majorGridScale*window.innerWidth/scaleFactor);
+            ctx.fillText(text, sx+4, labelY, 0.25*majorGridScaleX*window.innerWidth/scaleX);
         }
 
         ctx.stroke();
@@ -1700,14 +1714,14 @@
         ctx.font = "15px Tahoma";
 
         //Draw horizontal grid lines
-        for (let gy = startY; gy <= endY; gy += majorGridScale) {
+        for (let gy = startY; gy <= endY; gy += majorGridScaleY) {
             const sy = toScreenCoordsY(gy);
             ctx.moveTo(0, sy);
             ctx.lineTo(window.innerWidth, sy);
 
             let text = Math.round(gy*1_000_000)/1_000_000;
 
-            ctx.fillText(text, labelX, sy-8, 0.25*majorGridScale*window.innerWidth/scaleFactor);
+            ctx.fillText(text, labelX, sy-8, 0.25*majorGridScaleY*window.innerWidth/scaleY);
         }
 
         ctx.stroke();
@@ -1738,6 +1752,7 @@
     // Dragging (panning) functionality
     canvas.addEventListener('mousedown', (e) => {
       isDragging = true;
+
       lastMouseX = e.clientX;
       lastMouseY = e.clientY;
       canvas.style.cursor = 'grabbing';
@@ -1745,10 +1760,15 @@
 
     canvas.addEventListener('mousemove', (e) => {
       if (!isDragging) return;
-      const dx = e.clientX - lastMouseX;
-      const dy = e.clientY - lastMouseY;
-      offsetX += (dx*(3/window.innerWidth)*1);
-      offsetY += (dy*(3/window.innerWidth)*1);
+
+      offsetX += (lastMouseX - e.clientX)*(scaleX)/window.innerWidth;
+      offsetY += (e.clientY - lastMouseY)*(scaleY)/window.innerHeight;
+
+      // const dx = e.clientX - lastMouseX;
+      // const dy = e.clientY - lastMouseY;
+
+      // offsetX = (dx*(3/window.innerWidth)*1);
+      // offsetY = (dy*(3/window.innerWidth)*1);
       lastMouseX = e.clientX;
       lastMouseY = e.clientY;
       //if(dx == 0 && dy == 0) return;
@@ -1771,40 +1791,23 @@
     canvas.addEventListener('wheel', (e) => {
         e.preventDefault(); // prevent page scroll
 
+        if(isDragging) return;
+
         const zoomSpeed = 1.07; // how fast to zoom
         const mouseGraphX = toGraphCoordsX(e.offsetX);
         const mouseGraphY = toGraphCoordsY(e.offsetY);
-        const mantissaLength = 23; // 52
+        const mantissaLength = 23; // 52?
 
-        if (e.deltaY < 0) {
-            // scroll down = zoom out
+        //find new offset x and offset y such that with the updated scale, the point under the mouse remains fixed in screen space
 
-            
-            offsetX *= 1/zoomSpeed;
-            offsetY *= 1/zoomSpeed;
-            scaleFactor *= zoomSpeed;
-        } else {
-            let xPrecision = 2**(Math.floor(Math.log2(offsetX))-(mantissaLength)); 
-            let yPrecision = 2**(Math.floor(Math.log2(offsetY))-(mantissaLength)); 
+        let newScaleX = scaleX * (e.deltaY < 0 ? 1/zoomSpeed : zoomSpeed);
+        let newScaleY = scaleY * (e.deltaY < 0 ? 1/zoomSpeed : zoomSpeed);
 
-            let newScaleFactor = scaleFactor / zoomSpeed;
-
-            //console.log('scaledata:',scaleFactor,newScaleFactor,xPrecision,yPrecision);
-
-            if(newScaleFactor < xPrecision) newScaleFactor = xPrecision;
-            if(newScaleFactor < yPrecision) newScaleFactor = yPrecision;
-
-            offsetX *= scaleFactor/newScaleFactor;
-            offsetY *= scaleFactor/newScaleFactor;
-            scaleFactor = newScaleFactor;
-        }
-
-        // Optional: zoom centered on mouse position
-        // Adjust offsets so the point under the mouse stays fixed in screen space
-        /*const newMouseScreenX = toScreenCoordsX(mouseGraphX);
-        const newMouseScreenY = toScreenCoordsY(mouseGraphY);
-        offsetX += e.offsetX - newMouseScreenX;
-        offsetY += e.offsetY - newMouseScreenY;*/
+        offsetX = mouseGraphX - (mouseGraphX - offsetX) * (newScaleX / scaleX);
+        offsetY = mouseGraphY - (mouseGraphY - offsetY) * (newScaleY / scaleY);
+        
+        scaleX = newScaleX;
+        scaleY = newScaleY;
 
         draw();
     }, { passive: false });
@@ -1840,23 +1843,19 @@
     document.getElementById('zoomIn').addEventListener('click', () => {
       const mantissaLength = 23; // 52
 
-      xPrecision = 2**(Math.floor(Math.log2(offsetX))-(mantissaLength)); 
-      yPrecision = 2**(Math.floor(Math.log2(offsetY))-(mantissaLength)); 
+      // xPrecision = 2**(Math.floor(Math.log2(offsetX))-(mantissaLength)); 
+      // yPrecision = 2**(Math.floor(Math.log2(offsetY))-(mantissaLength)); 
 
-      if(scaleFactor / 1.4142135 < xPrecision || scaleFactor / 1.4142135 < yPrecision) return;
+      // if(scaleX / 1.4142135 < xPrecision || scaleY / 1.4142135 < yPrecision) return;
       
-      scaleFactor /= 1.4142135;
-        offsetX *= 1.4142135;
-        offsetY *= 1.4142135;
-        //console.log('Zoom changed to' + scaleFactor);
-        draw();
+      scaleX /= 1.4142135;
+      scaleY /= 1.4142135;
+      draw();
     });
 
     document.getElementById('zoomOut').addEventListener('click', () => {
-        scaleFactor *= 1.4142135;
-        offsetX /= 1.4142135;
-        offsetY /= 1.4142135;
-        //console.log('Zoom changed to' + scaleFactor);
+        scaleX *= 1.4142135;
+        scaleY *= 1.4142135;
         draw();
     });
 
@@ -1866,6 +1865,12 @@
 
     document.getElementById('closeHelpMenu').addEventListener('click', () => {
       document.getElementById('modal').classList.remove('open');
+    });
+
+    document.getElementById('modal').addEventListener('click', (e) => {
+      if(e.target === document.getElementById('modal')){
+        document.getElementById('modal').classList.remove('open');
+      }
     });
 
     document.getElementById('settings').addEventListener('click', () => {

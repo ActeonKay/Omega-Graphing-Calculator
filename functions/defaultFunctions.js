@@ -1,3 +1,87 @@
+export const FuncCode = {
+    FRAC: 100, //maybe temporary
+    SIN: 101,
+    COS: 102,
+    TAN: 103,
+    SEC: 104,
+    CSC: 105,
+    COT: 106,
+    ASIN: 107,
+    ACOS: 108,
+    ATAN: 109,
+    ASEC: 110,
+    ACSC: 111,
+    ACOT: 112,
+    SINH: 113,
+    COSH: 114,
+    TANH: 115,
+    SECH: 116,
+    CSCH: 117,
+    COTH: 118,
+    ASINH: 119,
+    ACOSH: 120,
+    ATANH: 121,
+    ASECH: 122,
+    ACSCH: 123,
+    ACOTH: 124,
+    GD: 125,
+    LAM: 126,
+    ABS: 127,
+    SIGN: 128,
+    FLOOR: 129,
+    CEIL: 130,
+    ROUND: 131,
+    TRUNC: 132,
+    MOD: 133,
+    MIN: 134,
+    MAX: 135,
+    AVG: 136,
+    MED: 137,
+    MODE: 138,
+    EXP: 139,
+    LN: 140,
+    LOG: 141,
+    LOGN: 142,
+    SQRT: 143,
+    CBRT: 144,
+    NTHRT: 145,
+    GAMMA: 146,
+    DGAMA: 147,
+    PGAMA: 148,
+    ZETA: 149,
+    ATAN2: 150,
+    REAL: 151,
+    IMAG: 152,
+    CONJ: 153,
+    ABSCP: 154, //complex abs()
+    ARG: 155, //complex argument = atan2(b,a)
+    AMPL: 156, //amplitude or modulus of complex number
+    SINC: 157,
+    ARRAY: 158,
+    TUPLE: 159,
+    BINOM: 160,
+    IN: 161, //∈
+    NOTIN: 162, //∉
+    FACTOR: 163,
+    CIS: 164,
+
+    D_NORM: 170,
+    D_BINM: 171
+}
+
+export const FuncArgumentSchema = {
+    1: { required: true, acceptedTypes: []}
+}
+
+export const defaultFunctions = new Map([
+    [FuncCode.FRAC, { symbol: "frac", code: FuncCode.FRAC, staticArgs: true, args: 2, inputType: FuncArgumentInputType.ALL_NUMERIC, returnType: TokenHandleType.REAL }],
+    [FuncCode.SIN, { symbol: "sin", code: FuncCode.SIN, staticArgs: false, args: 1, inputType: FuncArgumentInputType.ALL_NUMERIC, returnType: TokenHandleType.REAL }],
+    [FuncCode.COS, { symbol: "cos", code: FuncCode.COS, staticArgs: false, args: 1, inputType: FuncArgumentInputType.ALL_NUMERIC, returnType: TokenHandleType.REAL }],
+    [FuncCode.TAN, { symbol: "tan", code: FuncCode.TAN, staticArgs: false, args: 1, inputType: FuncArgumentInputType.ALL_NUMERIC, returnType: TokenHandleType.REAL }],
+    [FuncCode.SEC, { symbol: "sec", code: FuncCode.SEC, staticArgs: false, args: 1, inputType: FuncArgumentInputType.ALL_NUMERIC, returnType: TokenHandleType.REAL }],
+    [FuncCode.CSC, { symbol: "csc", code: FuncCode.CSC, staticArgs: false, args: 1, inputType: FuncArgumentInputType.ALL_NUMERIC, returnType: TokenHandleType.REAL }],
+]);
+
 export function gamma(n) {
     if(n-Math.floor(n) === 0 && n<=0) return undefined; 
     //console.log("N",n);

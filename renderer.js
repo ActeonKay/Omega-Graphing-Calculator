@@ -21,13 +21,15 @@ class ExpressionImage{
     instructions;
     x;
     y;
-    scale;
+    scaleX;
+    scaleY;
 
-    constructor(instructions,x,y,scale){
+    constructor(instructions,x,y,scaleX,scaleY){
         this.instructions=instructions;
         this.x=x;
         this.y=y;
-        this.scale=scale;
+        this.scaleX=scaleX;
+        this.scaleY=scaleY;
     }
 }
 
@@ -46,13 +48,14 @@ function getInstructionFrom(hideLine,x,y,depth){
     return [hideLine,x,y,depth];
 }
 
-export function generateImageForCartesianYofX(expression, minX, maxX, xCount, viewMinY, viewMaxY, viewScale){
+export function generateImageForCartesianYofX(expression, minX, maxX, xCount, viewMinY, viewMaxY, scaleX, scaleY){
     if(!expression.tokens.some((t) => t.inputElementsSeparately === true)){
         return new ExpressionImage(
-            generateInstructionsForCartesianYofX(expression, -1, minX, maxX, xCount, viewMinY, viewMaxY, viewScale),
+            generateInstructionsForCartesianYofX(expression, -1, minX, maxX, xCount, viewMinY, viewMaxY, scaleX, scaleY),
             (minX + maxX)*0.5,
             (viewMinY + viewMaxY)*0.5,
-            viewScale
+            scaleX,
+            scaleY
         );
     }
 
@@ -69,7 +72,7 @@ export function generateImageForCartesianYofX(expression, minX, maxX, xCount, vi
 
     let instructions = [];
     for(let k = 0; k<n; k++){
-        let instructionsAtK = generateInstructionsForCartesianYofX(expression, k, minX, maxX, xCount, viewMinY, viewMaxY, viewScale);
+        let instructionsAtK = generateInstructionsForCartesianYofX(expression, k, minX, maxX, xCount, viewMinY, viewMaxY, scaleX, scaleY);
         instructions = instructions.concat(instructionsAtK);
     }
 
@@ -79,13 +82,14 @@ export function generateImageForCartesianYofX(expression, minX, maxX, xCount, vi
         instructions,
         (minX + maxX)*0.5,
         (viewMinY + viewMaxY)*0.5,
-        viewScale
+        scaleX,
+        scaleY
     );
 }
 
 //instructions array of Action objects
 // Action = {shouldDraw: bool, x: float, y: float}
-export function generateInstructionsForCartesianYofX(expression, arrayIndex, minX, maxX, xCount, viewMinY, viewMaxY, viewScale){
+export function generateInstructionsForCartesianYofX(expression, arrayIndex, minX, maxX, xCount, viewMinY, viewMaxY, scaleX, scaleY){
     let instructions = [];
 
     const dx = (maxX-minX)/xCount;
@@ -168,7 +172,7 @@ export function generateInstructionsForCartesianYofX(expression, arrayIndex, min
     return instructions;
 }
 
-export function generateImageForCartesianXofY(expression, minY, maxY, yCount, viewMinX, viewMaxX, viewScale){
+export function generateImageForCartesianXofY(expression, minY, maxY, yCount, viewMinX, viewMaxX, scaleX, scaleY){
     let instructions = [];
 
     const dy = (maxY-minY)/yCount;
@@ -187,7 +191,8 @@ export function generateImageForCartesianXofY(expression, minY, maxY, yCount, vi
             ],
             (viewMinX+viewMaxX)*0.5,
             (minY+maxY)*0.5,
-            viewScale
+            scaleX,
+            scaleY
         );
     }
 
@@ -245,11 +250,12 @@ export function generateImageForCartesianXofY(expression, minY, maxY, yCount, vi
         instructions,
         (viewMinX+viewMaxX)*0.5,
         (minY+maxY)*0.5,
-        viewScale
+        scaleX,
+        scaleY
     );
 }
 
-export function generateImageForCartesianImplicit(expression, minX, maxX, minY, maxY, viewScale){
+export function generateImageForCartesianImplicit(expression, minX, maxX, minY, maxY, scaleX, scaleY){
     //console.log(minX,maxX,minY,maxY);
     //first, subdivide 5 times (32x32 grid)
     const rows = 32;
@@ -430,6 +436,24 @@ export function generateImageForCartesianImplicit(expression, minX, maxX, minY, 
     //console.log(segments);
 
     let instructions = [];
+
+    //Cannot seem to print vertical lines as expected.
+    // for(let i = 0; i < columns; i++){
+    //     const x = minX + (width/32)*rowOfIndex(i);
+    //     //instructions.push(colorTo(0,0,0,0.1));
+    //     instructions.push(moveTo(x,maxY));
+    //     instructions.push(lineTo(x,minY));
+    // }
+    // console.log(instructions);
+
+    // //Unbalanced horizontal lines ??
+    // for(let i = 0; i < rows; i++){
+    //     const y = maxY - (height/32)*columnOfIndex(i);
+    //     //instructions.push(colorTo(0,0,0,0.1));
+    //     instructions.push(moveTo(minX,y));
+    //     instructions.push(lineTo(maxX,y));
+    // }
+
     for(let i = 0; i < segments.length; i++){
         const segment = segments[i];
         for(let j = 0; j < segment.length; j++){
@@ -457,7 +481,8 @@ export function generateImageForCartesianImplicit(expression, minX, maxX, minY, 
         instructions,
         (minX+maxX)*0.5,
         (minY+maxY)*0.5,
-        viewScale
+        scaleX,
+        scaleY
     );
 }
 
@@ -516,7 +541,7 @@ function getInstructionFromQuadReturn(quad, x, y, w, h){
             return [
                 moveTo(x + w, interp(y + h, y, v11, v10)),
                 lineTo(interp(x, x + w, v00, v10), y)
-            ]
+            ];
         case 5: case 10:
             return [
                 moveTo(x, interp(y + h, y, v01, v00)),
@@ -531,10 +556,15 @@ function getInstructionFromQuadReturn(quad, x, y, w, h){
             ];
         case 7: case 8:
             return [
+                colorTo(255,0,0,0.5),
                 moveTo(interp(x, x + w, v00, v10), y),
                 lineTo(x, interp(y + h, y, v01, v00))
             ];
         default:
+            // return [
+            //     moveTo(0,0),
+            //     lineTo(x,y)
+            // ];
             return null;
             //console.log(index);
             break;
@@ -552,4 +582,8 @@ function moveTo(x,y){
 
 function lineTo(x,y){
     return [false, x,y];
+}
+
+function colorTo(r,g,b,a){
+    return [null, `rgba(${r},${g},${b},${a})`];
 }
