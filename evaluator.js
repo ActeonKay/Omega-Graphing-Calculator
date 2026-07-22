@@ -659,10 +659,30 @@ const operators = ['+','-','_','^'];
     //   commands with modifier
     //     \sqrt[]{}
 
+// ---------------- Token Standards ----------------
+//Depending on the complexity of the calculation needed and necessary information, 
+//we can employ different standards for token structures
 
-//token:
-//{type: int, value: int, edge: [][], attributes: []}
+//token: 1L
+//Used in parsing of latex
+//{type: int, str: string}
+
+//token: 1A
+//Used in simplest calculations, or after a process has been simplified
+//int|float
+
+//token: 1B
+//{type: int, value: int|float, uncertainty: int|float, edge: [][], attributes: [], interpret: string, outputType: int}
 //{type: 4bits, 64bitint / 64*4=256bit quad, edge: 4bits*3things*4edges=48bits, attributes: [pow: 64bitint, sub: 64bitint]}
+
+//token: 2A
+//??
+
+//token 2B
+//{type: int[], value: mixed, ?meta: {}}
+//realNum = {type: [Ids.Real], value: 2, meta: {}}
+//complexNum = {type: [Ids.Tuple2, Ids.Real], value: [{type: Ids.Real, value: 2}, {type: Ids.Real, value: -1}], meta: {interpret: Ids.Complex}}
+//defaultFunction = {type: [Ids.Function, Ids.ReturnType], value: (x) => Math.sin(x), meta: { attributes: [], returnType: int}}
 
 //expression = {
 // type: number, 
@@ -919,9 +939,7 @@ export function tokenizeLatexExpression(latex, oldExpression){
             }
 
             if(tryString === '\\operatorname'){
-                //i++;
                 console.assert(latex.charAt(i) === '{');
-                //i++;
 
                 tryString = '';
                 i++;
@@ -932,7 +950,6 @@ export function tokenizeLatexExpression(latex, oldExpression){
                 }
 
                 pushToken(LatexTokenType.COMMAND);
-
                 continue;
             }
 
@@ -1331,7 +1348,7 @@ export function latexToTokenObjects(latexTokens){
     for(let i = 1; i < latexTokens.length; i++){
         const prev = compilerTokens[compilerTokens.length-1];
         const current = latexTokens[i];
-        const str = current.str;
+        const str = current.str; 
 
         //invalid: 
         // +- must have on left one of: number, ) and on right: number, (
@@ -1392,7 +1409,10 @@ export function latexToTokenObjects(latexTokens){
                         continue;
                     }
 
+                    //Check for cases like \sin^2(x)
                     if(op.code === OpCode.POW && prev.type === TokenType.FUNC){
+                        //TODO: currently handles poorly. Should be added to the call stack as a separate token
+
                         console.assert(latexTokens[i+1].type === LatexTokenType.NUMBER);
 
                         prev.attributes.set(AttributiveCode.POWER, parseFloat(latexTokens[i+1].str));
@@ -1401,6 +1421,7 @@ export function latexToTokenObjects(latexTokens){
                         continue;
                     }
 
+                    //Check for cases like \log_2(x)
                     if(op.code === OpCode.SUBS && prev.type === TokenType.FUNC){
                         //console.assert(latexTokens[i+1].type === LatexTokenType.NUMBER);
                         console.assert(latexTokens[i-1].str === 'log');
@@ -2883,6 +2904,8 @@ function generateStrictMethodExprForFunc(funcInputInfo, evalType, inputElementsS
  */
 function generateRealFunctionMethodExpression(funccode,funcInputInfo = undefined){
     if(funcInputInfo !== undefined){
+        //TODO: replace with adding the ^ operation to the stack
+
         const pow = funcInputInfo?.attributes?.get(AttributiveCode.POWER);
         if(pow !== undefined){
             const fn = generateRealFunctionMethodExpression(funccode);
@@ -3065,7 +3088,7 @@ export function compileExpression(expression) {
     let meta = 0; //number
 
     let argCountStack = []; //managing function args
-    let unBracketedFuncArg = false;
+    let unBracketedFuncArg = 0; //2: unbracketed function token, 1: unbracketed argument, 0: normal state
 
     let bracContext = []; //manage whether the current token is in (), [], {}, f(), ||, etc.
     let bracContextArgCount = [];
@@ -3094,24 +3117,39 @@ export function compileExpression(expression) {
                 outputs.push(value);
 
                 //functions without brackets surrounding their argument
-                if(unBracketedFuncArg){
+                if(unBracketedFuncArg == 1) {
+                    console.error("Multiple unseparated arguments passed to unbracketed function.");
+                }else if(unBracketedFuncArg == 2){
                     argCountStack.pop();
-                    unBracketedFuncArg = false;
-                    
+                    unBracketedFuncArg = 1;
                 }
 
                 break;
             case TokenType.OP:
+
+                const op = OpInfoByCode[value.code]
+                const opPrecedence = op.precedence;
+                const opAssociativity = op.associativity; // 'L' or 'R'
+
+                if(unBracketedFuncArg == 1){
+                    console.log('unbracketedFuncArg',operators[operators.length-1])
+                    console.assert(operators.length > 0);
+                    outputs.push(operators.pop());
+
+                    argCountStack.pop();
+                    unBracketedFuncArg = 0;
+                }else if(unBracketedFuncArg === 2){
+                    console.error("A function cannot be followed by an operator");
+                    break;
+                    //Could check for unary operators here, but seems too complicated
+                    //Ex: sin-x    =>   sin(-x)
+                }
+
                 //popPrefixOperators(operators); // %%POPPREFIX
                 //log("value: ",value);
 
                 //log("value.code = ", OpInfoByCode[value.code]);
 
-                
-
-                const op = OpInfoByCode[value.code]
-                const opPrecedence = op.precedence;
-                const opAssociativity = op.associativity; // 'L' or 'R'
 
                 while (operators.length > 0) {
                     const topOp = operators[operators.length - 1];
@@ -3139,14 +3177,7 @@ export function compileExpression(expression) {
 
                 operators.push(value);
 
-                if(unBracketedFuncArg){
-                    console.log('unbracketedFuncArg',operators[operators.length-1])
-                    console.assert(operators.length > 0);
-                    outputs.push(operators.pop);
 
-                    argCountStack.pop();
-                    unBracketedFuncArg = false;
-                }
                 break;
 
             case TokenType.FUNC: //function
@@ -3162,7 +3193,8 @@ export function compileExpression(expression) {
                 if(!(next.type === TokenType.BRKT && next.code % 2 === 1)){
                     if(value.argCount > 1) console.error("Multiple arguments passed to function without parenthesis");
 
-                    unBracketedFuncArg = true;
+                    console.log("unbracketed func arg");
+                    unBracketedFuncArg = 2;
                 }
 
                 operators.push(value);
@@ -3214,6 +3246,14 @@ export function compileExpression(expression) {
                     }
 
                     //log('starting popping', operators, operators.length);
+                    if(unBracketedFuncArg == 1){
+                        console.log('unbracketedFuncArg',operators[operators.length-1])
+                        console.assert(operators.length > 0);
+                        outputs.push(operators.pop());
+
+                        argCountStack.pop();
+                        unBracketedFuncArg = 0;
+                    }
 
                     while (operators.length > 0) {
                         const topOp = operators.pop();
@@ -3292,9 +3332,11 @@ export function compileExpression(expression) {
                 //append to list of unknowns that need to be replaced
 
                 //functions without brackets surrounding their argument
-                if(unBracketedFuncArg){
+                if(unBracketedFuncArg == 1) {
+                    console.error("Multiple unseparated arguments passed to unbracketed function.");
+                }else if(unBracketedFuncArg == 2){
                     argCountStack.pop();
-                    unBracketedFuncArg = false;
+                    unBracketedFuncArg = 1;
                 }
 
                 break;
@@ -3323,9 +3365,11 @@ export function compileExpression(expression) {
                 // }
 
                 //functions without brackets surrounding their argument
-                if(unBracketedFuncArg){
+                if(unBracketedFuncArg == 1) {
+                    console.error("Multiple unseparated arguments passed to unbracketed function.");
+                }else if(unBracketedFuncArg == 2){
                     argCountStack.pop();
-                    unBracketedFuncArg = false;
+                    unBracketedFuncArg = 1;
                 }
                 
                 break;
@@ -3334,10 +3378,12 @@ export function compileExpression(expression) {
             //     outputs.push(value); //value is replaced in real time
 
             //     //functions without brackets surrounding their argument
-            //     if(unBracketedFuncArg){
-            //         argCountStack.pop();
-            //         unBracketedFuncArg = false;
-            //     }
+            //      if(unBracketedFuncArg == 1) {
+            //          console.error("Multiple unseparated arguments passed to unbracketed function.");
+            //      }else if(unBracketedFuncArg == 2){
+            //          argCountStack.pop();
+            //          unBracketedFuncArg = 1;
+            //      }
 
             //     break;
             case TokenType.DELIM:
