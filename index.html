@@ -88,6 +88,20 @@
     </div>
   </div>
 
+  <!-- 
+    Triple dot button for each equation. 
+    Actions:
+    * Delete equation
+    * Change color
+    * View equation in reverse polish notation (stack)
+   -->
+    
+  <!-- <div class="menu" id="eq-peek-menu">
+    <div class="modal-inner">
+      <p>Equation preview</p>
+    </div>
+  </div> -->
+
   <div id="toggleBox">Equation</div>
   <div id="equationBox">
     <h1>Ω Omega</h1>
@@ -1400,21 +1414,10 @@
         const btmDif = Math.abs(v11-v01)*Math.SQRT1_2;
         const lftDif = Math.abs(v01-v00)*Math.SQRT1_2;
 
-        if(Math.abs(v00)<lftDif || Math.abs(v00)<topDif){
-          return true;
-        }
-
-        if(Math.abs(v10)<topDif || Math.abs(v10)<rgtDif){
-          return true;
-        }
-
-        if(Math.abs(v11)<rgtDif || Math.abs(v11)<btmDif){
-          return true;
-        }
-
-        if(Math.abs(v01)<btmDif || Math.abs(v01)<lftDif){
-          return true;
-        }
+        if(Math.abs(v00)<lftDif || Math.abs(v00)<topDif) return true;
+        if(Math.abs(v10)<topDif || Math.abs(v10)<rgtDif) return true;
+        if(Math.abs(v11)<rgtDif || Math.abs(v11)<btmDif) return true;
+        if(Math.abs(v01)<btmDif || Math.abs(v01)<lftDif) return true;
       }
 
       
@@ -1764,14 +1767,9 @@
       offsetX += (lastMouseX - e.clientX)*(scaleX)/window.innerWidth;
       offsetY += (e.clientY - lastMouseY)*(scaleY)/window.innerHeight;
 
-      // const dx = e.clientX - lastMouseX;
-      // const dy = e.clientY - lastMouseY;
-
-      // offsetX = (dx*(3/window.innerWidth)*1);
-      // offsetY = (dy*(3/window.innerWidth)*1);
       lastMouseX = e.clientX;
       lastMouseY = e.clientY;
-      //if(dx == 0 && dy == 0) return;
+
       update();
     });
 
@@ -1794,12 +1792,21 @@
         if(isDragging) return;
 
         const zoomSpeed = 1.07; // how fast to zoom
-        const mouseGraphX = toGraphCoordsX(e.offsetX);
-        const mouseGraphY = toGraphCoordsY(e.offsetY);
         const mantissaLength = 23; // 52?
+        //const xPrecision = 2**(Math.floor(Math.log2(offsetX))-(mantissaLength));
+        //const yPrecision = 2**(Math.floor(Math.log2(offsetY))-(mantissaLength));
 
-        //find new offset x and offset y such that with the updated scale, the point under the mouse remains fixed in screen space
+        let mouseGraphX = toGraphCoordsX(e.offsetX);
+        let mouseGraphY = toGraphCoordsY(e.offsetY);
 
+        const xAxis = toScreenCoordsX(0);
+        const yAxis = toScreenCoordsY(0);
+
+        //Zoom snapping to axes
+        if(e.offsetX-xAxis < 10 && e.offsetX-xAxis > -10) mouseGraphX = 0;
+        if(e.offsetY-yAxis < 10 && e.offsetY-yAxis > -10) mouseGraphY = 0;
+
+        //new offset x,y such that mouse position in graph coordinates remains the same
         let newScaleX = scaleX * (e.deltaY < 0 ? 1/zoomSpeed : zoomSpeed);
         let newScaleY = scaleY * (e.deltaY < 0 ? 1/zoomSpeed : zoomSpeed);
 

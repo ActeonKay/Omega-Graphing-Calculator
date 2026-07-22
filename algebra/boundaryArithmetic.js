@@ -25,6 +25,81 @@ class Boundary{
  * ]
  */
 
+export function generateBoundaryMethodExpression(code){
+    //ASSUMPTION: function and operator ids don't overlap
+
+    //inputs:
+    //for unary operator: a1, a2
+    //for binary operator: l1, l2, (two edges of left operand), r1, r2 (two edges of right operand)
+    //for functions: 
+
+    switch(code){
+        case OpCode.ADD:
+        case OpCode.SUB:
+        case OpCode.LT:
+        case OpCode.LTE:
+        case OpCode.GT:
+        case OpCode.GTE:
+        case OpCode.EQ:
+        case OpCode.NEQ:
+            return (l, r) => {
+                const [l1, l2, lBoundary] = l;
+                const [r1, r2, rBoundary] = r;
+
+                return [0, lBoundary[1]+rBoundary[1], lBoundary[2]+rBoundary[2]];
+            }
+        case OpCode.MUL:
+        case OpCode.AND:
+        case OpCode.OR:
+        case OpCode.XOR:
+            return (l, r) => {
+                const [l1, l2, lBoundary] = l;
+                const [r1, r2, rBoundary] = r;
+
+                let crosses = ((l1>0) != (l2>0)) ? 1 : 0 + ((r1>0) != (r2>0)) ? 1 : 0;
+                return [crosses+lBoundary[0]+lBoundary[1], lBoundary[1]+rBoundary[1], lBoundary[2]+rBoundary[2]];
+            }
+        case OpCode.DIV:
+            return (l, r) => {
+                const [l1, l2, lBoundary] = l;
+                const [r1, r2, rBoundary] = r;
+
+                let crosses = 0;
+                let holes = lBoundary[1]+rBoundary[1];
+                let jumps = lBoundary[2]+rBoundary[2];
+
+                if((l1 > 0) != (l2 > 0)) crosses++; 
+                if((r1 > 0) != (r2 > 0)) crosses++; 
+                break;
+            }
+        case OpCode.POW:
+        case OpCode.POWN:
+            return (l, r) => {
+                const [l1, l2, lBoundary] = l;
+                const [r1, r2, rBoundary] = r;
+
+                let crosses = 0;
+                let holes = lBoundary[1]+rBoundary[1];
+                let jumps = lBoundary[2]+rBoundary[2];
+
+                if(l1>0 && l2 > 0) return [crosses, holes, jumps];
+
+                const r1 = l1**r1;
+                const r2 = l2**r2;
+
+                if(r1 == NaN || r2 == NaN) holes++;
+
+                if((r1 >= 0) != (r2 >= 0)){
+                    crosses++, holes++, jumps++;
+                }
+
+                return [crosses, holes, jumps];
+            }
+        default: 
+            console.error("Unknown operator in edge comparison.");
+            return;
+    }
+}
 
 /**
  * Calculate the result boundary across a unary operation
