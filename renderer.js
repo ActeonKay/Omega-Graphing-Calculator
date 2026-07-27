@@ -87,6 +87,45 @@ export function generateImageForCartesianYofX(expression, minX, maxX, xCount, vi
     );
 }
 
+export function generateImageForCartesianXofY(expression, minY, maxY, yCount, viewMinX, viewMaxX, scaleX, scaleY){
+    if(!expression.tokens.some((t) => t.inputElementsSeparately === true)){
+        return new ExpressionImage(
+            generateInstructionsForCartesianXofY(expression, -1, minY, maxY, yCount, viewMinX, viewMaxX, scaleX, scaleY),
+            (viewMinX + viewMaxX)*0.5,
+            (minY + maxY)*0.5,
+            scaleX,
+            scaleY
+        );
+    }
+
+    const elementsToBeAutoIndexed = expression.tokens.filter((t) => t.inputElementsSeparately === true);
+
+    const n = Math.min(elementsToBeAutoIndexed.map((t) => {
+        switch(t.type){
+            case TokenType.VAR: return getVariable(t.code).value.length; //assume variable is array type
+            case TokenType.FUNC: return t.argCount;
+            default:
+                throw new Error('Could not automatically index token.');
+        }
+    }));
+
+    let instructions = [];
+    for(let k = 0; k<n; k++){
+        let instructionsAtK = generateInstructionsForCartesianXofY(expression, k, minY, maxY, yCount, viewMinX, viewMaxX, scaleX, scaleY);
+        instructions = instructions.concat(instructionsAtK);
+    }
+
+    //console.log(instructions);
+
+    return new ExpressionImage(
+        instructions,
+        (viewMinX + viewMaxX)*0.5,
+        (minY + maxY)*0.5,
+        scaleX,
+        scaleY
+    );
+}
+
 //instructions array of Action objects
 // Action = {shouldDraw: bool, x: float, y: float}
 export function generateInstructionsForCartesianYofX(expression, arrayIndex, minX, maxX, xCount, viewMinY, viewMaxY, scaleX, scaleY){
@@ -172,35 +211,47 @@ export function generateInstructionsForCartesianYofX(expression, arrayIndex, min
     return instructions;
 }
 
-export function generateImageForCartesianXofY(expression, minY, maxY, yCount, viewMinX, viewMaxX, scaleX, scaleY){
+export function generateInstructionsForCartesianXofY(expression, arrayIndex, minY, maxY, yCount, viewMinX, viewMaxX, scaleX, scaleY){
     let instructions = [];
 
     const dy = (maxY-minY)/yCount;
+
+    if(dy <= 0) {
+        console.error("Y step miscalculated. The axis may be reversed."); 
+        return [];
+    }
 
     // use ctx.translate instead of the following:
 
     let input = { min: 0, max: 0};
     let yprev = minY-dy;
 
-    let result = evaluateExpression(expression, {min: yprev, max: minY});
+    //console.log("yox",arrayIndex);
+
+    let result = evaluateExpression(expression, {min: yprev, max: minY}, arrayIndex);
     if(result.type == 1){
-        return new ExpressionImage(
-            [
-                [true,result.value,minY,0],
-                [true,result.value,maxY,0]
-            ],
-            (viewMinX+viewMaxX)*0.5,
-            (minY+maxY)*0.5,
-            scaleX,
-            scaleY
-        );
+        return [
+            [true,result.value,minY,0],
+            [true,result.value,maxY,0]
+        ];
+
+        // return new ExpressionImage(
+        //     [
+        //         [true,result.value,minY,0],
+        //         [true,result.value,maxY,0]
+        //     ],
+        //     (viewMinX+viewMaxX)*0.5,
+        //     (minY+maxY)*0.5,
+        //     scaleX,
+        //     scaleY
+        // );
     }
 
     for(let y = minY; y<maxY; y+=dy){
         input.min = yprev;
         input.max = y;
 
-        let result = evaluateExpression(expression,input);
+        let result = evaluateExpression(expression,input, arrayIndex);
 
         console.assert(result.edge !== undefined, result, result.edge);
 
@@ -245,6 +296,8 @@ export function generateImageForCartesianXofY(expression, minY, maxY, yCount, vi
 
 
     }
+
+    return instructions;
 
     return new ExpressionImage(
         instructions,
