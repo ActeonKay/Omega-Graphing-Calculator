@@ -177,6 +177,7 @@
     const maxDepth = 8;
     const maxSegments = 20000;
     const tryIsolateUnknown = true;
+    const graphFont = "15px Tahoma";
 
     // --- Rendering Variables ---
     let quadCount = 0;
@@ -206,6 +207,7 @@
       "lightcoral",
       "mediumaquamarine"
     ];
+    ctx.font = graphFont;
 
     // --- MathQuill Setup ---
     var MQ = MathQuill.getInterface(2);
@@ -1124,8 +1126,8 @@
     }
 
     function drawAsYofX(expr){
-      const minY = toGraphCoordsY(0);
-      const maxY = toGraphCoordsY(window.innerHeight);
+      const maxY = toGraphCoordsY(0);
+      const minY = toGraphCoordsY(window.innerHeight);
 
       const minX = toGraphCoordsX(0);
       const maxX = toGraphCoordsX(window.innerWidth);
@@ -1135,18 +1137,6 @@
 
       drawFromInstructions(instructions,expr.color);
       return;
-    }
-
-    function PZ(e){
-      if(e===0||isNaN(e)) return e;
-      if(!isFinite(e))return NaN;
-      if(e===Math.floor(e)) 
-          return e > 0 ? 0 : -0; //sign of e
-      let t = Math.round(2 * e), //double the number, then round that
-          r = -0.5 * t + e, //num - (num rounded to nearest half)
-          n = t & 2 ? -1 : 1, //if t is even, -1, else 1
-          o = t & 1 ? Math.cos(Math.PI*r) : Math.sin(Math.PI*r); //if t is odd: cos, else sin
-      return n*o
     }
 
     function trySegYofX(lx, rx, depth, allowSubdivision, py){
@@ -1203,10 +1193,10 @@
       const minX = toGraphCoordsX(0);
       const maxX = toGraphCoordsX(window.innerWidth);
 
-      const minY = toGraphCoordsY(0);
-      const maxY = toGraphCoordsY(window.innerHeight);
+      const maxY = toGraphCoordsY(0);
+      const minY = toGraphCoordsY(window.innerHeight);
 
-      const image = generateImageForCartesianXofY(expr, maxY, minY, window.innerHeight, minX, maxX, scaleX, scaleY);
+      const image = generateImageForCartesianXofY(expr, minY, maxY, window.innerHeight, minX, maxX, scaleX, scaleY);
       const instructions = image.instructions;
 
       drawFromInstructions(instructions,expr.color);
@@ -1696,7 +1686,7 @@
         if(labelX + 20 > window.innerWidth) labelX = window.innerWidth-20;
 
         ctx.beginPath();
-        ctx.font = "15px Tahoma";
+        ctx.font = graphFont;
 
         //Draw vertical grid lines
         for (let gx = startX; gx <= endX; gx += majorGridScaleX) {
@@ -1714,7 +1704,7 @@
         ctx.stroke();
 
         ctx.beginPath();
-        ctx.font = "15px Tahoma";
+        //ctx.font = "15px Tahoma";
 
         //Draw horizontal grid lines
         for (let gy = startY; gy <= endY; gy += majorGridScaleY) {
