@@ -2372,15 +2372,25 @@ function generateOperatorMethodExpressionBetweenSoloTypes(opcode,left,right,eval
                 console.log(fn);
 
                 const k = (b,a) => {
+                    const resultsObj = structuredClone(a);
+
                     const input = a.value;
-                    const n = input.length;
+                    const n = input.length; //either 2 or 4
+                    if(!(n === 2 || n === 4)) throw new Error("Invalid input tuple format");
+
                     const real = b.value;
-                    let results = [];
-                    for(let i=0; i<n; i++){
-                        results.push(fn(real,input[i]));
+
+                    // let results = [
+                    //     (real * input[0]), (real * input[1]),
+                    //     (real * input[2]), (real * input[3])
+                    // ];
+
+                    for(let k=0; k<n; k++){
+                        resultsObj.value[k] = (fn(real,input[k]));
                     }
 
-                    console.log(input,real,'=>',results);
+                    resultsObj.outputType = TokenHandleType.INPUT_TUPLE;
+                    return resultsObj;
 
                     return {
                         type: a.type, 
@@ -3132,12 +3142,19 @@ export function compileExpression(expression) {
                 const opAssociativity = op.associativity; // 'L' or 'R'
 
                 if(unBracketedFuncArg == 1){
-                    console.log('unbracketedFuncArg',operators[operators.length-1])
-                    console.assert(operators.length > 0);
-                    outputs.push(operators.pop());
+                    //TODO: sin 2x   =>   sin(2*x)   but   sin x+2   =>   sin(x)+2
+                    if(false){
+                        unBracketedFuncArg = 2;
+                    }else{
+                        console.log('unbracketedFuncArg',operators[operators.length-1])
+                        console.assert(operators.length > 0);
+                        outputs.push(operators.pop());
 
-                    argCountStack.pop();
-                    unBracketedFuncArg = 0;
+                        argCountStack.pop();
+                        unBracketedFuncArg = 0;
+                    }
+
+                    
                 }else if(unBracketedFuncArg === 2){
                     console.error("A function cannot be followed by an operator");
                     break;
