@@ -11,6 +11,11 @@ export const expressionType = {
     FUNC_DEFINITION: 8
 }
 
+export const DependableType = {
+    VARIABLE: 1,
+    FUNCTION: 2
+}
+
 const editType = {
     REMOVE: -1,
     INSERT: 0,
@@ -47,12 +52,8 @@ let nextColorId = 0;
 let expressions = [];
 let listEdits = []; //{type: int, ?index: int, ?expression: object}
 
-let variables = new Map();
-let variableData = new Map();
-//let variables = [];
-let nextVariableId = 0;
-
-let functions = [];
+let dependables = new Map(); //functions, vars, etc; things other expressions can depend on
+let dependableData = new Map();
 
 export function getNextId(){
     return ++nextId;
@@ -68,14 +69,12 @@ export function getAllExpressions(){
 
 export class ExpressionEvaluationInfo {
     type; //int
-    variableDependencies;
-    functionDependencies; 
+    dependencies; //String[]
     internalConstants; //Map
 
-    constructor(type, varDeps, funcDeps, inConsts){
+    constructor(type, dependencies, inConsts){
         this.type = type;
-        this.variableDependencies = varDeps;
-        this.functionDependencies = funcDeps;
+        this.dependencies = dependencies;
         this.internalConstants = inConsts;
     }
 }
@@ -83,25 +82,27 @@ export class ExpressionEvaluationInfo {
 export class Expression {
     id; /**Id */
     type;
-    varDependencies;
+    dependencies;
     color;
     visible;
     latex;
     tokens;
     replace;
-    definedVariable;
+    parameters;
+    definedSymbol;
     evaluationInfo;
 
-    constructor(id, type, varDependencies, color, visible, latex, tokens, replace, definedVariable = null){
+    constructor(id, type, dependencies, color, visible, latex, tokens, replace, parameters, definedSymbol = null){
         this.id = id;
         this.type = type;
-        this.varDependencies = varDependencies;
+        this.dependencies = dependencies;
         this.color = color;
         this.visible = visible;
         this.latex = latex;
         this.tokens = tokens;
         this.replace = replace;
-        this.definedVariable = definedVariable;
+        this.parameters = parameters;
+        this.definedSymbol = definedSymbol;
 
         return isValidExpression(this);
     } 
@@ -114,13 +115,9 @@ export class Expression {
         return this.evaluationInfo.type;
     }
 
-    static getVariableDependencies() {
-        return this.evaluationInfo.variableDependencies;
+    static getDependencies() {
+        return this.evaluationInfo.dependencies;
     }
-
-    static getFunctionDependencies() {
-        return this.evaluationInfo.functionDependencies;
-    } 
 
     static getInternalConstants() {
         return this.evaluationInfo.internalConstants;
@@ -142,8 +139,8 @@ export function isValidExpression(expr){
     if(typeof expr.type !== 'number') {console.error('type not number'); return false;}
     if(expr.type < -1 || expr.type > 9) {console.error('type not in range:',expr.type,expr); return false;}
 
-    if(typeof expr.varDependencies !== 'object') {console.error('vardependencies not object'); return false;}
-    if(!expr.varDependencies instanceof Array) {console.error('vardependencies not array'); return false;}
+    if(typeof expr.dependencies !== 'object') {console.error('dependencies not object'); return false;}
+    if(!expr.dependencies instanceof Array) {console.error('dependencies not array'); return false;}
 
     if(typeof expr.color !== 'string') {console.error('color not number'); return false;}
 
@@ -187,17 +184,11 @@ export function remove(wantedId){
     return true;
 }
 
-export function getVariableData(name){
-    if(variableData.get(name) === undefined) return undefined;
-
-    return variableData.get(name);
-}
-
 function getDependencies(name){
-    if(variableData.get(name) === undefined) return undefined;
+    if(dependableData.get(name) === undefined) return undefined;
 
     let found = new Set();
-    variableData.get(name).dependencies.forEach((d1) => {
+    dependableData.get(name).dependencies.forEach((d1) => {
         found.add(d1);
         const r = getDependencies(d1);
 
@@ -207,48 +198,50 @@ function getDependencies(name){
     return found;
 }
 
-export function registerVariable(name, varinfo, varDependencies = new Set()){
-    if(variableData.get(name) !== undefined) { console.log(name + ' already defined'); return false;}
+/**
+ * Register a dependable (variable/function) to be referenced by other expressions
+ * @param {String} name A unique name; i.e. as it is referenced in expressions
+ * @param {int} type The type of dependable to register. `1`: variable  `2`: function
+ * @param {Object} info Associated data: (variable value object / function expression object)
+ * @param {String[]} directDependencies Array of all dependency names that are directly referenced by the dependable's expression
+ * @returns 
+ */
+export function registerDependable(name, type, info, directDependencies){
+    if(dependableData.get(name) !== undefined) {
+        console.error("Attempted to register " + name + " twice");
+        return false;
+    }
+
+    if(type < 1 || type > 2) return false; //HARDCODE
 
     let dependencies = new Set();
-    varDependencies.forEach((d) => {
-        dependencies.union(getDependencies(d));
-        dependencies.add(d);
+    directDependencies.forEach((dd) => {
+        dependencies.union(getDependencies(dd));
+        dependencies.add(dd);
     });
 
-    //console.log(dependencies);
-
-    if(typeof varinfo === 'object'){
-        variableData.set(name, {value: varinfo, dependencies: dependencies});
-        return true;
-    }
-
-    if(typeof varinfo === 'string'){
-        variableData.set(name, {value: varinfo, dependencies: dependencies});
-        return true;
-    }
-
-    console.log(typeof + ' already defined');
-    return false;
-}
-
-export function unregisterVariable(name){
-    if(variableData.get(name) === undefined) return false;
-
-    variableData.delete(name);
+    dependableData.set(name, {type: type, value: info, dependencies: dependencies});
     return true;
 }
 
-export function getVariable(name){
-    if(variableData.get(name) === undefined) return undefined;
+export function unregisterDependable(name){
+    if(dependableData.get(name) === undefined) return false;
 
-    return variableData.get(name).value;
+    dependableData.delete(name);
+    return true;
 }
 
-export function getAllVariables(){
-    return variables;
+/**
+ * Get the value of a dependable (variable/function)
+ * @param {*} name Name of the dependable
+ * @returns Dependable value (variable value / function expression)
+ */
+export function getDependable(name){
+    if(dependableData.get(name) === undefined) return undefined;
+
+    return dependableData.get(name).value;
 }
 
-export function registerFunction(name, funcinfo, dependencies = new Set()){
-    // if()
+export function getDependableData(name){
+    return dependableData.get(name);
 }

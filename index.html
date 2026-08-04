@@ -141,28 +141,38 @@
 
   <script type="module">
     import { 
-        evaluateExpression, evaluate,
+        evaluateExpression, evaluate, finalizeExpression,
         //tokenizeExpression, getTokenizedExpressions, getTokenizedExpressionMetas,
         compileExpression, getCompiledExpressions, tokenizeLatexExpression, latexToTokenObjects,
         validFunctions,
-        ExpressionType
+        ExpressionType, ExpressionInfoByType
     } from "./evaluator.js";  
 
     import {
-      Expression,
-      getAllExpressions, appendExpression, getNextId, getNextColor, registerVariable, unregisterVariable
+      Expression, DependableType,
+      getAllExpressions, appendExpression, getNextId, getNextColor, registerDependable, unregisterDependable, 
     } from "./expressions.js";
 
     import {
-      generateImageForCartesianYofX,
-      generateImageForCartesianXofY,
-      generateImageForCartesianImplicit
+      generateImage,
+      generateInstructionsForCartesianYofX,
+      generateInstructionsForCartesianXofY,
+      generateInstructionsForCartesianImplicit
     } from "./renderer.js";
 
     import {
       convertTokenToLatex,
       convertRealToString
     } from "./latexutils/tokenToLatexConverter.js";
+
+    import {
+      tokenize,
+      testLatexParse
+    } from "./latexutils/latexParser.js";
+
+    //TESTS
+    console.log("Startup");
+    testLatexParse();
 
     // --- Common Elements ---
     const canvas = document.getElementById('c');
@@ -250,11 +260,15 @@
 
     function generateEquationRow(expression){
       //console.log('generating: ', expression);
+
+      //Row
       let row = newDivWithClass(expRowClass);
       row.id = "eq-row-"+expression.id;
 
+      //Edit box left of expression
       let edit = newDivWithClass(expEditClass);
       
+      //Expression color indicator and 
       let colorButton = document.createElement('button');
       colorButton.className = expColorButton;
       colorButton.classList.add('visible');
@@ -275,12 +289,31 @@
 
         update();
       });
+
+      colorButton.addEventListener("contextmenu", (ev) => {
+        ev.preventDefault();
+
+        const expressions = getAllExpressions();
+        const index = expressions.findIndex((ex) => ex.id === expression.id);
+
+        let currentColor = expressions[index].color;
+        let newColorIndex = (exprColors.indexOf(currentColor)+1) % (exprColors.length);
+        let newColor = exprColors[newColorIndex];
+
+        colorButton.style.background = newColor;
+        expressions[index].color = newColor;
+
+        //update();
+        draw();
+        return false;
+      }, false);
       // colorButton.style.outline = 'solid';
 
       edit.appendChild(colorButton);
 
       row.appendChild(edit);
 
+      //MathQuill wrapper
       let wrapper = newDivWithClass(expWrapperClass);
 
       let eq = newDivWithClass(expMathPlaceholderClass);
@@ -412,7 +445,7 @@
 
       //console.log('test -> ', test);
 
-      if(old.definedVariable !== null) unregisterVariable(old.definedVariable);
+      if(old.definedSymbol !== null) unregisterDependable(old.definedSymbol);
 
       let compiled;
 
@@ -426,28 +459,30 @@
         compiled = new Expression(
           old.id,
           -1,
-          old.varDependencies ?? new Set(),
+          old.dependencies ?? new Set(),
           old.color,
           old.visible,
           latex,
+          [],
           [],
           []
         );
       }
 
-      console.assert(old.varDependencies !== undefined);
-      console.assert(compiled.varDependencies !== undefined);
+      console.assert(old.dependencies !== undefined);
+      console.assert(compiled.dependencies !== undefined);
 
       compiled = new Expression(
         wanted,
         compiled.type,
-        compiled.varDependencies,
+        compiled.dependencies,
         old.color,
         old.visible ?? true,
         old.latex,
         compiled.tokens,
         compiled.replace,
-        compiled.definedVariable
+        compiled.parameters,
+        compiled.definedSymbol
       );
 
       //console.log('setting1:',compiled);
@@ -468,8 +503,8 @@
 
       //oldtype = previous expression type
       //if old expression was a definition -> delete definition
-      if(oldExpr.type === ExpressionType.ASGNMT){
-        unregisterVariable(oldExpr.var);
+      if(oldExpr.type === ExpressionType.ASGNMT || oldExpr.type === ExpressionType.FUNCDEF){
+        unregisterDependable(oldExpr.definedSymbol);
       }
 
       //compile expression
@@ -487,10 +522,11 @@
         case ExpressionType.ASGNMT:
           currentExpression = newExpr;
           console.log('++ Evaluating expression ++');
-          const evalObj = evaluate(newExpr, {},-1);
+          const evalObj = evaluate(newExpr, new Map(),-1);
           console.log('++ Eval result:',evalObj.result,'++');
 
-          if(newExpr.type === ExpressionType.ASGNMT) registerVariable(newExpr.definedVariable, evalObj.result, newExpr.varDependencies);
+          if(newExpr.type === ExpressionType.ASGNMT) registerDependable(newExpr.definedSymbol, DependableType.VARIABLE, evalObj.result, newExpr.dependencies);
+          //if(newExpr.type === ExpressionType.FUNCDEF) registerDependable(newExpr.definedSymbol, DependableType.FUNCTION, newExpr.tokens, newExpr.dependencies);
 
           const resultLatex = '='+parseTokenToLatex(evalObj.result);
 
@@ -512,27 +548,39 @@
           
           return; //DELETE LATER
           break;
+        case ExpressionType.FUNCDEF:
+            currentExpression = newExpr;
+
+            if(newExpr.type === ExpressionType.FUNCDEF) registerDependable(newExpr.definedSymbol, DependableType.FUNCTION, newExpr.tokens, newExpr.dependencies);
+
+            newExpr.tokens = finalizeExpression(newExpr.tokens, newExpr.type ?? ExpressionType.IMPLICIT, ExpressionInfoByType[newExpr.type].tokType);
+
+            drawExpression(newExpr);
+
+        break;
       }
+      
+
 
       //console.log('expression change to', newExpr.type);
 
-      if(newExpr.type === 7){
+      if(newExpr.type === ExpressionType.ASGNMT){
         //console.log('registering');
 
-        console.log('-- Evaluating Result of Definition ('+newExpr.definedVariable+') --');
-        const evalResult = evaluateExpression(newExpr, {},-1);
+        console.log('-- Evaluating Result of Definition ('+newExpr.definedSymbol+') --');
+        const evalResult = evaluateExpression(newExpr, new Map(),-1);
 
-        console.log('-- Set Variable '+newExpr.definedVariable+' to result of evaluation:',evalResult,' --'); 
+        console.log('-- Set Variable '+newExpr.definedSymbol+' to result of evaluation:',evalResult,' --'); 
         const value = evalResult.value; 
         const unc = evalResult.uncertainty; 
 
-        console.assert(newExpr.definedVariable !== undefined);
-        console.assert(newExpr.varDependencies !== undefined);
+        console.assert(newExpr.definedSymbol !== undefined);
+        console.assert(newExpr.dependencies !== undefined);
 
-        if(registerVariable(newExpr.definedVariable, evalResult,newExpr.varDependencies)){
-          //console.log('set var ', newExpr.definedVariable , ' to ', value);
+        if(registerDependable(newExpr.definedSymbol, DependableType.VARIABLE, evalResult,newExpr.dependencies)){
+          //console.log('set var ', newExpr.definedSymbol , ' to ', value);
         }else{
-          console.log('failed to set var ', newExpr.definedVariable , ' to ', evalResult);
+          console.log('failed to set var ', newExpr.definedSymbol , ' to ', evalResult);
         }
 
         if(canRecurse){
@@ -540,13 +588,13 @@
 
           expressions.forEach((exp) => {
             if(exp.id === newExpr.id) return;
-            console.assert(exp.varDependencies !== undefined);
+            console.assert(exp.dependencies !== undefined);
 
 
-            //console.log('exp: ', exp, 'vs', newExpr,'dependencies:', exp.varDependencies);
-            if(exp.varDependencies.length === 0) return;
+            //console.log('exp: ', exp, 'vs', newExpr,'dependencies:', exp.dependencies);
+            if(exp.dependencies.length === 0) return;
 
-            if(exp.varDependencies.has(newExpr.definedVariable)){
+            if(exp.dependencies.has(newExpr.definedSymbol)){
               const depEqRow = document.getElementById(expRowId+exp.id);
 
               console.assert(depEqRow !== undefined);
@@ -582,7 +630,7 @@
         );
 
         console.log('-- Evaluating expression result for rendering --');
-        const evalObj = evaluate(newExpr, {}, -1);
+        const evalObj = evaluate(newExpr, new Map(), -1);
 
         console.log('-- Rendering evaluation result: ',evalObj,'--');
         const displayedResult = '='+ (
@@ -871,6 +919,7 @@
         true,
         '',
         [],
+        [],
         []
       );
 
@@ -953,6 +1002,8 @@
         case 0:
         case 7:
           drawEvalResult(expr);
+        case 8:
+          drawAsYofX(expr);
         case 9: //blank
           break;
         default:
@@ -997,8 +1048,11 @@
 
         //let exprs = getCompiledExpressions();
         //console.log(exprs);
+        throw new Error("Param replacement is not yet working for this expression");
+        return;
+
         return evaluateExpression(
-            currentExpression, 
+            currentExpression,
             {
                 minX: x1,
                 maxX: x2,
@@ -1016,7 +1070,7 @@
       currentExpression = expr;
 
       console.log('-- Evaluating Expression to Draw --');
-      const evalResult = evaluate(currentExpression, {}, -1);
+      const evalResult = evaluate(currentExpression, new Map(), -1);
 
       console.log('-- Draw result:',evalResult,'--');
 
@@ -1058,7 +1112,7 @@
       const minX = toGraphCoordsX(0);
       const maxX = toGraphCoordsX(window.innerWidth);
 
-      const image = generateImageForCartesianImplicit(expr, minX, maxX, minY, maxY, scaleX, scaleY);
+      const image = generateImage(expr, {minX, maxX, minY, maxY, scaleX, scaleY, xCount: 32, yCount: 32}, generateInstructionsForCartesianImplicit);
       const instructions = image.instructions;
 
       drawFromInstructions(instructions,expr.color);
@@ -1088,6 +1142,8 @@
     }
 
     function drawFromInstructions(instructions, color){
+      //console.log("Drawing instructions: ", instructions);
+
       ctx.beginPath();
       ctx.lineWidth = 3;
       ctx.lineCap = "round";
@@ -1117,7 +1173,6 @@
           ctx.lineTo(x,y);
           if(!(instructions[i-1]??[false])[0] ) ctx.moveTo(x,y);
         } else {
-          
           ctx.moveTo(x,y);
         }
       }
@@ -1132,7 +1187,7 @@
       const minX = toGraphCoordsX(0);
       const maxX = toGraphCoordsX(window.innerWidth);
 
-      const image = generateImageForCartesianYofX(expr, minX, maxX, window.innerWidth, minY, maxY, scaleX, scaleY);
+      const image = generateImage(expr, {minX, maxX, xCount: window.innerWidth, minY, maxY, scaleX, scaleY}, generateInstructionsForCartesianYofX);
       const instructions = image.instructions;
 
       drawFromInstructions(instructions,expr.color);
@@ -1196,7 +1251,7 @@
       const maxY = toGraphCoordsY(0);
       const minY = toGraphCoordsY(window.innerHeight);
 
-      const image = generateImageForCartesianXofY(expr, minY, maxY, window.innerHeight, minX, maxX, scaleX, scaleY);
+      const image = generateImage(expr, {minY, maxY, yCount: window.innerHeight, minX, maxX, scaleX, scaleY}, generateInstructionsForCartesianXofY);
       const instructions = image.instructions;
 
       drawFromInstructions(instructions,expr.color);
@@ -1744,6 +1799,8 @@
 
     // Dragging (panning) functionality
     canvas.addEventListener('mousedown', (e) => {
+      if(e.which !== 1) return;
+
       isDragging = true;
 
       lastMouseX = e.clientX;
@@ -1822,6 +1879,7 @@
         color,
         true,
         '',
+        [],
         [],
         []
       );

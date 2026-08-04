@@ -1,8 +1,9 @@
 import{
     Expression,
-    getVariable, getAllVariables,
-    getVariableData,
-    isValidExpression
+    getDependable,
+    getDependableData,
+    isValidExpression,
+    expressionType
 } from "./expressions.js";
 
 import{
@@ -56,7 +57,8 @@ export const TokenType = {
     ATT: 16,
     ARRAY: 17, //{type: 17, valuetype: int, value: [values], uncertainties: int[] ?? 0[] }
     TUPLE: 18, //same as array,
-    DIST: 19
+    DIST: 19,
+    FUNCPARAM: 20
 }
 
 const LatexTokenType = {
@@ -81,7 +83,7 @@ const ExpressionInfo = {
     "function definition": { exprType: ExpressionType.FUNCDEF, tokType: TokenType.QUAD},
 }
 
-const ExpressionInfoByType = {};
+export const ExpressionInfoByType = {};
 for (const sym in ExpressionInfo) {
     const info = ExpressionInfo[sym];
     ExpressionInfoByType[info.exprType] = {
@@ -250,6 +252,7 @@ export const TokenHandleType = {
     INPUT_TUPLE: 4, //like a quad or dual; interact as tuples except for when operated with tuples; which returns a different tuple in each 'branch'
     DISTRIBUTION: 5,
     ARRAY: 6, //similar to array
+    FUNCPARAM: 7,
     UNARY_OP: -1, //1 input (a)
     BINARY_OP: -2, //2 inputs (l,r)
     FUNCTION: -3, //n inputs (arg[0],args[1],...)
@@ -498,6 +501,14 @@ const UnknownInfo = {
     "r": UnknownCode.POLRR,
     "φ": UnknownCode.POLRP,
     //"phi": UnknownCode.POLRP
+}
+const UnknownInfoByCode = {};
+for (const sym in UnknownInfo) {
+    const info = UnknownInfo[sym];
+    UnknownInfoByCode[info.code] = {
+        ...info,
+        symbol: sym
+    };
 }
 
 const ConstantCode = {
@@ -1041,9 +1052,9 @@ export function tokenizeLatexExpression(latex, oldExpression){
             oldExpression.visible, 
             latex, 
             [],
+            [],
             []
         );
-        return {tokens: [], varDependencies: new Set(), type: ExpressionType.BLANK};
     }
 
     //TODO: redo this whole process. It is confusing.
@@ -1062,17 +1073,22 @@ export function tokenizeLatexExpression(latex, oldExpression){
     const typsetTokens = typeset.tokens;
     const typesetVar = typeset.var ?? null;
 
-    const metaData = addMetadataToExpression({type: typesetType, tokens: typsetTokens, var: typesetVar});
+    if(typsetTokens.some((t) => t.type === undefined)) console.error("Some token in typset has undefined type");
+
+    const metaData = addMetadataToExpression(typeset);
     console.log(metaData);
+
+    if(metaData.tokens.some((t) => t.type === undefined)) console.error("Some token in metadata tokens has undefined type");
 
     return new Expression(
         oldExpression.id, 
         metaData.type, 
-        metaData.varDependencies, 
+        metaData.dependencies, 
         oldExpression.color, 
         oldExpression.visible, 
         latex, 
         metaData.tokens,
+        [],
         [],
         typesetVar
     );
@@ -1089,6 +1105,15 @@ function getLatexExpressionType(tokens){
         (t) => 
             (t.type === TokenType.OP && t.code === OpCode.EQ)
     );
+
+    //If no = or != tokens:
+        //detect type
+    //If one = token:
+        //If lhs is format f(x) or f(a,b) or similar AND f:
+            //Ignore lhs, create custom function via rhs
+            //Also: New 'parameter' variable type
+        //
+    //If one != token or multiple = or != tokens:
 
     //log(eqtoken, 'eqtoken');
     if(eqtoken < 0){
@@ -1143,88 +1168,150 @@ function getLatexExpressionType(tokens){
         }[c1];
 
         //log('func of', type, tokens)
-        return {type: type, tokens: tokens };
-        
-    }else if(tokens.findIndex(
-        (t,j) => {
-            j > eqtoken
-            && t.type === TokenType.OP 
-            && t.code === OpCode.EQ
-        }) > 0
-    ){
-        console.log('multiple = or != tokens',tokens);
-        return { type: ExpressionType.EVAL, tokens: tokens }; //multiple '=' or '!=' tokens
-    }else if( tokens.some((t) => t.type === TokenType.OP && (t.code === OpCode.AND || t.code === OpCode.OR || t.code === OpCode.XOR)) ){
-        console.log('logical implicit', tokens);
-        return { type: ExpressionType.IMPLICIT, tokens: tokens }; //logical implicit
-    }else{
-        if(tokens.some((t) => {
-            t.type === TokenType.UNKN 
-            && (t.code === UnknownCode.POLRR || t.code === UnknownCode.POLRT)
-        })
-        ){
-            return {type: ExpressionType.IMPLICIT, tokens: tokens};
-        }
+        return {type: type, tokens: tokens };  
+    }
 
-        //splice tokens at =, determine if fits pattern y=f(x), x=f(y), etc...
-        const lhs = tokens.slice(0, eqtoken);
-        const rhs = tokens.slice(eqtoken+1);
+    const nextEqualityToken = tokens.findIndex((t, tIndex) => {
+        t.type === TokenType.OP && (
+            (t.code === OpCode.EQ && tIndex > eqtoken) || t.code === OpCode.NEQ
+        )
+    });
 
-        //log(lhs, ["="], rhs);
+    if(nextEqualityToken !== -1){
+        return { type: ExpressionType.EVAL, tokens: tokens };
+    }
 
-        if(lhs.length === 1 && lhs[0].type === TokenType.VAR){
-            const code = lhs[0].code;
-
-            if(!rhs.some((t) => t.type === TokenType.VAR && t.code === code)){
-                return {type: ExpressionType.ASGNMT, var: code, tokens: rhs}; // // // // // // // // // // // // // // // // // // VAR VAR VAR
-            }
-
-            // TODO: resursive definition like a=a^2-1 (phi)
-            return {type: ExpressionType.EVAL, tokens: tokens};
-        }
-
-        const exclusive = {
-            1: [1,5,4],
-            2: [2,5,4],
-            4: [1,2,5],
-            5: [1,2,4]
-        };
-
-        const ids = {
-            2: ExpressionType.EXP_F_X,
-            1: ExpressionType.EXP_F_Y,
-            5: ExpressionType.EXP_F_T, 
-            4: ExpressionType.EXP_F_R
-        };
-
-        if(lhs.length === 1){
-            const tk = lhs[0];
-            if(
-                tk.type === TokenType.UNKN && 
-                ids[tk.code] !== undefined && 
-                rhs.every((t) => !(t.type === TokenType.UNKN && exclusive[tk.code].includes(t.code)))
-            ){
-                //log('function ?=rhs');
-                return {type: ids[tk.code], tokens: rhs};
-            }
-
-        }
-
-        if(rhs.length === 1){
-            const tk = rhs[0];
-
-            if(
-                tk.type === TokenType.UNKN && 
-                ids[tk.code] !== undefined && 
-                lhs.every((t) => !(t.type === TokenType.UNKN && exclusive[tk.code].includes(t.code)))
-            ){
-                console.log('function lhs=?');
-                return {type: ids[tk.code], tokens: lhs};
-            }
-        }
-
+    if(tokens.some((t) => 
+        t.type === TokenType.OP && (
+            t.code === OpCode.AND || t.code === OpCode.OR || t.code === OpCode.XOR
+        )
+    )){
         return { type: ExpressionType.IMPLICIT, tokens: tokens };
     }
+
+
+    let funcDefInfo = getFunctionDefinitionInfo(tokens);
+
+    if(funcDefInfo.errorOccurred) return { type: expressionType.INVLD, tokens: tokens };
+
+    //splice tokens at =, determine if fits pattern y=f(x), x=f(y), etc...
+    const lhs = tokens.slice(0, eqtoken);
+    const rhs = tokens.slice(eqtoken+1);
+    
+    if(funcDefInfo.result){
+        return {type: ExpressionType.FUNCDEF, tokens: rhs, parameters: funcDefInfo.parameters};
+    }
+
+    if(tokens.some((t) => {
+        t.type === TokenType.UNKN 
+        && (t.code === UnknownCode.POLRR || t.code === UnknownCode.POLRT)
+    })
+    ){
+        return {type: ExpressionType.IMPLICIT, tokens: tokens};
+    }
+
+    //log(lhs, ["="], rhs);
+
+    if(lhs.length === 1 && lhs[0].type === TokenType.VAR){
+        const code = lhs[0].code;
+
+        if(!rhs.some((t) => t.type === TokenType.VAR && t.code === code)){
+            return {type: ExpressionType.ASGNMT, var: code, tokens: rhs}; // // // // // // // // // // // // // // // // // // VAR VAR VAR
+        }
+
+        // TODO: resursive definition like a=a^2-1 (phi)
+        return {type: ExpressionType.EVAL, tokens: tokens};
+    }
+
+    const exclusive = {
+        1: [1,5,4],
+        2: [2,5,4],
+        4: [1,2,5],
+        5: [1,2,4]
+    };
+
+    const ids = {
+        2: ExpressionType.EXP_F_X,
+        1: ExpressionType.EXP_F_Y,
+        5: ExpressionType.EXP_F_T, 
+        4: ExpressionType.EXP_F_R
+    };
+
+    if(lhs.length === 1){
+        const tk = lhs[0];
+        if(
+            tk.type === TokenType.UNKN && 
+            ids[tk.code] !== undefined && 
+            rhs.every((t) => !(t.type === TokenType.UNKN && exclusive[tk.code].includes(t.code)))
+        ){
+            //log('function ?=rhs');
+            return {type: ids[tk.code], tokens: rhs};
+        }
+
+    }
+
+    if(rhs.length === 1){
+        const tk = rhs[0];
+
+        if(
+            tk.type === TokenType.UNKN && 
+            ids[tk.code] !== undefined && 
+            lhs.every((t) => !(t.type === TokenType.UNKN && exclusive[tk.code].includes(t.code)))
+        ){
+            console.log('function lhs=?');
+            return {type: ids[tk.code], tokens: lhs};
+        }
+    }
+
+    return { type: ExpressionType.IMPLICIT, tokens: tokens };
+    if(isFuncDef){
+        const funcName = tokens[0].code; //ALWAYS FIRST TOKEN
+
+    }else{
+        
+    }
+}
+
+/**
+ * Detect if a tokenlist is defining a function
+ * @param {*} tokens 
+ */
+function getFunctionDefinitionInfo(tokens){
+    //variable at tokens[0]
+    //leftBracket at tokens[1]
+    //parameter list at tokens[2] separated by commas
+    //rightBracket after param list
+    //eq token after bracket
+    //no eq tokens after bracket
+
+    if(tokens[0].type !== TokenType.VAR) return {result: false, errorOccurred: false};
+    if(getDependable(tokens[0].code) !== undefined) return {result: false, errorOccurred: false};
+    if(!(tokens[1].type === TokenType.OP && tokens[1].code === OpCode.MUL)) return {result: false, errorOccurred: false}; 
+    if(!(tokens[2].type === TokenType.BRKT && tokens[2].code === BracCode.LRND)) return {result: false, errorOccurred: false};
+
+    let i = 3;
+    let parameters = [];
+    while(i < 2*128){
+        if(!(tokens[i].type === TokenType.UNKN || tokens[i].type === TokenType.VAR)) return {result: false, errorOccurred: false};
+
+        //const paramSymbol = tokens[i].type === TokenType.VAR ? tokens[i].code : UnknownInfoByCode[tokens[i].code].symbol;
+        parameters.push({type: TokenType.FUNCPARAM, replaceType: tokens[i].type, replaceCode: tokens[i].code});
+
+        if(tokens[i+1].type === TokenType.BRKT && tokens[i+1].code === BracCode.RRND){
+            let equalsIndexes = tokens.filter((t) => t.type === TokenType.OP && t.code === OpCode.EQ);
+
+            if(equalsIndexes.length > 1) return {result: false, errorOccurred: true};
+            if(equalsIndexes.length < 1) return {result: false, errorOccurred: false}
+            
+            return {result: true, errorOccurred: false, parameters: parameters};
+        }
+
+        if(!(tokens[i+1].type === TokenType.DELIM && tokens[i+1].code === undefined)) return {result: false, errorOccurred: false};
+
+        i += 2;
+    }
+
+    return {result: false, errorOccurred: true}; //error: invalid syntax
 }
 
 function shouldCommandStop(cmdString, next){
@@ -1546,6 +1633,7 @@ export function latexToTokenObjects(latexTokens){
                     compilerTokens.push({ type: TokenType.OP, code: OpCode.MUL });
                 }
 
+                console.log("Pushed: ",token);
                 compilerTokens.push(token);
                 continue;
             }
@@ -1710,6 +1798,10 @@ export function latexToTokenObjects(latexTokens){
         }
     }
 
+    compilerTokens.forEach((t, i) => {
+        console.log(i, t.type, t.code);
+    });
+
     return compilerTokens;
 }
 
@@ -1724,10 +1816,20 @@ function addMetadataToExpression(expression){
 
     let final = [];
 
-    let varDependencies = new Set();
+    let dependencies = new Set();
 
     for(let i = 0; i < tokens.length; i++){
         const token = tokens[i];
+
+        if(expression.type === ExpressionType.FUNCDEF){
+            const paramIndex = expression.parameters.findIndex((t) => t.replaceType === token.type && t.replaceCode === token.code)
+            if(paramIndex > -1){
+                final.push({type: TokenType.FUNCPARAM, code: paramIndex});
+                break;
+            }
+        }
+        
+
         switch(token.type){
             case TokenType.BRKT:
                 let code = token.code;
@@ -1835,7 +1937,7 @@ function addMetadataToExpression(expression){
             default:
                 if(token.type == TokenType.UNKN || token.type === TokenType.VAR){
                     if(token.type === TokenType.VAR){
-                        varDependencies.add(token.code);
+                        dependencies.add(token.code);
                     }
                     //unkowns don't get pushed with their values, because for duals & quads unknown values are set at runtime
                     final.push(token); //%%TOKEN
@@ -1876,20 +1978,21 @@ function addMetadataToExpression(expression){
     // return new Expression(
     //     expression.id ?? 0, 
     //     exprType, 
-    //     varDependencies, 
+    //     dependencies, 
     //     expression.color ?? 'black', 
     //     expression.visible ?? true, 
     //     expression.latex, 
     //     final,
     //     [],
+    //      [],
     //     exprType === ExpressionType.ASGNMT ? expression.var : null
     // );
 
     if(exprType === ExpressionType.ASGNMT){
-        return {type: exprType, var: expression.var, tokens: final, varDependencies: varDependencies};
+        return {type: exprType, var: expression.var, tokens: final, dependencies: dependencies};
     }
 
-    return {type: exprType, tokens: final, varDependencies: varDependencies};
+    return {type: exprType, tokens: final, dependencies: dependencies};
 }
 
 function generateStrictMethodExprForOp(strictOpCode, evalType){
@@ -3069,6 +3172,7 @@ export function compileExpression(expression) {
             expression.visible, 
             expression.latex, 
             [],
+            [],
             []
         );
     }
@@ -3084,10 +3188,11 @@ export function compileExpression(expression) {
         return new Expression(
             expression.id, 
             ExpressionType.INVLD, 
-            expression.varDependencies, 
+            expression.dependencies, 
             expression.color, 
             expression.visible, 
             expression.latex, 
+            [],
             [],
             []
         );
@@ -3118,6 +3223,7 @@ export function compileExpression(expression) {
             case TokenType.DUAL:
             case TokenType.QUAD:
             case TokenType.CMPLX:
+            case TokenType.FUNCPARAM:
                 //popPrefixOperators(operators); // %%POPPREFIX
 
                 // if(value.type !== evalType){
@@ -3338,6 +3444,8 @@ export function compileExpression(expression) {
             case TokenType.VAR:
                 value.outputType = convertToHandleType(meta, value.code);
 
+                console.log("Swapping output type of var token. Type: ", value.type, " outtype: ", value.outputType, " code: ", value.code);
+
                 //if(value.outputType === TokenHandleType.ARRAY) console.assert(value.elementType !== undefined, value);
                 //if(value.outputType === TokenHandleType.ARRAY) console.assert(value.type === TokenType.ARRAY, value);
 
@@ -3471,20 +3579,94 @@ export function compileExpression(expression) {
     // log("------------")
 
     let toReplace = [];
+    let params = [];
+    let addIndex = -1;
 
-    //final check for unknowns
-    for (let i = 0; i < outputs.length; i++) {
-        let element = outputs[i];
-        if (element.type == TokenType.UNKN) {
-            //element.code or element.value ??????
-            toReplace.push({ index: i, type: TokenType.UNKN, unknownId: element.code??element.value }); //%%TOKEN
-        } else if (element.type == TokenType.VAR) {
-            toReplace.push({ index: i, type: TokenType.VAR, varId: element.code }); //%%TOKEN
+    const addParam = (item) => {
+        addIndex = params.findIndex((i) => i.type === item.type && i.code === item.code);
+        if(addIndex === -1) {
+            params.push(item);
+            addIndex = params.length-1;
         }
     }
 
-    console.log('before test eval:',expression.tokens, "->", outputs);
+    //final check for unknowns
+    for (let i = 0; i < outputs.length; i++) {
+        const element = outputs[i];
 
+        if(element.type === TokenType.VAR || element.type === TokenType.UNKN || element.type === TokenType.FUNCPARAM){
+            addParam({type: element.type, code: element.code});
+            toReplace.push({ index: i, paramNum: addIndex }); 
+        }
+
+    }
+
+    console.log('before test eval:',expression.tokens, "->", outputs);
+    if(expression.tokens.some((t) => t.type === undefined)) console.error("Undefined type in tokens before test eval");
+
+    if(type !== ExpressionType.FUNCDEF){
+        outputs = finalizeExpression(outputs, type, evalType);
+
+        // const testResult = testEvaluation(outputs, ExpressionInfoByType[type].tokType, evalType);
+        // const tokenMetaInfo = testResult.expectedMeta;
+        // const outputType = testResult.outputType;
+
+        // for(let i = 0; i < outputs.length; i++){
+        //     const metaInfo = tokenMetaInfo[i];
+        //     outputs[i].outputType = metaInfo.outputType;
+
+        //     console.assert(outputs[i].outputType !== undefined, metaInfo);
+
+        //     if(outputs[i].type === TokenType.OP || outputs[i].type === TokenType.FUNC) {
+        //         outputs[i].variantCode = metaInfo.variantCode;
+
+        //         console.log('variantcode',metaInfo.variantCode,'evalType',evalType);
+
+        //         const methodExpr = 
+        //             (outputs[i].type === TokenType.OP) 
+        //             ? generateStrictMethodExprForOp(metaInfo.variantCode,evalType)
+        //             : generateStrictMethodExprForFunc(metaInfo.variantCode,evalType,outputs[i].inputElementsSeparately);
+
+        //         console.assert(typeof methodExpr === 'function',methodExpr,metaInfo.variantCode,evalType);
+
+        //         outputs[i].fnexp = methodExpr;
+        //     }
+
+        //     if(metaInfo.inputElementsSeparately !== undefined) outputs[i].inputElementsSeparately = metaInfo.inputElementsSeparately;
+        // }
+
+        // console.log('after testing: ', outputs); 
+    }
+
+    if(type === ExpressionType.ASGNMT){
+        return new Expression(
+            expression.id, 
+            type, 
+            expression.dependencies, 
+            expression.color, 
+            expression.visible, 
+            expression.latex, 
+            outputs,
+            toReplace,
+            params,
+            expression.definedSymbol
+        );
+    }
+
+    return new Expression(
+        expression.id, 
+        type, 
+        expression.dependencies, 
+        expression.color, 
+        expression.visible, 
+        expression.latex, 
+        outputs,
+        toReplace,
+        params
+    );
+}
+
+export function finalizeExpression(outputs, type, evalType){
     const testResult = testEvaluation(outputs, ExpressionInfoByType[type].tokType, evalType);
     const tokenMetaInfo = testResult.expectedMeta;
     const outputType = testResult.outputType;
@@ -3513,38 +3695,19 @@ export function compileExpression(expression) {
         if(metaInfo.inputElementsSeparately !== undefined) outputs[i].inputElementsSeparately = metaInfo.inputElementsSeparately;
     }
 
-    console.log('after testing: ', outputs); 
-
-    if(type === ExpressionType.ASGNMT){
-        return new Expression(
-            expression.id, 
-            type, 
-            expression.varDependencies, 
-            expression.color, 
-            expression.visible, 
-            expression.latex, 
-            outputs,
-            toReplace,
-            expression.definedVariable
-        );
-    }
-
-    return new Expression(
-        expression.id, 
-        type, 
-        expression.varDependencies, 
-        expression.color, 
-        expression.visible, 
-        expression.latex, 
-        outputs,
-        toReplace
-    );
+    return outputs;
 }
 
 // export class EvaluationResult{
 
 // }
 
+/**
+ * 
+ * @param {Expression} expression Expression to be evaluated
+ * @param {Object[]} input Array of objects to define replacement values 
+ * @returns 
+ */
 export function evaluate(expression, input){
     //replace variables
 
@@ -3567,6 +3730,7 @@ export function evaluate(expression, input){
 
     const tokenList = readExpressionWithReplacements(expression, input);
 
+    //Check if autoIndexing is not needed 
     if(!tokenList.some((t) => t.inputElementsSeparately === true)){
         return {
             didByIndexEvaluation: false,
@@ -3574,13 +3738,14 @@ export function evaluate(expression, input){
         };
     }
 
+    //Auto indexing
     const elementsToBeAutoIndexed = tokenList.filter((t) => t.inputElementsSeparately === true);
 
     console.log('info on evaluation',expression,elementsToBeAutoIndexed);
 
     const lengths = elementsToBeAutoIndexed.map((t) => {
         switch(t.type){
-            case TokenType.VAR: return getVariable(t.code).value.length; //assume variable is array type
+            case TokenType.VAR: return getDependable(t.code).value.length; //assume variable is array type
             case TokenType.FUNC: return t.argCount;
             case TokenType.ARRAY: return t.value.length;
             default:
@@ -3624,6 +3789,7 @@ export function evaluateExpression(compiledExpression, input, arrayIndex) {
 
     //console.log('- replacing: ',compiledExpression.replace,' -');
     let tokenList = readExpressionWithReplacements(compiledExpression, input);
+    //console.log('After replacement: ', tokenList);
 
     //console.warn(tokenList);
 
@@ -3820,27 +3986,31 @@ export function evaluateExpression(compiledExpression, input, arrayIndex) {
  * Replaces unknowns in the expression with input values. 
  * For example, it would replace the 'y' and 'x' tokens in y=x+1 with their appropriate values based on the input 
  * @param {*} compiledExpression 
- * @param {*} input 
+ * @param {Map} input Map of objects where the keys are the parameter numbers and the values are replacement info
  * @returns 
  */
 export function readExpressionWithReplacements(compiledExpression, input) {
     let toReplace = compiledExpression.replace;
+    let parameters = compiledExpression.parameters;
     let tokenList = compiledExpression.tokens.slice(); //duplicate array
 
     const tokType = ExpressionInfoByType[compiledExpression.type].tokType;
     //console.log(tokType);
 
     let action = 0;
+    let paramInfo = [];
 
     if(tokType == TokenType.NUM){
         for(let i = 0; i < toReplace.length; i++){
             action = toReplace[i];
+            paramInfo = parameters[action.paramNum];
+            const values = input.get(action.paramNum);
 
-            if(action.type == TokenType.VAR){
+            if(paramInfo.type == TokenType.VAR){
                 //redo later to add greater variety of types that a var can assume
-                const evalResult = getVariable(action.varId);
-                if(evalResult === undefined) console.error('variable '+ action.varId+ ' not found');
-                else console.log('retrieved variable: '+action.varId+', is:',evalResult);
+                const evalResult = getDependable(paramInfo.code);
+                if(evalResult === undefined) console.error('variable '+ paramInfo.code + ' not found');
+                else console.log('retrieved variable: '+paramInfo.code+', is:',evalResult);
 
                 //console.log(tokenList);
 
@@ -3879,24 +4049,30 @@ export function readExpressionWithReplacements(compiledExpression, input) {
     }
 
     if(tokType == TokenType.DUAL){
-        //log(toReplace,toReplace.length);
+        //console.log(toReplace,toReplace.length);
         for(let i = 0; i < toReplace.length; i++){
             action = toReplace[i];
+            paramInfo = parameters[action.paramNum];
+            const values = input.get(action.paramNum);
 
-            if(action.type == TokenType.UNKN){
+            if(paramInfo.type == TokenType.UNKN){
                 //assumption: only one type of unknown, so we can just replace all instances with the same value
-                let newtoken = {type: TokenType.DUAL, value: [input.min, input.max], edge: [0,0,0], outputType: tokenList[action.index].outputType}; /** @param {Number[]} input  */
+                let newtoken = {type: TokenType.DUAL, value: [values.min, values.max], edge: [0,0,0], outputType: tokenList[action.index].outputType}; 
                 tokenList.splice(action.index, 1, newtoken);
             }
-            if(action.type === TokenType.VAR){
-                let newtoken = {type: getVariable(action.varId).type, value: getVariable(action.varId).value, outputType: tokenList[action.index].outputType};
-                if(newtoken.type === TokenType.ARRAY) newtoken.elementType = getVariable(action.varId).elementType;
+            if(paramInfo.type === TokenType.VAR){
+                let newtoken = {type: getDependable(paramInfo.code).type, value: getDependable(paramInfo.code).value, outputType: tokenList[action.index].outputType};
+                if(newtoken.type === TokenType.ARRAY) newtoken.elementType = getDependable(paramInfo.code).elementType;
                 tokenList.splice(action.index, 1, newtoken);
             }
-            // if(action.type === TokenType.DIST){
+            if(paramInfo.type === TokenType.FUNCPARAM){
+                let newtoken = {type: TokenType.DUAL, value: [values.min, values.max], edge: [0,0,0], outputType: tokenList[action.index].outputType};
+                tokenList.splice(action.index, 1, newtoken);
+            }
+            // if(paramInfo.type === TokenType.DIST){
             //     let token = tokenList[action.index];
 
-            //     let newtoken = {type: TokenType.DUAL, value: [token.fnexp(input.min), token.fnexp(input.max)], edge: [0,0,0], outputType: TokenHandleType.INPUT_TUPLE};
+            //     let newtoken = {type: TokenType.DUAL, value: [token.fnexp(values.min), token.fnexp(values.max)], edge: [0,0,0], outputType: TokenHandleType.INPUT_TUPLE};
             //     tokenList.splice(action.index, 1, newtoken);
             // }
         }
@@ -3906,6 +4082,10 @@ export function readExpressionWithReplacements(compiledExpression, input) {
     //QUAD
     for (let i = 0; i < toReplace.length; i++) {
         action = toReplace[i];
+        paramInfo = parameters[action.paramNum];
+        const values = input.get(action.paramNum);
+
+        //console.assert(values !== undefined || paramInfo.type === TokenType.VAR, input, action.paramNum);
 
         const newQuad = (code, tplf, tprt, btlf, btrt) => {
             return {
@@ -3920,22 +4100,22 @@ export function readExpressionWithReplacements(compiledExpression, input) {
             }
         }
 
-        if (action.type == TokenType.UNKN) {
+        if (paramInfo.type == TokenType.UNKN) {
 
             //FIX REPEATED CODE
             var newtoken; 
-            switch (action.unknownId) {
+            switch (paramInfo.code) {
                 case UnknownCode.CARTX:
                     //doesn't keep track of associated y values
                     //associated ys may be useful for multivariate functions
 
                     //how should i keep track of crosses? 
-                    //crosses = ((input.minX > 0) == (input.maxX > 0)) ? 0 : 1;
+                    //crosses = ((values.minX > 0) == (values.maxX > 0)) ? 0 : 1;
 
                     newtoken = newQuad(
                         UnknownCode.CARTX,
-                        input.minX, input.maxX,
-                        input.minX, input.maxX
+                        values.minX, values.maxX,
+                        values.minX, values.maxX
                     );
 
                     tokenList.splice(action.index, 1, newtoken);
@@ -3945,8 +4125,8 @@ export function readExpressionWithReplacements(compiledExpression, input) {
 
                     newtoken = newQuad(
                         UnknownCode.CARTY,
-                        input.maxY, input.maxY,
-                        input.minY, input.minY
+                        values.maxY, values.maxY,
+                        values.minY, values.minY
                     );
 
                     break;
@@ -3961,8 +4141,8 @@ export function readExpressionWithReplacements(compiledExpression, input) {
                 case UnknownCode.POLRR:
                     newtoken = newQuad(
                         UnknownCode.POLRT,
-                        Math.hypot(input.maxY, input.minX), Math.hypot(input.maxY, input.maxX),
-                        Math.hypot(input.minY, input.minX), Math.hypot(input.minY, input.maxX)
+                        Math.hypot(values.maxY, values.minX), Math.hypot(values.maxY, values.maxX),
+                        Math.hypot(values.minY, values.minX), Math.hypot(values.minY, values.maxX)
                     ); 
 
                     break;
@@ -3970,8 +4150,8 @@ export function readExpressionWithReplacements(compiledExpression, input) {
 
                     newtoken = newQuad(
                         UnknownCode.POLRP,
-                        Math.atan2(input.maxY, input.minX), Math.atan2(input.maxY, input.maxX),
-                        Math.atan2(input.minY, input.minX), Math.atan2(input.minY, input.maxX)
+                        Math.atan2(values.maxY, values.minX), Math.atan2(values.maxY, values.maxX),
+                        Math.atan2(values.minY, values.minX), Math.atan2(values.minY, values.maxX)
                     ); 
                     
                     break;
@@ -3986,20 +4166,20 @@ export function readExpressionWithReplacements(compiledExpression, input) {
 
                     break;
                 case UnknownCode.PARAMETRIC_T:
-                    newtoken = { type: TokenType.DUAL, value: [input.minT, input.maxT], edge: [0,0,0]};
+                    newtoken = { type: TokenType.DUAL, value: [values.minT, values.maxT], edge: [0,0,0]};
                     break;
                 default:
                     console.error("Unknown replacement action");
             }
 
             tokenList.splice(action.index, 1, newtoken);
-        }else if(action.type === TokenType.VAR){
-            const evalResult = getVariable(action.varId);
-            if(evalResult === undefined) console.error('variable '+ action.varId+ ' not found');
+        }else if(paramInfo.type === TokenType.VAR){
+            const evalResult = getDependable(paramInfo.code);
+            if(evalResult === undefined) console.error('variable '+ paramInfo.code + ' not found');
 
             let token = tokenList[action.index];
 
-            console.assert(typeof evalResult.value === 'number',evalResult);
+            console.assert(typeof evalResult.value === 'number' || (evalResult.value.length > 0),evalResult);
 
             token.type = evalResult.type;
             token.value = evalResult.value;
@@ -4008,6 +4188,11 @@ export function readExpressionWithReplacements(compiledExpression, input) {
             token.outputType = evalResult.outputType ?? convertToHandleType(evalResult.type, evalResult.value);
 
             tokenList.splice(action.index, 1, token);
+        }else if(paramInfo.type === TokenType.FUNCPARAM){
+            if(paramInfo.type === TokenType.FUNCPARAM){
+                let newtoken = {type: TokenType.DUAL, value: [values.min, values.max], edge: [0,0,0], outputType: tokenList[action.index].outputType}; /** @param {Number[]} input  */
+                tokenList.splice(action.index, 1, newtoken);
+            }
         }
         //TODO: replacement for VARs 
     }
@@ -4161,9 +4346,9 @@ function convertConstantToToken(constCode){
 }
 
 function convertVariableToToken(varName){
-    const varData = getVariableData(varName);
+    const varData = getDependableData(varName);
 
-    if(varData === undefined){
+    if(varData == undefined){
         throw new Error('Var data not found for variable: \''+varName+'\'.');
     }
 
@@ -4198,6 +4383,9 @@ function convertToHandleType(tokenType, metadata) {
             return TokenHandleType.ARRAY;
         case TokenType.TUPLE:
             return TokenHandleType.TUPLE;
+        case TokenType.FUNCPARAM:
+            //return TokenHandleType.FUNCPARAM;
+            return TokenHandleType.REAL;
         default:
             console.warn('failed to convert to handle type',tokenType,metadata)
             return 0;
@@ -4245,7 +4433,7 @@ function testEvaluation(inputTokens, inputType, evalType){
             const runtimeToken = tokens[testToken.index];
             const elementType = 
                 runtimeToken.type === TokenType.VAR 
-                ? getVariable(runtimeToken.code).elementType 
+                ? getDependable(runtimeToken.code).elementType 
                 : runtimeToken.type === TokenType.FUNC
                     ? convertToTokenType(FuncInfoByCode[runtimeToken.code].returnElementType,evalType)
                     : runtimeToken.elementType;
