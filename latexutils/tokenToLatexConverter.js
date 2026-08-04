@@ -13,17 +13,13 @@ export function convertTokenToLatex(token){
             const asPercent = token.interpret === 'pct';
             const asRadians = token.interpret === 'rad';
 
-            const strUncertainty = uncertainty == 0 ? '' : '±'+(asPercent ? uncertainty*100+'%' : uncertainty);
+            const uncertaintySuffix = uncertainty == 0 ? '' : '±'+(asPercent ? uncertainty*100+'%' : uncertainty);
 
             if(asPercent) return convertRealToString(r*100)+'%';
-            else if(asRadians) return 
+            else if(asRadians) return convertRealToString(r)+'\\operatorname{rad}'
 
             const str = convertRealToString(r);
-            if(token.uncertainty !== undefined){
-                return str+'±'+token.uncertainty;
-            }
-
-            return str;
+            return str+uncertaintySuffix;
         case TokenType.CMPLX:
             let a = token.value[0];
             let b = token.value[1];
