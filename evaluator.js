@@ -344,7 +344,7 @@ export const FuncCode = {
 
 //A 'bundle' is any way to represent a list of numbers, either by inputting as separate arguments or by inputting one array
 //Bundle-input functions accept either F(x,y,z,...) or F(a) where a=[x,y,z,...]
-const FuncArgumentInputType = {
+export const FuncArgumentInputType = {
     //BUNDLE; REAL
     //BUNDLE; COMPLEX
     //BUNDLE; TUPLE
