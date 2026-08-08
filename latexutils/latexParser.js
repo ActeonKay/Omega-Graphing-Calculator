@@ -6,7 +6,9 @@
 //Crucially, not all tokens have been converted into token types. 
 // - Latex commands have not been converted into their token types (like \cdot => op or \sin => function)
 //{type: String, string: String, ?metadata: Object}
-//metadata = {?superscript: NSTtoken[], ?subscript: NST}
+//metadata = {?superscript: NSTtoken[], ?subscript: NST, ?fullString, ?optionalArguments, ?requiredArguments, ?value: float}
+
+//TODO: make sure fullString vs. string makes sense and is consistent
 
 //2. NST => non-structured types
 //This layer converts all 'placeholder' latex tokens into actual token types
@@ -29,10 +31,10 @@ const parseNumberTests = [
 ];
 
 const parseCommandTests = [
-    ["\\cdot",1,"cdot"],
-    ["2\\sin x\\cos x",2,"sin"],
-    ["1+\\cos^2x=\\sin^2x",3,"cos"],
-    ["\\frac{1}{x^2+1}",1,"frac"]
+    ["\\cdot",0,"\\cdot"],
+    ["2\\sin x\\cos x",1,"\\sin"],
+    ["1+\\cos^2x=\\sin^2x",2,"\\cos"],
+    ["\\frac{1}{x^2+1}",0,"\\frac{1}{x^2+1}"]
 ];
 
 const latexTests = [
@@ -49,7 +51,7 @@ const latexTests = [
     "\\sqrt[4+6]{1024}=2",
     "d_{y=1}",
     "d^{y=1}",
-    "\\lim_{n\\to\\infty}=1",
+    "\\lim_{n\\to\\infty}=\\left(1+\\frac{1}{n}\\right)^n",
     "10.0123456789+0",
     "\\left[1,2,3\\right]",
     "\\begin{cases} x+1 \\\\ x-1 \\end{cases}",
@@ -187,32 +189,49 @@ export function tokenize(string, context = {}){
         }
 
         if(char === "\\"){
-            const command = parseCommand(string, i+1);
+            const command = parseCommand(string, i);
             pushToken(command);
 
-            i += command.charCount + 1; //command + "\"
+            i += command.charCount; //command + "\"
+            continue;
+        }
+
+        if(isLeftBracket(char) || isRightBracket(char)){
+            const bracket = {
+                type: "bracket",
+                string: char,
+                charCount: char.length,
+                metadata: { fullString: char }
+            };
+
+            pushToken(bracket);
+            i++;
             continue;
         }
 
         if(char === "^"){
-            console.assert(previousToken?.metadata?.superscript === undefined);
+            console.assert(previousToken.metadata?.superscript === undefined);
 
             const isSupEnclosed = (string.charAt(i+1) === "{"); //whether sup is enclosed in {}.
             const superscript = isSupEnclosed ? parseParenthesis(string,i+2) : string.charAt(i+1);
 
             previousToken.metadata.superscript = tokenize(superscript);
             i += superscript.length + 2*isSupEnclosed + 1;
+
+            previousToken.metadata.fullString = previousToken.metadata.fullString.concat("^"+ (isSupEnclosed ? "{" + superscript + "}" : superscript));
             continue;
         }
 
         if(char === "_"){
-            console.assert(previousToken?.metadata?.subscript === undefined);
+            console.assert(previousToken.metadata?.subscript === undefined);
 
             const isSubEnclosed = (string.charAt(i+1) === "{"); //whether sub is enclosed in {}.
             const subscript = isSubEnclosed ? parseParenthesis(string,i+2) : string.charAt(i+1);
 
             previousToken.metadata.subscript = tokenize(subscript);
             i += subscript.length + 2*isSubEnclosed+1;
+            
+            previousToken.metadata.fullString = previousToken.metadata.fullString.concat("_"+ (isSubEnclosed ? "{" + subscript + "}" : subscript));
             continue;
         }
 
@@ -221,7 +240,7 @@ export function tokenize(string, context = {}){
                 type: "operator", 
                 string: char, 
                 charCount: char.length,
-                metadata: {}
+                metadata: { fullString: char}
             };
 
             pushToken(operator);
@@ -234,7 +253,7 @@ export function tokenize(string, context = {}){
                 type: "letter",
                 string: char,
                 charCount: char.length,
-                metadata: {}
+                metadata: { fullString: char }
             }
 
             pushToken(letter); 
@@ -247,7 +266,7 @@ export function tokenize(string, context = {}){
                 type: "delimiter",
                 string: char,
                 charCount: char.length,
-                metadata: {}
+                metadata: { fullString: char }
             }
 
             pushToken(letter);
@@ -288,7 +307,7 @@ function parseNumber(string, start){
         type: "number", 
         string: substring, 
         charCount: substring.length, 
-        metadata: {value: parseFloat(substring)}
+        metadata: {value: parseFloat(substring), fullString: substring}
     };
 }
 
@@ -299,31 +318,33 @@ function parseNumber(string, start){
  * @returns {*} NST-layer token representing the command
  */
 function parseCommand(string, start){
-    if(string.charAt(start) === "\\"){
-        return {type: "delimiter", string: "\\\\", charCount: 2, metadata: {}};
+    console.assert(string.charAt(start) === "\\", "parseCommand called on non-command string: "+string);
+
+    if(string.charAt(start+1) === "\\"){
+        return {type: "delimiter", string: "\\\\", charCount: 2, metadata: {fullString: "\\\\"}};
     }
 
-    let i = start;
-    let substring = "";
+    let i = start+1;
+    let substring = "\\";
     while(isLetter(string.charAt(i))){
         substring = substring.concat(string.charAt(i));
         i++;
     }
 
-    if(substring === "left"){
+    if(substring === "\\left"){
         if(!isLeftBracket(string.charAt(i)) && string.charAt(i) != "|") console.error("Invalid latex string.");
 
         substring = substring.concat(string.charAt(i));
 
-        return {type: "bracket", string: substring, charCount: substring.length, metadata: {}};
+        return {type: "bracket", string: substring, charCount: substring.length, metadata: {fullString: "\\\\"}};
     }
 
-    if(substring === "right"){
+    if(substring === "\\right"){
         if(!isRightBracket(string.charAt(i)) && string.charAt(i) != "|") console.error("Invalid latex string.");
 
         substring = substring.concat(string.charAt(i));
 
-        return {type: "bracket", string: substring, charCount: substring.length, metadata: {}};
+        return {type: "bracket", string: substring, charCount: substring.length, metadata: {fullString: "\\\\"}};
     }
 
     let optionalArguments = [];
@@ -337,6 +358,8 @@ function parseCommand(string, start){
             i+=optionalArgument.length+1;
 
             console.assert(string.charAt(i) === "]");
+
+            substring = substring.concat("["+optionalArgument+"]");
             i++;
         }
         
@@ -353,6 +376,8 @@ function parseCommand(string, start){
             i+=requiredArgument.length+1;
 
             console.assert(string.charAt(i) === "}");
+
+            substring = substring.concat("{"+requiredArgument+"}");
             i++;
         }
     }
@@ -361,7 +386,7 @@ function parseCommand(string, start){
         type: "command", 
         string: substring, 
         charCount: i-start,
-        metadata: {requiredArguments, optionalArguments} //note: attribute naming shortcut
+        metadata: {requiredArguments, optionalArguments, fullString: substring} //note: attribute naming shortcut
     };
 }
 
