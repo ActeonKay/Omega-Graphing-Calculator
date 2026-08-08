@@ -1,3 +1,7 @@
+import{
+    FuncArgumentInputType
+} from "../evaluator.js"
+
 export const FuncCode = {
     FRAC: 100, //maybe temporary
     SIN: 101,
@@ -6,24 +10,28 @@ export const FuncCode = {
     SEC: 104,
     CSC: 105,
     COT: 106,
+
     ASIN: 107,
     ACOS: 108,
     ATAN: 109,
     ASEC: 110,
     ACSC: 111,
     ACOT: 112,
+
     SINH: 113,
     COSH: 114,
     TANH: 115,
     SECH: 116,
     CSCH: 117,
     COTH: 118,
+
     ASINH: 119,
     ACOSH: 120,
     ATANH: 121,
     ASECH: 122,
     ACSCH: 123,
     ACOTH: 124,
+
     GD: 125,
     LAM: 126,
     ABS: 127,
@@ -69,18 +77,33 @@ export const FuncCode = {
     D_BINM: 171
 }
 
+export const FunctionByLatex = {
+    "\\sin": FuncCode.SIN,
+    "\\cos": FuncCode.COS,
+    "\\tan": FuncCode.TAN,
+    "\\csc": FuncCode.CSC,
+    "\\sec": FuncCode.SEC,
+    "\\cot": FuncCode.COT,
+    "\\arcsin": FuncCode.ASIN,
+    "\\arccos": FuncCode.ACOS,
+    "\\arctan": FuncCode.ATAN,
+    "\\arccsc": FuncCode.ACSC,
+    "\\arcsec": FuncCode.ASEC,
+    "\\arccot": FuncCode.ACOT,
+}
+
 export const FuncArgumentSchema = {
     1: { required: true, acceptedTypes: []}
 }
 
-export const defaultFunctions = new Map([
-    [FuncCode.FRAC, { symbol: "frac", code: FuncCode.FRAC, staticArgs: true, args: 2, inputType: FuncArgumentInputType.ALL_NUMERIC, returnType: TokenHandleType.REAL }],
-    [FuncCode.SIN, { symbol: "sin", code: FuncCode.SIN, staticArgs: false, args: 1, inputType: FuncArgumentInputType.ALL_NUMERIC, returnType: TokenHandleType.REAL }],
-    [FuncCode.COS, { symbol: "cos", code: FuncCode.COS, staticArgs: false, args: 1, inputType: FuncArgumentInputType.ALL_NUMERIC, returnType: TokenHandleType.REAL }],
-    [FuncCode.TAN, { symbol: "tan", code: FuncCode.TAN, staticArgs: false, args: 1, inputType: FuncArgumentInputType.ALL_NUMERIC, returnType: TokenHandleType.REAL }],
-    [FuncCode.SEC, { symbol: "sec", code: FuncCode.SEC, staticArgs: false, args: 1, inputType: FuncArgumentInputType.ALL_NUMERIC, returnType: TokenHandleType.REAL }],
-    [FuncCode.CSC, { symbol: "csc", code: FuncCode.CSC, staticArgs: false, args: 1, inputType: FuncArgumentInputType.ALL_NUMERIC, returnType: TokenHandleType.REAL }],
-]);
+// export const defaultFunctions = new Map([
+//     [FuncCode.FRAC, { symbol: "frac", code: FuncCode.FRAC, staticArgs: true, args: 2, inputType: FuncArgumentInputType.ALL_NUMERIC, returnType: TokenHandleType.REAL }],
+//     [FuncCode.SIN, { symbol: "sin", code: FuncCode.SIN, staticArgs: false, args: 1, inputType: FuncArgumentInputType.ALL_NUMERIC, returnType: TokenHandleType.REAL }],
+//     [FuncCode.COS, { symbol: "cos", code: FuncCode.COS, staticArgs: false, args: 1, inputType: FuncArgumentInputType.ALL_NUMERIC, returnType: TokenHandleType.REAL }],
+//     [FuncCode.TAN, { symbol: "tan", code: FuncCode.TAN, staticArgs: false, args: 1, inputType: FuncArgumentInputType.ALL_NUMERIC, returnType: TokenHandleType.REAL }],
+//     [FuncCode.SEC, { symbol: "sec", code: FuncCode.SEC, staticArgs: false, args: 1, inputType: FuncArgumentInputType.ALL_NUMERIC, returnType: TokenHandleType.REAL }],
+//     [FuncCode.CSC, { symbol: "csc", code: FuncCode.CSC, staticArgs: false, args: 1, inputType: FuncArgumentInputType.ALL_NUMERIC, returnType: TokenHandleType.REAL }],
+// ]);
 
 export function gamma(n) {
     if(n-Math.floor(n) === 0 && n<=0) return undefined; 
