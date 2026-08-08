@@ -170,9 +170,15 @@
       testLatexParse
     } from "./latexutils/latexParser.js";
 
+    import {
+      typesetExpression,
+      testExpressionTypeset
+    } from "./compiler.js";
+
     //TESTS
     console.log("Startup");
     testLatexParse();
+    testExpressionTypeset([tokenize("y=2x+1"),tokenize("2x+1"),tokenize("0=x"),tokenize("x=0"),tokenize("xy+11=-2"),tokenize("a=\\tan(45)-1"),tokenize("f(x,y)=x^2+y^2")]);
 
     // --- Common Elements ---
     const canvas = document.getElementById('c');
