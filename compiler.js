@@ -177,6 +177,26 @@ function isFunctionDefinition(tokensNSP){
     throw new Error("Unexpected end of tokens in function definition: " + tokensNSP.map((t) => t.string).join(' '));
 }
 
+export function determineTokenDependencies(tokensNSP){
+    tokensNSP.forEach((token) => {
+        let dependencies = new Set();
+
+        if(isValidVariableToken(token)){
+            dependencies = dependencies.union(new Set([token.string]));
+        }
+
+        if(token.metadata.subscriptExpression){
+            dependencies = dependencies.union(determineDependencies(token.metadata.subscriptExpression));
+        }
+
+        if(token.metadata.superscriptExpression){
+            dependencies = dependencies.union(determineDependencies(token.metadata.superscriptExpression));
+        }
+
+        token.metadata.dependencies = dependencies;
+    });
+}
+
 /**
  * Typesets an expression represented by a list of NSP-layer tokens
  * @param {*} tokensNSP 
@@ -186,21 +206,21 @@ export function typesetExpression(tokensNSP){
     if(tokensNSP.length === 0) return null;
 
     if(!tokensNSP.some((t) => t.string === "=")){
-        const hasCartesianCoords = tokensNSP.some((t) => t.string === "x" || t.string === "y"); //Todo: add z
-        const hasPolarCoords = tokensNSP.some((t) => t.string === "r" || t.string === "\\theta");
+        const hasCartesianCoords = tokensNSP.some((t) => t.metadata.dependencies.has("x") || t.metadata.dependencies.has("y")); //Todo: add z
+        const hasPolarCoords = tokensNSP.some((t) => t.metadata.dependencies.has("r") || t.metadata.dependencies.has("\\theta"));
 
         if(hasCartesianCoords && hasPolarCoords) return {type: ExpressionType.IMPLICIT, trimmedExpression: tokensNSP};
         if(!hasCartesianCoords && !hasPolarCoords) return {type: ExpressionType.EVALUATION, trimmedExpression: tokensNSP};
 
         if(hasCartesianCoords){
-            const hasX = tokensNSP.some((t) => t.string === "x"), hasY = tokensNSP.some((t) => t.string === "y"); //hasZ = tokensNSP.some((t) => t.string === "z");
+            const hasX = tokensNSP.some((t) => t.metadata.dependencies.has("x")), hasY = tokensNSP.some((t) => t.metadata.dependencies.has("y")); //hasZ = tokensNSP.some((t) => t.string === "z");
             if(hasX && hasY) return {type: ExpressionType.INVALID, trimmedExpression: tokensNSP}; //TODO: add z
             if(hasX) return {type: ExpressionType.EXPLICIT_Y, trimmedExpression: tokensNSP}; //y=...x...
             if(hasY) return {type: ExpressionType.EXPLICIT_X, trimmedExpression: tokensNSP}; //x=...y...
         }
 
         if(hasPolarCoords){
-            const hasR = tokensNSP.some((t) => t.string === "r"), hasTheta = tokensNSP.some((t) => t.string === "\\theta");
+            const hasR = tokensNSP.some((t) => t.metadata.dependencies.has("r")), hasTheta = tokensNSP.some((t) => t.metadata.dependencies.has("\\theta"));
             if(hasR && hasTheta) return {type: ExpressionType.INVALID, trimmedExpression: tokensNSP};
             if(hasR) return {type: ExpressionType.EXPLICIT_THETA, trimmedExpression: tokensNSP};
             if(hasTheta) return {type: ExpressionType.EXPLICIT_R, trimmedExpression: tokensNSP};
@@ -227,19 +247,19 @@ export function typesetExpression(tokensNSP){
         const lhsToken = lhs[0];
 
         if(lhsToken.string in CoordinateByLatex){
-            if(rhs.some((t) => t.string === lhsToken.string)) return {type: ExpressionType.IMPLICIT, trimmedExpression: tokensNSP};
+            if(rhs.some((t) => t.metadata.dependencies.has(lhsToken.string))) return {type: ExpressionType.IMPLICIT, trimmedExpression: tokensNSP};
 
-            return {type: varDict[lhsToken.string], trimmedExpression: rhs};
+            return {type: varDict[lhsToken.string], trimmedExpression: rhs}; //format: ? = (anything but '?')
         }
 
         if(lhsToken.type === "letter" || lhsToken.type === "command"){
-            if(lhsToken.metadata?.optionalArguments?.length > 0 || lhsToken.metadata?.requiredArguments?.length > 0){
+            if(!isValidVariableToken(lhsToken)){
                 return {type: ExpressionType.INVALID, trimmedExpression: tokensNSP}; //TODO: validate setting variables to latex commands with arguments like \vector{a} = (1,2,3) but not \frac{1}{2} = 3
             }
 
             if(rhs.length === 1 && rhs[0].type === "number") return {type: ExpressionType.ASSIGNMENT_DIRECT, trimmedExpression: rhs, assignment: {variable: lhsToken.string, value: rhs[0].string}}; //Ex: a=5
 
-            if(rhs.some((t) => t.string === lhsToken.string)) return {type: ExpressionType.INVALID, trimmedExpression: tokensNSP}; //you can't define a variable in terms of itself
+            if(rhs.some((t) => t.metadata.dependencies.has(lhsToken.string))) return {type: ExpressionType.INVALID, trimmedExpression: tokensNSP}; //you can't define a variable in terms of itself
 
             return {type: ExpressionType.ASSIGNMENT_INDIRECT, trimmedExpression: rhs, assignment: {variable: lhsToken.string}};
         }
@@ -252,7 +272,7 @@ export function typesetExpression(tokensNSP){
     }
 
     if(isFunctionDefinition(lhs)){
-        if(rhs.some((t) => t.string === lhs[0].string)) return {type: ExpressionType.INVALID, trimmedExpression: rhs}; //you can't define a function in terms of itself
+        if(rhs.some((t) => t.metadata.dependencies.has(lhs[0].string))) return {type: ExpressionType.INVALID, trimmedExpression: rhs}; //you can't define a function in terms of itself
 
         return {type: ExpressionType.DEFINITION, trimmedExpression: rhs, definition: {name: lhs[0].string, parameters: lhs.slice(2,lhs.length-1).filter((t) => t.string !== ",").map((t) => t.string)}};
     }
@@ -261,7 +281,7 @@ export function typesetExpression(tokensNSP){
         rhsToken = rhs[0];
 
         if(rhsToken.string in CoordinateByLatex){
-            if(lhs.some((t) => t.string === rhsToken.string)) return {type: ExpressionType.IMPLICIT, trimmedExpression: tokensNSP};
+            if(lhs.some((t) => t.metadata.dependencies.has(rhsToken.string))) return {type: ExpressionType.IMPLICIT, trimmedExpression: tokensNSP};
 
             return {type: varDict[rhsToken.string], trimmedExpression: lhs}; 
         } 
@@ -302,6 +322,8 @@ export function typesetTokens(tokensNSP, isSubscript = false, isSuperscript = fa
         throw new Error("Subscript tokens are not all letters, numbers, commands, or delimiters:", tokensNSP);
         //TODO: handle subscripts that are not alphanumeric (e.g., a_{b+c})
     }
+
+    determineTokenDependencies(tokensNSP);
 
     const expressionInfo = typesetExpression(tokensNSP);
     const type = expressionInfo.type;
@@ -440,7 +462,12 @@ export function typesetTokens(tokensNSP, isSubscript = false, isSuperscript = fa
         }
     }
 
-    let result = {type: type, tokens: insertImplicitOperations(tokens)};
+    let expressionDependencies = new Set();
+    trimmedTokens.forEach((token) => expressionDependencies = expressionDependencies.union(token.metadata.dependencies));
+
+    const compileReadyTokenList = insertImplicitOperations(tokens);
+
+    let result = {type: type, tokens: compileReadyTokenList, dependencies: expressionDependencies};
     if(expressionInfo.definition) result.definition = expressionInfo.definition;
     if(expressionInfo.assignment) result.assignment = expressionInfo.assignment;
 
@@ -474,7 +501,7 @@ export function insertImplicitOperations(tokensNSP){
 function isValidLeftOperand(token){
     const isOperandToken = (token.type === TokenType.OPERAND);
     const isRightBracket = (token.type === TokenType.BRACKET && token.code % 2 === 1);
-    const isLeftAssociativeUnary = (token.type === TokenType.OPERATOR) && (Operators[token.code]?.arity === 1) && (Operators[token.code]?.associativity === OperatorAssociativity.LEFT);
+    const isLeftAssociativeUnary = (token.type === TokenType.OPERATOR) && (Operators.get(token.code)?.arity === 1) && (Operators.get(token.code)?.associativity === OperatorAssociativity.LEFT);
 
     return isOperandToken || isRightBracket || isLeftAssociativeUnary;
 }
@@ -482,7 +509,7 @@ function isValidLeftOperand(token){
 function isValidRightOperand(token){
     const isOperandToken = (token.type === TokenType.OPERAND);
     const isLeftBracket = (token.type === TokenType.BRACKET && token.code % 2 === 0);
-    const isRightAssociativeUnary = (token.type === TokenType.OPERATOR) && (Operators[token.code]?.arity === 1) && (Operators[token.code]?.associativity === OperatorAssociativity.RIGHT);
+    const isRightAssociativeUnary = (token.type === TokenType.OPERATOR) && (Operators.get(token.code)?.arity === 1) && (Operators.get(token.code)?.associativity === OperatorAssociativity.RIGHT);
 
     return isOperandToken || isLeftBracket || isRightAssociativeUnary;
 }
@@ -520,6 +547,7 @@ export function testExpressionTypeset(tests){
 export function compileExpression(expression){
     let tokens = expression.tokens;
 
+    console.log(expression);
     console.log(tokens.length);
 
     let outputs = [];
@@ -630,7 +658,6 @@ export function compileExpression(expression){
 
         if(token.metadata.superscript){
             const superscriptExpression = compileExpression(token.metadata.superscript);
-
             outputs.push(...superscriptExpression.tokens);
 
             const exponentiatorToken = {type: TokenType.OPERATOR, code: OperatorCode.POWN, string: "^", metadata: {}};
@@ -682,7 +709,7 @@ export function compileExpression(expression){
  * @param {*} name Name of substituted value
  * @param {*} value Value to substitute in
  */
-function substitute(tokens, input, options){
+function substitute(tokens, input, options = {}){
     const propagateBoundary = options.propagateBoundary ?? false;
     const propagateInterval = options.propagateInterval ?? false;
     const propagateUncertainty = options.propagateUncertainty ?? false;
@@ -690,26 +717,42 @@ function substitute(tokens, input, options){
 
     const evalAsObject = propagateBoundary + propagateInterval + doNonPrincipalBranch + propagateUncertainty > 0;
 
-    const subs = tokens.filter((token) => token.type === TokenType.OPERAND);
+    let outputs = [];
+    for(let i = 0; i<tokens.length; i++) {
+        const token = tokens[i];
 
-    subs.forEach((r) => {
-        const info = input.get(r.string);
+        if(token.type !== TokenType.OPERAND) {
+            outputs.push(token); 
+            continue;
+        }
+
+        if(token.metadata.value && !evalAsObject){
+            outputs.push(token.metadata.value);
+            continue;
+        }
+
+        const info = input.get(token.string);
         const value = info.value;
 
-        if(!evalAsObject) r = value;
-        else {
-            const token = {
-                value: r
-            };
-
-            if(propagateBoundary) token.boundary = [0,0,0];
-            if(propagateInterval) token.interval = info.interval;
-            if(propagateUncertainty) token.uncertainty = 0;
-            //branches are handled separately by the evaluator
+        if(!evalAsObject){
+            outputs.push(value);
+            continue;
         }
-    });
 
-    return tokens; //do you need to return tokens or does it modify the existing array
+        throw new Error("Not yet implemented");
+
+        const result = {
+            value: value
+        }
+
+        if(propagateBoundary) token.boundary = [0,0,0];
+        if(propagateInterval) token.interval = info.interval;
+        if(propagateUncertainty) token.uncertainty = 0;
+
+        outputs.push(result);
+    };
+
+    return outputs;
 }
 
 /**
@@ -730,7 +773,7 @@ export function evaluateExpressionWithOptions(expression, input, options){
             case TokenType.OPERATOR:
                 const code = token.code;
 
-                const arity = Operators[token.code].arity;
+                const arity = Operators.get(token.code).arity;
                 const args = arity === 1 ? [solve.pop()] : [solve.pop(),solve.pop()];
 
                 solve.push(op(code, args));
@@ -739,17 +782,19 @@ export function evaluateExpressionWithOptions(expression, input, options){
             case TokenType.FUNCTION:
                 const funcResult = func(token.code, solve.pop());
                 solve.push(funcResult);
-                
+
                 break;
             default:
-                throw new Error("Unknown token type identified");
+                //if(token.type || !options)
+                    solve.push(token);
+                //throw new Error("Unknown token type identified");
                 break;
             //case TokenType.ALPHANUMERIC:
                 //break;
         }
     });
 
-    if(solve.length !== 1) throw new Error("Error in stack evaluation.");
+    if(solve.length !== 1) throw new Error("Error in stack evaluation. Length: "+solve.length);
 
     return solve[0];
 }
@@ -757,16 +802,17 @@ export function evaluateExpressionWithOptions(expression, input, options){
 function op(code, args){
     switch(code){
         case OpCode.ADD:
-            return args[0]+args[1];
+            return args[1]+args[0];
         case OpCode.SUB:
-            return args[0]-args[1];
+        case OpCode.EQ:
+            return args[1]-args[0];
         case OpCode.MUL:
-            return args[0]*args[1];
+            return args[1]*args[0];
         case OpCode.DIV:
-            return args[0]/args[1];
+            return args[1]/args[0];
         case OpCode.POW:
         case OpCode.POWN:
-            return args[0]**args[1];
+            return args[1]**args[0];
         case OpCode.NEG:
             return -args[0];
 
