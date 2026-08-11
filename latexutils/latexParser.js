@@ -17,6 +17,8 @@
 //Done separately because wow it is simpler and easier to debug/manage
 //Actual structuring is left for compliation
 
+import { OperatorByLatex } from "../functions/defaultOperators.js";
+
 const parseParenthesisTests = [
     ["(1)",1,"1"],
     ["a^{20}",3,"20"],
@@ -175,107 +177,94 @@ export function tokenize(string, context = {}){
     while(i < string.length){
         char = string.charAt(i);
 
-        if(char == " "){
-            i++;
-            continue;
+        switch(true){
+            case char == " ":
+                i++;
+                break;
+            case isFinite(char):
+                const number = parseNumber(string, i);
+                pushToken(number);
+
+                i+=number.charCount;
+                break;
+            case char == "\\":
+                const command = parseCommand(string, i);
+                pushToken(command);
+
+                i += command.charCount; //command + "\"
+                break;
+            case isLeftBracket(char):
+            case isRightBracket(char):
+                const bracket = {
+                    type: "bracket",
+                    string: char,
+                    charCount: char.length,
+                    metadata: { fullString: char }
+                };
+
+                pushToken(bracket);
+                i++;
+                break;
+            case OperatorByLatex[char] !== undefined && !(char == "^" || char == "_"): //includes ^ and _ 
+                const operator = {
+                    type: "operator", 
+                    string: char, 
+                    charCount: char.length,
+                    metadata: { fullString: char}
+                };
+
+                pushToken(operator);
+                i++;
+                break;
+            case char == "^":
+                console.assert(previousToken.metadata?.superscript === undefined);
+
+                const isSupEnclosed = (string.charAt(i+1) === "{"); //whether sup is enclosed in {}.
+                const superscript = isSupEnclosed ? parseParenthesis(string,i+2) : string.charAt(i+1);
+
+                previousToken.metadata.superscript = tokenize(superscript);
+                i += superscript.length + 2*isSupEnclosed + 1;
+
+                previousToken.metadata.fullString = previousToken.metadata.fullString.concat("^"+ (isSupEnclosed ? "{" + superscript + "}" : superscript));
+                break;
+            case char == "_":
+                console.assert(previousToken.metadata?.subscript === undefined);
+
+                const isSubEnclosed = (string.charAt(i+1) === "{"); //whether sub is enclosed in {}.
+                const subscript = isSubEnclosed ? parseParenthesis(string,i+2) : string.charAt(i+1);
+
+                previousToken.metadata.subscript = tokenize(subscript);
+                i += subscript.length + 2*isSubEnclosed+1;
+                
+                previousToken.metadata.fullString = previousToken.metadata.fullString.concat("_"+ (isSubEnclosed ? "{" + subscript + "}" : subscript));
+                break;
+            case isLetter(char):
+                const letter = {
+                    type: "letter",
+                    string: char,
+                    charCount: char.length,
+                    metadata: { fullString: char }
+                }
+
+                pushToken(letter); 
+                i++;
+                break;
+            case char == ",":
+                const delimiter = {
+                    type: "delimiter",
+                    string: char,
+                    charCount: char.length,
+                    metadata: { fullString: char }
+                }
+
+                pushToken(delimiter);
+                i++;
+                break;
+            default:
+                console.error("Invalid character: ",char," in: ", string);
+                i++;
+                break;
         }
-
-        if(isFinite(char)){
-            const number = parseNumber(string, i);
-            pushToken(number);
-
-            i+=number.charCount;
-            continue;
-        }
-
-        if(char === "\\"){
-            const command = parseCommand(string, i);
-            pushToken(command);
-
-            i += command.charCount; //command + "\"
-            continue;
-        }
-
-        if(isLeftBracket(char) || isRightBracket(char)){
-            const bracket = {
-                type: "bracket",
-                string: char,
-                charCount: char.length,
-                metadata: { fullString: char }
-            };
-
-            pushToken(bracket);
-            i++;
-            continue;
-        }
-
-        if(char === "^"){
-            console.assert(previousToken.metadata?.superscript === undefined);
-
-            const isSupEnclosed = (string.charAt(i+1) === "{"); //whether sup is enclosed in {}.
-            const superscript = isSupEnclosed ? parseParenthesis(string,i+2) : string.charAt(i+1);
-
-            previousToken.metadata.superscript = tokenize(superscript);
-            i += superscript.length + 2*isSupEnclosed + 1;
-
-            previousToken.metadata.fullString = previousToken.metadata.fullString.concat("^"+ (isSupEnclosed ? "{" + superscript + "}" : superscript));
-            continue;
-        }
-
-        if(char === "_"){
-            console.assert(previousToken.metadata?.subscript === undefined);
-
-            const isSubEnclosed = (string.charAt(i+1) === "{"); //whether sub is enclosed in {}.
-            const subscript = isSubEnclosed ? parseParenthesis(string,i+2) : string.charAt(i+1);
-
-            previousToken.metadata.subscript = tokenize(subscript);
-            i += subscript.length + 2*isSubEnclosed+1;
-            
-            previousToken.metadata.fullString = previousToken.metadata.fullString.concat("_"+ (isSubEnclosed ? "{" + subscript + "}" : subscript));
-            continue;
-        }
-
-        if(["+","-","*","/","=","<",">","!","~"].includes(char)){
-            const operator = {
-                type: "operator", 
-                string: char, 
-                charCount: char.length,
-                metadata: { fullString: char}
-            };
-
-            pushToken(operator);
-            i++;
-            continue;
-        }
-
-        if(isLetter(char)){            
-            const letter = {
-                type: "letter",
-                string: char,
-                charCount: char.length,
-                metadata: { fullString: char }
-            }
-
-            pushToken(letter); 
-            i++;
-            continue;
-        }
-
-        if(char == ","){
-            const letter = {
-                type: "delimiter",
-                string: char,
-                charCount: char.length,
-                metadata: { fullString: char }
-            }
-
-            pushToken(letter);
-            i++;
-            continue;
-        }
-
-        console.error("Invalid character: ",char," in: ", string);
-        i++;
     }
 
     return NSPtokens;
