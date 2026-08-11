@@ -5,6 +5,8 @@ import {
 const decimalAccuracy = 8;
 
 export function convertTokenToLatex(token){
+    if(isFinite(token)) return convertRealToString(token);
+
     switch(token.type){
         case TokenType.NUM: 
             let r = token.value;
