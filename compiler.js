@@ -729,6 +729,7 @@ export function compileExpression(expression){
  * @param {*} value Value to substitute in
  */
 function substitute(tokens, input, options = {}){
+    const evaluateEqualityAsDifference = options.evaluateEqualityAsDifference ?? false;
     const propagateBoundary = options.propagateBoundary ?? false;
     const propagateInterval = options.propagateInterval ?? false;
     const propagateUncertainty = options.propagateUncertainty ?? false;
@@ -773,6 +774,7 @@ function substitute(tokens, input, options = {}){
             value: value
         }
 
+        if(evaluateEqualityAsDifference) token.evaluateEqualityAsDifference = true;
         if(propagateBoundary) token.boundary = [0,0,0]; 
         if(propagateInterval) token.interval = info.interval;
         if(propagateUncertainty) token.uncertainty = 0;
