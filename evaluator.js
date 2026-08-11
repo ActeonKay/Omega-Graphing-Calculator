@@ -1,9 +1,9 @@
 import{
-    Expression,
+    ExpressionEntry,
     getDependable,
     getDependableData,
-    isValidExpression,
-    expressionType
+    isValidExpressionEntry,
+    ExpressionEntryType
 } from "./expressions.js";
 
 import{
