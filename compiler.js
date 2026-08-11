@@ -177,24 +177,29 @@ function isFunctionDefinition(tokensNSP){
     throw new Error("Unexpected end of tokens in function definition: " + tokensNSP.map((t) => t.string).join(' '));
 }
 
-export function determineTokenDependencies(tokensNSP){
+export function determineDependencies(tokensNSP){
+    let expressionDependencies = new Set();
+
     tokensNSP.forEach((token) => {
-        let dependencies = new Set();
+        let tokenDependencies = new Set();
 
         if(isValidVariableToken(token)){
-            dependencies = dependencies.union(new Set([token.string]));
+            tokenDependencies = tokenDependencies.union(new Set([token.string]));
         }
 
-        if(token.metadata.subscriptExpression){
-            dependencies = dependencies.union(determineDependencies(token.metadata.subscriptExpression));
+        if(token.metadata.subscriptn){
+            tokenDependencies = tokenDependencies.union(determineDependencies(token.metadata.subscript));
         }
 
-        if(token.metadata.superscriptExpression){
-            dependencies = dependencies.union(determineDependencies(token.metadata.superscriptExpression));
+        if(token.metadata.superscript){
+            tokenDependencies = tokenDependencies.union(determineDependencies(token.metadata.superscript));
         }
 
-        token.metadata.dependencies = dependencies;
+        token.metadata.dependencies = tokenDependencies;
+        expressionDependencies = expressionDependencies.union(tokenDependencies);
     });
+
+    return expressionDependencies;
 }
 
 /**
@@ -203,7 +208,7 @@ export function determineTokenDependencies(tokensNSP){
  * @returns {Object} {type: TokenType, trimmedExpression: Object[]} The type of expression represented by the tokens
  */
 export function typesetExpression(tokensNSP){
-    if(tokensNSP.length === 0) return null;
+    if(tokensNSP.length === 0) throw new Error("No tokens submitted into expression typeset.");
 
     if(!tokensNSP.some((t) => t.string === "=")){
         const hasCartesianCoords = tokensNSP.some((t) => t.metadata.dependencies.has("x") || t.metadata.dependencies.has("y")); //Todo: add z
@@ -278,7 +283,7 @@ export function typesetExpression(tokensNSP){
     }
 
     if(rhs.length === 1){
-        rhsToken = rhs[0];
+        const rhsToken = rhs[0];
 
         if(rhsToken.string in CoordinateByLatex){
             if(lhs.some((t) => t.metadata.dependencies.has(rhsToken.string))) return {type: ExpressionType.IMPLICIT, trimmedExpression: tokensNSP};
@@ -323,7 +328,7 @@ export function typesetTokens(tokensNSP, isSubscript = false, isSuperscript = fa
         //TODO: handle subscripts that are not alphanumeric (e.g., a_{b+c})
     }
 
-    determineTokenDependencies(tokensNSP);
+    determineDependencies(tokensNSP);
 
     const expressionInfo = typesetExpression(tokensNSP);
     const type = expressionInfo.type;
@@ -555,13 +560,27 @@ export function compileExpression(expression){
 
     let argCountStack = []; //determining how many arguments are passed to each function
 
-    tokens.forEach((token) => {
-        //console.log("token: ", token);
+    const pushTokenToOutput = (token) => {
+        outputs.push(token);
+        if(token.type === TokenType.FUNCTION){
+            if(token.metadata.superscript){
+                const superscriptExpression = compileExpression(token.metadata.superscript);
+                outputs.push(...superscriptExpression.tokens); //not using pushTokenToOutput? Why does this work?
 
+                const exponentiatorToken = {type: TokenType.OPERATOR, code: OperatorCode.POWN, string: "^", metadata: {}};
+                outputs.push(exponentiatorToken);
+            }
+        }
+    }
+
+    tokens.forEach((token) => {
+        // console.log("token: ", token);
+        // console.log("outputs:",outputs);
+        // console.log("operators:",operators);
 
         switch(token.type){
             case TokenType.OPERAND:
-                outputs.push(token);
+                pushTokenToOutput(token);
                 break;
             case TokenType.OPERATOR:
                 const op = Operators.get(token.code);
@@ -571,7 +590,7 @@ export function compileExpression(expression){
                     const nextOpToken = operators[operators.length-1];
 
                     if(nextOpToken.type !== TokenType.OPERATOR){
-                        console.error("Top of operator stack is not an operator: ",nextOp);
+                        console.error("Top of operator stack is not an operator: ",nextOpToken);
                         break;
                     }
 
@@ -579,7 +598,10 @@ export function compileExpression(expression){
                     const nextOp = Operators.get(nextOpToken.code);
 
                     if((assoc === LEFT) ? (nextOp.precedence >= prec) : (nextOp.precedence > prec)){
-                        outputs.push(operators.pop());
+                        const pop = operators.pop();
+                        console.assert(pop !== undefined, "Undefined operator being pushed.");
+
+                        outputs.push(pop);
                     } else break;
                 }
 
@@ -593,30 +615,26 @@ export function compileExpression(expression){
                     //push bracket context arg start
                     operators.push(token);
                 }else{
-                    console.log(operators[0],operators[1]);
+                    const isLeftBracket = (t) => t.type === TokenType.BRACKET && t.code % 2 === 0;
 
-                    while(operators.length > 0){
-                        const nextOp = operators[operators.length-1];
-                        console.log(nextOp);
+                    console.log("Clearing operators until (. Length: "+operators.length);
 
-                        if(nextOp.type === TokenType.BRACKET && nextOp.code % 2 === 0){
-                            break;
-                        }
-
+                    while(operators.length > 0 && !isLeftBracket(operators[operators.length-1])){
                         outputs.push(operators.pop());
                     }
 
                     if(operators.length === 0) throw new Error("Mismatched brackets");
 
-                    console.assert(operators.length > 0);
-
                     const leftBracket = operators[operators.length-1];
-                    console.assert(leftBracket.type===TokenType.BRACKET && leftBracket.code % 2 === 0);
+                    console.assert(isLeftBracket(leftBracket));
 
                     operators.pop();
 
-                    if(operators[operators.length-1].type === TokenType.FUNCTION){
-                        outputs.push(operators.pop());
+                    if(operators.length > 0){
+                        if(operators[operators.length-1].type === TokenType.FUNCTION){
+                            //output push function
+                            pushTokenToOutput(operators.pop());
+                        }
                     }
                 }
                 break;
@@ -656,9 +674,9 @@ export function compileExpression(expression){
             
         }
 
-        if(token.metadata.superscript){
+        if(token.metadata.superscript && token.type !== TokenType.FUNCTION){
             const superscriptExpression = compileExpression(token.metadata.superscript);
-            outputs.push(...superscriptExpression.tokens);
+            outputs.push(...superscriptExpression.tokens); //TODO: not using pushTokenToOutput
 
             const exponentiatorToken = {type: TokenType.OPERATOR, code: OperatorCode.POWN, string: "^", metadata: {}};
             outputs.push(exponentiatorToken);
@@ -680,17 +698,17 @@ export function compileExpression(expression){
     while(operators.length > 0){
         console.assert(operators[operators.length-1].type !== TokenType.BRACKET);
 
-        outputs.push(operators.pop());
+        pushTokenToOutput(operators.pop());
     }
 
     const result = {
         type: expression.type,
         tokens: outputs,
-        parameters: []
+        dependencies: expression.dependencies
     };
 
-    if(expression.assignment) result.assignment = expression.assignment;
-    if(expression.definition) result.definition = expression.definition;
+    if(expression.assignment !== undefined) result.assignment = expression.assignment;
+    if(expression.definition !== undefined) result.definition = expression.definition;
 
     return result;
 }
@@ -703,6 +721,7 @@ export function compileExpression(expression){
     //uncertainty?
         //real tokens have an uncertainty component
 
+
 /**
  * Substitute all instances of `name` in `tokens` with `value`
  * @param {*} tokens Token list to substitute within
@@ -713,6 +732,7 @@ function substitute(tokens, input, options = {}){
     const propagateBoundary = options.propagateBoundary ?? false;
     const propagateInterval = options.propagateInterval ?? false;
     const propagateUncertainty = options.propagateUncertainty ?? false;
+    const propagatePeriodicity = options.propagatePeriodicity ?? false;
     const doNonPrincipalBranch = options.doNonPrincipalBranch ?? false;
 
     const evalAsObject = propagateBoundary + propagateInterval + doNonPrincipalBranch + propagateUncertainty > 0;
@@ -731,7 +751,15 @@ function substitute(tokens, input, options = {}){
             continue;
         }
 
-        const info = input.get(token.string);
+        let info = input.get(token.string);
+        if(info == undefined){
+            info = getDependableData(token.string);
+
+            console.assert(info.type === 1);
+        }
+            
+        if(info == undefined) new Error("I don't know what "+token.string+" means");
+
         const value = info.value;
 
         if(!evalAsObject){
@@ -745,9 +773,10 @@ function substitute(tokens, input, options = {}){
             value: value
         }
 
-        if(propagateBoundary) token.boundary = [0,0,0];
+        if(propagateBoundary) token.boundary = [0,0,0]; 
         if(propagateInterval) token.interval = info.interval;
         if(propagateUncertainty) token.uncertainty = 0;
+        if(propagatePeriodicity) token.periodicity = 0; 
 
         outputs.push(result);
     };
@@ -821,11 +850,8 @@ function op(code, args){
 
 function func(code, arg){
     switch(code){
-        case 101:
-            return Math.sin(arg);
-        case 102:
-            return Math.cos(arg);
-        case 103:
-            return Math.tan(arg);
+        case 101: return Math.sin(arg);
+        case 102: return Math.cos(arg);
+        case 103: return Math.tan(arg);
     }
 }
