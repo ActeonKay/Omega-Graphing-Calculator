@@ -130,7 +130,7 @@
     import { 
         evaluateExpressionSimple,
         
-        evaluateExpression,
+        //evaluateExpression,
         getTokenizedExpressions, 
         getTokenizedExpressionMetas, 
         getCompiledExpressions
@@ -141,16 +141,16 @@
 
   <script type="module">
     import { 
-        evaluateExpression, evaluate, finalizeExpression,
+        //evaluateExpression, evaluate, 
+        finalizeExpression,
         //tokenizeExpression, getTokenizedExpressions, getTokenizedExpressionMetas,
-        compileExpression, getCompiledExpressions, tokenizeLatexExpression, latexToTokenObjects,
+        /*compileExpression, */getCompiledExpressions, tokenizeLatexExpression, latexToTokenObjects,
         validFunctions,
-        ExpressionType, ExpressionInfoByType
     } from "./evaluator.js";  
 
     import {
-      Expression, DependableType,
-      getAllExpressions, appendExpression, getNextId, getNextColor, registerDependable, unregisterDependable, 
+      ExpressionEntry, ExpressionEntryType, DependableType,
+      getAllExpressionEntries, appendExpressionEntry, getNextId, getNextColor, registerDependable, unregisterDependable, 
     } from "./expressions.js";
 
     import {
@@ -172,7 +172,11 @@
 
     import {
       typesetExpression,
-      testExpressionTypeset
+      testExpressionTypeset,
+      typesetTokens,
+      compileExpression,
+      evaluateExpressionWithOptions,
+      ExpressionType
     } from "./compiler.js";
 
     //TESTS
@@ -204,7 +208,7 @@
 
     // --- SET EQUATION HERE ---
     let equation = "";
-    let currentExpression = null;
+    let currentExpressionEntry = null;
     let currentColor = "";
 
     // --- Graph Setup ---
@@ -246,7 +250,7 @@
     
     function harshUpdateHTML(){
       const equationList = document.getElementById("equationList");
-      const expressions = getAllExpressions();
+      const expressions = getAllExpressionEntries();
       //console.log(expressions);
 
       while(equationList.hasChildNodes()){
@@ -282,7 +286,7 @@
       colorButton.style.background = expression.color;
 
       colorButton.addEventListener("click",() => {
-        const expressions = getAllExpressions();
+        const expressions = getAllExpressionEntries();
         const index = expressions.findIndex((ex) => ex.id === expression.id);
 
         if(colorButton.classList.contains('visible')){
@@ -299,7 +303,7 @@
       colorButton.addEventListener("contextmenu", (ev) => {
         ev.preventDefault();
 
-        const expressions = getAllExpressions();
+        const expressions = getAllExpressionEntries();
         const index = expressions.findIndex((ex) => ex.id === expression.id);
 
         let currentColor = expressions[index].color;
@@ -352,7 +356,7 @@
       //           return;
       //         }
 
-      //         if(getAllExpressions().length <= 1){
+      //         if(getAllExpressionEntries().length <= 1){
       //           return;
       //         }
 
@@ -401,7 +405,7 @@
               return;
             }
 
-            if(getAllExpressions().length <= 1){
+            if(getAllExpressionEntries().length <= 1){
               return;
             }
 
@@ -424,79 +428,80 @@
       return a;
     }
 
+    function getIdOfEquationRow(domElement){
+      return domElement.id.slice(7); //TODO: fix this hack
+    }
+
     async function checkAnswer(latex, eqSpan, canRecurse = true){
       //console.log('called on ', latex);
       console.assert(eqSpan.classList.contains(expMathPlaceholderClass));
 
       const eqRow = eqSpan.parentElement.parentElement;
+      const id = parseInt(eqRow.id.slice(7));
 
-      const wanted = parseInt(eqRow.id.slice(7));
+      const expressionEntries = getAllExpressionEntries();
+      const index = expressionEntries.findIndex((ex) => ex.id === id);
+      const oldEntry = expressionEntries[index];
 
-      const expressions = getAllExpressions();
-      const index = expressions.findIndex((ex) => ex.id === wanted);
-      const old = expressions[index];
-      if(old === undefined) {console.log('----- WEIRD -----',getAllExpressions()); return; }
-
-      let test = null;
-      try{
-        test = tokenizeLatexExpression(latex,old);
-      }catch(e){
-        console.warn('Error occured during tokenization.',e);
+      if(oldEntry === undefined) {
+        console.log(getAllExpressionEntries());
+        throw new Error('-^-^- WEIRD -^-^-'); 
       }
 
-      if(test === null && canRecurse){
+      let tokenized = null;
+      try{
+        tokenized = typesetTokens(tokenize(latex));
+      }catch(e){
+        console.warn('Error occured during tokenization.',e);
+        update();
+        return;
+        //throw new Error("I don't understand this. Try typing it again.");
+      }
+
+      if(tokenized === null && canRecurse){
         update();
         return;
       }
 
-      //console.log('test -> ', test);
+      if(oldEntry.definedSymbol !== null) unregisterDependable(oldEntry.definedSymbol);
 
-      if(old.definedSymbol !== null) unregisterDependable(old.definedSymbol);
-
-      let compiled;
+      let expressionEntry = new ExpressionEntry(
+        oldEntry.id,
+        ExpressionEntryType.INVALID,
+        "",
+        oldEntry.color,
+        oldEntry.visible,
+        latex,
+        {},
+        null,
+        {}
+      );
+      let compiledExpression = {};
 
       try{
-        compiled = compileExpression(test);
+        compiledExpression = compileExpression(tokenized); //new compileExpression() from compiler.js
 
-        console.log('Compilation successful:',compiled);
-      }catch(e){
-        console.warn("Error occurred during compilation.",e);
-
-        compiled = new Expression(
-          old.id,
-          -1,
-          old.dependencies ?? new Set(),
-          old.color,
-          old.visible,
-          latex,
-          [],
-          [],
-          []
+        expressionEntry = new ExpressionEntry(
+          id,
+          ExpressionEntryType.RENDERED_EQUATION,
+          "",
+          oldEntry.color,
+          oldEntry.visible ?? true,
+          oldEntry.latex,
+          compiledExpression,
+          compiledExpression?.assignment?.variable ?? compiledExpression?.definition?.name,
+          {}
         );
+
+        console.log('Compilation successful:',compiledExpression);
+      }catch(e){
+        //show error to user
+        console.warn("Error occurred during compilation.",e);
       }
 
-      console.assert(old.dependencies !== undefined);
-      console.assert(compiled.dependencies !== undefined);
+      expressionEntries[index] = expressionEntry;
 
-      compiled = new Expression(
-        wanted,
-        compiled.type,
-        compiled.dependencies,
-        old.color,
-        old.visible ?? true,
-        old.latex,
-        compiled.tokens,
-        compiled.replace,
-        compiled.parameters,
-        compiled.definedSymbol
-      );
-
-      //console.log('setting1:',compiled);
-      expressions[index] = compiled;
-
-      // if(compiled.type === -1) return;
-
-      onExpressionChange(eqRow, compiled, old, canRecurse);
+      onExpressionChange(eqRow, compiledExpression, oldEntry.expression, canRecurse);
 
       update();
     }
@@ -509,8 +514,12 @@
 
       //oldtype = previous expression type
       //if old expression was a definition -> delete definition
-      if(oldExpr.type === ExpressionType.ASGNMT || oldExpr.type === ExpressionType.FUNCDEF){
-        unregisterDependable(oldExpr.definedSymbol);
+      if(oldExpr.type === ExpressionType.ASSIGNMENT_DIRECT || oldExpr.type === ExpressionType.ASSIGNMENT_INDIRECT){
+        unregisterDependable(oldExpr.assignment.variable);
+      }
+
+      if(oldExpr.type === oldExpr.type === ExpressionType.DEFINITION){
+        unregisterDependable(oldExpr.definition.name);
       }
 
       //compile expression
@@ -518,23 +527,27 @@
 
       //type: evaluation
         //evaluate and display result
-      //type: definition
+      //type: assignment
         //evaluate, set variable, update dependent expressions, and display result
       //type: expression
         //call render algorithm
 
       switch(newExpr.type){
-        case ExpressionType.EVAL:
-        case ExpressionType.ASGNMT:
-          currentExpression = newExpr;
-          console.log('++ Evaluating expression ++');
-          const evalObj = evaluate(newExpr, new Map(),-1);
-          console.log('++ Eval result:',evalObj.result,'++');
+        case ExpressionType.EVALUATE:
+        case ExpressionType.ASSIGNMENT_DIRECT:
+        case ExpressionType.ASSIGNMENT_INDIRECT:
+          console.log('++ Evaluating expression ++',newExpr);
 
-          if(newExpr.type === ExpressionType.ASGNMT) registerDependable(newExpr.definedSymbol, DependableType.VARIABLE, evalObj.result, newExpr.dependencies);
-          //if(newExpr.type === ExpressionType.FUNCDEF) registerDependable(newExpr.definedSymbol, DependableType.FUNCTION, newExpr.tokens, newExpr.dependencies);
+          const evalObj = evaluateExpressionWithOptions(newExpr, new Map());
+          
+          console.log('++ Eval result:',evalObj,'++');
 
-          const resultLatex = '='+parseTokenToLatex(evalObj.result);
+          if(newExpr.type === ExpressionType.ASSIGNMENT_DIRECT || newExpr.type === ExpressionType.ASSIGNMENT_INDIRECT){
+            console.assert(newExpr.assignment !== undefined, newExpr);
+            registerDependable(newExpr.assignment.variable, DependableType.VARIABLE, evalObj, newExpr.dependencies);
+          } 
+
+          const resultLatex = '='+convertTokenToLatex(evalObj);
 
           const indexOfDisplayElement = findIndexInNodeList(
             wrapperElement.childNodes, 
@@ -550,13 +563,11 @@
 
           resultMathField.latex(resultLatex);
 
-          drawResult(evalObj.result);
+          drawResult({value: evalObj, type: 18});
           
           return; //DELETE LATER
           break;
         case ExpressionType.FUNCDEF:
-            currentExpression = newExpr;
-
             if(newExpr.type === ExpressionType.FUNCDEF) registerDependable(newExpr.definedSymbol, DependableType.FUNCTION, newExpr.tokens, newExpr.dependencies);
 
             newExpr.tokens = finalizeExpression(newExpr.tokens, newExpr.type ?? ExpressionType.IMPLICIT, ExpressionInfoByType[newExpr.type].tokType);
@@ -565,20 +576,17 @@
 
         break;
       }
-      
-
 
       //console.log('expression change to', newExpr.type);
 
-      if(newExpr.type === ExpressionType.ASGNMT){
-        //console.log('registering');
-
+      if(newExpr.type === ExpressionType.ASSIGNMENT_DIRECT || newExpr.type === ExpressionType.ASSIGNMENT_INDIRECT){
         console.log('-- Evaluating Result of Definition ('+newExpr.definedSymbol+') --');
-        const evalResult = evaluateExpression(newExpr, new Map(),-1);
+        //const evalResult = evaluateExpression(newExpr, new Map(),-1);
+        const evalResult = evaluateExpressionWithOptions(newExpr, new Map());
 
         console.log('-- Set Variable '+newExpr.definedSymbol+' to result of evaluation:',evalResult,' --'); 
-        const value = evalResult.value; 
-        const unc = evalResult.uncertainty; 
+        const value = evalResult //evalResult.value; 
+        const unc = 0; //evalResult.uncertainty; 
 
         console.assert(newExpr.definedSymbol !== undefined);
         console.assert(newExpr.dependencies !== undefined);
@@ -590,7 +598,7 @@
         }
 
         if(canRecurse){
-          const expressions = getAllExpressions();
+          const expressions = getAllExpressionEntries();
 
           expressions.forEach((exp) => {
             if(exp.id === newExpr.id) return;
@@ -636,13 +644,15 @@
         );
 
         console.log('-- Evaluating expression result for rendering --');
-        const evalObj = evaluate(newExpr, new Map(), -1);
+        //const evalObj = evaluate(newExpr, new Map(), -1);
+        const evalObj = evaluateExpressionWithOptions(newExpr, new Map());
 
         console.log('-- Rendering evaluation result: ',evalObj,'--');
-        const displayedResult = '='+ (
-          evalObj.didByIndexEvaluation 
-          ? '['+evalObj.result.map((t)=>t.value).join(', ')+']'
-          : parseTokenToLatex(evalObj.result));
+        const displayedResult = convertTokenToLatex(evalObj);
+          // '='+ (
+          // evalObj.didByIndexEvaluation 
+          // ? '['+evalObj.result.map((t)=>t.value).join(', ')+']'
+          // : convertTokenToLatex(evalObj.result));
         //console.log(displayedResult);
 
         let result;
@@ -712,155 +722,7 @@
     }
 
     function requiresExpressionResult(type){
-      return type === 0 || type === 7;
-    }
-
-    function parseTokenToLatex(token){
-      return convertTokenToLatex(token);
-
-      //return '\\frac{1}{\\sqrt{x^2 + 1}}';
-      //return '\\begin{array}{cc} a & b \\\\ c & d \\end{array}';
-      //console.log(token);
-      //console.log(token, token.value === undefined);
-
-      if(token.type === 17){ //ARRAY, HARDCODED
-        console.log(token.value);
-
-        const items = token.value;
-
-        const asStrings = [];
-        for(let i = 0; i<items.length; i++){
-          const s = parseTokenToLatex({
-            type: token.elementType ?? 1, 
-            value: items[i]
-          });
-
-          console.assert(s !== undefined, token.elementType ?? 1, items[i]);
-          asStrings.push(s);
-        }
-
-        return '['+asStrings.join(', ')+']';
-      }
-
-      if(token.type === 18){
-        return '('+token.value.join(', ')+')';
-      }
-
-      if(token.type === 11){
-        let re = token.value[0];
-        let im = token.value[1];
-
-        if(re === 0 && im === 0) return '0';
-
-        let sign = im < 0 ? '-' : (re === 0 || im === 0 ? '' : '+');
-
-        re = (re === 0) ? '' : re;
-        im = Math.abs(im);
-        im = im === 0 ? '' : (im === 1 ? 'i' : im+'i');
-
-        return re+sign+im;
-      }
-
-      console.warn('token:',token);
-      const value = makeNumberNice(token.value); //TODO: 
-      const uncertainty = token.uncertainty ?? 0;
-      const asPercent = token.interpret === 'pct';
-      const asRadians = token.interpret === 'rad';
-
-      if(value === undefined){
-        console.log('result: ', undefined);
-        return "\\operatorname{undefined}";
-      }
-
-      if(isFinite(value)){
-        //weird bug where if this is a === V then the expression [1] evaluates to 1±0, instead of just 1
-        const strUncertainty = uncertainty == 0 ? '' : '±'+(asPercent ? uncertainty*100+'%' : uncertainty);
-
-        let strValue = "";
-
-        if(asPercent) strValue = makeNumberNice(value*100) + '%';
-        else if(asRadians) {
-          if(true){
-            const r = value/Math.PI;
-            const factor = Math.pow(10,6);
-
-            const f = (decimalToFraction(r));
-
-            if(Math.abs(f.numerator / f.denominator - r) < 0.0000001) {
-              if(f.denominator == 1) strValue = (f.numerator === 1 ? '' : f.numerator)+'\\pi'+'\\operatorname{rad}';
-              else strValue = '\\frac{'+(f.numerator === 1 ? '' : f.numerator)+'\\pi'+'}{'+f.denominator+'}'+'\\operatorname{rad}';
-
-            } else strValue = value+'\\operatorname{rad}'
-          }else{
-            strValue = value + '\\operatorname{rad}'
-          }
-        }
-        else strValue = makeNumberNice(value);
-
-        return strValue+strUncertainty;
-      }
-
-      if(value === NaN){
-        return '\\operatorname{NaN}';
-      }
-
-      if(value === Infinity){
-        return '\\infty';
-      }
-
-      if(value === -Infinity){
-        return '-\\infty';
-      }
-
-      return value;
-    }
-
-    function makeNumberNice(n){
-      const string = ""+n;
-      console.warn(string);
-
-      if(string.indexOf('e+') !== -1) {
-        let exponent = string.slice(string.indexOf('e+')+2);
-        let base = string.slice(0,string.indexOf('e+'));
-        console.log(base,exponent);
-        return base+'\\times 10^{'+exponent+'}';
-      }
-
-      if(string.indexOf('e-') !== -1) {
-        let exponent = string.slice(string.indexOf('e-')+2);
-        let base = string.slice(0,string.indexOf('e-'));
-        return base+'\\times 10^{'+exponent+'}';
-      }
-
-      return string;
-    }
-
-    function gcd(a, b) {
-      return b ? gcd(b, a % b) : a;
-    }
-
-    function decimalToFraction(decimal) {
-      // Handle integer case
-      if (decimal % 1 === 0) {
-          return { numerator: decimal, denominator: 1 };
-      }
-
-      // Convert to string to accurately count decimal places, addressing floating point issues
-      const decimalString = decimal.toString();
-      const decimalPlaces = decimalString.includes('.') ? decimalString.split('.')[1].length : 0;
-      const denominator = 180;//Math.pow(10, decimalPlaces);
-
-      // Calculate the numerator by shifting the decimal point
-      // Using Math.round to mitigate minor floating point errors
-      const numerator = Math.round(decimal * denominator);
-
-      // Simplify the fraction by finding the GCD
-      const commonDivisor = gcd(Math.abs(numerator), denominator);
-
-      return {
-          numerator: numerator / commonDivisor,
-          denominator: denominator / commonDivisor
-      };
+      return type === ExpressionType.EVALUATE || type === ExpressionType.ASSIGNMENT_INDIRECT;
     }
 
     // function updateExpressionResult(eqRow, expression){
@@ -898,7 +760,7 @@
       const equationList = document.getElementById('equationList');
 
       let wanted = parseInt(eqRow.id.slice(7));
-      let expressions = getAllExpressions();
+      let expressions = getAllExpressionEntries();
       let index = expressions.findIndex((ex) => ex.id === wanted);
 
       expressions.splice(index,1);
@@ -914,19 +776,19 @@
       const equationList = document.getElementById('equationList');
 
       let wanted = parseInt(eqRow.id.slice(7));
-      let expressions = getAllExpressions();
+      let expressions = getAllExpressionEntries();
       let index = expressions.findIndex((ex) => ex.id === wanted);
 
-      let expression = new Expression(
+      let expression = new ExpressionEntry(
         getNextId(),
-        -1,
-        new Set(),
+        ExpressionEntryType.INVALID,
+        "Blank expression",
         getNextColor(),
         true,
         '',
-        [],
-        [],
-        []
+        {},
+        '',
+        {}
       );
 
       expressions.splice(index, 0, expression);
@@ -972,8 +834,8 @@
 
         drawGrid();
 
-        getAllExpressions().forEach((expr) => {
-          drawExpression(expr);
+        getAllExpressionEntries().forEach((entry) => {
+          drawExpressionEntry(entry);
         });
 
         if(doQuadTooltip && quadSelected.length == 4){
@@ -990,26 +852,27 @@
         fpsDisplay.innerHTML = "FPS: " + Math.floor(1000/time);
     }
 
-    function drawExpression(expr){
-      if(expr === undefined || expr.type === -1 || (!expr.visible)){
+    function drawExpressionEntry(entry){
+      if(entry === undefined || entry.type === ExpressionEntryType.INVALID || (!entry.visible)){
         return;
       }
 
-      switch(expr.type){
-        case 1: //Implicit
-          drawAsQuad(expr);
+      const expression = entry.expression;
+
+      switch(expression.type){
+        case 7: //Implicit
+          drawAsQuad(entry);
           break;
-        case 2: //y=f(x)
-          drawAsYofX(expr);
+        case 3: //y=f(x)
+          drawAsYofX(entry);
           break;
-        case 3: //x=f(y)
-          drawAsXofY(expr);
+        case 2: //x=f(y)
+          drawAsXofY(entry);
           break;
-        case 0:
-        case 7:
-          drawEvalResult(expr);
-        case 8:
-          drawAsYofX(expr);
+        case 1:
+        case 10:
+          drawEvalResult(entry);
+          break;
         case 9: //blank
           break;
         default:
@@ -1059,28 +922,19 @@
 
         return evaluateExpression(
             currentExpression,
-            {
-                minX: x1,
-                maxX: x2,
-                minY: y2,
-                maxY: y1, //TODO: HACK. y1 & y2 are flipped, because screen y is flipped from graph y
-            },
-            -1
+            new Map([["x",{value: x1}],["y",{value: y1}]])
         );
 
     }
 
-    function drawEvalResult(expr){
-      //console.log('drawing eval');
-
-      currentExpression = expr;
-
+    function drawEvalResult(entry){
       console.log('-- Evaluating Expression to Draw --');
-      const evalResult = evaluate(currentExpression, new Map(), -1);
+      //const evalResult = evaluate(currentExpression, new Map(), -1);
+      const evalResult = evaluateExpressionWithOptions(entry.expression, new Map());
 
       console.log('-- Draw result:',evalResult,'--');
 
-      drawResult(evalResult);
+      drawResult({value: [evalResult, evalResult]});
     }
 
     function drawResult(evalResult){
@@ -1110,41 +964,43 @@
       if(fill) ctx.fill(); else ctx.stroke();
     }
 
-    function drawAsQuad(expr){
-      currentExpression = expr; //replace later with the rect() functions actually taking an expression as input?
+    function drawAsQuad(entry){
       const maxY = toGraphCoordsY(0);
       const minY = toGraphCoordsY(window.innerHeight);
 
       const minX = toGraphCoordsX(0);
       const maxX = toGraphCoordsX(window.innerWidth);
 
-      const image = generateImage(expr, {minX, maxX, minY, maxY, scaleX, scaleY, xCount: 32, yCount: 32}, generateInstructionsForCartesianImplicit);
+      const image = generateImage(entry.expression, {minX, maxX, minY, maxY, scaleX, scaleY, xCount: 32, yCount: 32}, generateInstructionsForCartesianImplicit);
       const instructions = image.instructions;
 
-      drawFromInstructions(instructions,expr.color);
-      return;
+      drawFromInstructions(instructions,entry.color);
+    }
 
-      quadCount = 0;
-      quadOn = 0;
-      quadStack = [];
-      renderStack = [];
+    function drawAsYofX(entry){
+      const maxY = toGraphCoordsY(0);
+      const minY = toGraphCoordsY(window.innerHeight);
 
-      pushRect(0,0,window.innerWidth,window.innerHeight, false, true);
+      const minX = toGraphCoordsX(0);
+      const maxX = toGraphCoordsX(window.innerWidth);
 
-      while(quadCount < maxQuads && quadOn < quadStack.length){
-        if(tryDrawRect(...quadStack[quadOn])){
-          renderStack.push(quadStack[quadOn]);
-        }
-        quadOn++;
-      }
+      const image = generateImage(entry.expression, {minX, maxX, xCount: window.innerWidth, minY, maxY, scaleX, scaleY}, generateInstructionsForCartesianYofX);
+      const instructions = image.instructions;
 
-      for(let i = quadOn; i<quadStack.length; i++){
-        renderStack.push(quadStack[i]);
-      }
+      drawFromInstructions(instructions,entry.color);
+    }
 
-      renderStack.forEach((q) => {
-        tryPlotRect(q[0], q[1], q[2], q[3], true, true);
-      });
+    function drawAsXofY(entry){
+      const minX = toGraphCoordsX(0);
+      const maxX = toGraphCoordsX(window.innerWidth);
+
+      const maxY = toGraphCoordsY(0);
+      const minY = toGraphCoordsY(window.innerHeight);
+
+      const image = generateImage(entry.expression, {minY, maxY, yCount: window.innerHeight, minX, maxX, scaleX, scaleY}, generateInstructionsForCartesianXofY);
+      const instructions = image.instructions;
+
+      drawFromInstructions(instructions,entry.color);
     }
 
     function drawFromInstructions(instructions, color){
@@ -1186,437 +1042,9 @@
       ctx.stroke();
     }
 
-    function drawAsYofX(expr){
-      const maxY = toGraphCoordsY(0);
-      const minY = toGraphCoordsY(window.innerHeight);
-
-      const minX = toGraphCoordsX(0);
-      const maxX = toGraphCoordsX(window.innerWidth);
-
-      const image = generateImage(expr, {minX, maxX, xCount: window.innerWidth, minY, maxY, scaleX, scaleY}, generateInstructionsForCartesianYofX);
-      const instructions = image.instructions;
-
-      drawFromInstructions(instructions,expr.color);
-      return;
-    }
-
-    function trySegYofX(lx, rx, depth, allowSubdivision, py){
-      segmentCount++;
-
-      // const x1=toGraphCoordsX(lx), x2=toGraphCoordsX(rx);
-
-      // const n = Math.abs(
-      //   Math.floor(x1/Math.PI + 0.5)
-      //   -Math.floor(x2/Math.PI + 0.5)
-      // );
-
-      // const result = {type: 12, value: [Math.tan(x1), Math.tan(x2)], edge: [0,n,n]};
-
-      const result = evaluateExpression(currentExpression, {
-        min: toGraphCoordsX(lx), max: toGraphCoordsX(rx)
-      }, -1);
-
-      // if(!isFinite(result.value[1])){
-      //   moveTo(rx,
-      //     window.innerHeight*(Math.sign(result.value[1])+1)
-      //   );
-      //   return;
-      // }
-
-      let y = toScreenCoordsY(result.value[1]);
-
-      if(y < 0) y = -window.innerHeight;
-      else if (y > window.innerHeight) y = 2*window.innerHeight;
-
-      const s = getRenderState(
-        result.edge, 
-        allowSubdivision && segmentCount < maxSegments,
-        y-py
-      );
-
-      if(s === 1){
-        const m = (lx+rx)/2;
-
-        trySegYofX(lx,m,depth+1, depth <= maxDepth);
-        trySegYofX(m,rx,depth+1, depth <= maxDepth);
-      }else if (s === 0){
-        //only works because regardless of recursions, segments are evaluated left to right
-        ctx.lineTo(rx, y);
-      }else{
-        // TODO: asymptote detection?
-        ctx.moveTo(rx, y);
-      }
-
-      return y;
-    }
-
-    function drawAsXofY(expr){
-      const minX = toGraphCoordsX(0);
-      const maxX = toGraphCoordsX(window.innerWidth);
-
-      const maxY = toGraphCoordsY(0);
-      const minY = toGraphCoordsY(window.innerHeight);
-
-      const image = generateImage(expr, {minY, maxY, yCount: window.innerHeight, minX, maxX, scaleX, scaleY}, generateInstructionsForCartesianXofY);
-      const instructions = image.instructions;
-
-      drawFromInstructions(instructions,expr.color);
-      return;
-    }
-
-    function getRenderState(edge, allowSubdivision = true, d){
-
-      if(allowSubdivision){
-        if(edge[1] > 0 || edge[2] > 0){
-          return 1;
-        }
-
-        return 0;
-      }
-
-      if(edge[1] == 0 && (edge[2] == 0 || Math.abs(d)<2)){
-        return 0;
-      }
-
-      return -1;
-    }
-
-    function pushSeg(t1,t2){
-      segmentEvalStack.push([t1,t2]);
-      segmentCount++;
-    }
-
-    function tryDrawSeg(t1,t2,type){
-      if(currentExpression == undefined){
-        return false;
-      }
-
-      const result = tryPlotSeg(t1,t2,type);
-    }
-
     function pushRect(x,y,width,height, depth=0){
       quadStack.push([x,y,width,height,depth]);
       quadCount++;
-    }
-
-    function tryDrawRect(x,y,width,height,depth=0){
-      if(currentExpression == null){
-        return false;
-      }
-
-      //Assumption: quadCount should always be less than maxQuads
-      if(depth<4){
-        pushRect(x,y,width/2,height/2,depth+1);
-        pushRect(x,y+height/2,width/2,height/2,depth+1);
-        pushRect(x+width/2,y,width/2,height/2,depth+1);
-        pushRect(x+width/2,y+height/2,width/2,height/2,depth+1);
-        //quadCount+=4;
-        return false;
-      }
-
-      //check if should be iterated on more, rendered normally, or not rendered
-      const result = tryPlotRect(x,y,width,height,false,false);
-      if(result == null){
-        return false;
-      }
-
-      if(result && quadCount<maxQuads){
-        //return true;
-        //iterate further
-        pushRect(x,y,width/2,height/2,depth+1);
-        pushRect(x,y+height/2,width/2,height/2,depth+1);
-        pushRect(x+width/2,y,width/2,height/2,depth+1);
-        pushRect(x+width/2,y+height/2,width/2,height/2,depth+1);
-        //quadCount+=4;
-        return false;
-      }
-
-      //quadCount++;
-      //can render this one as is
-      return true;
-    }
-
-    // function drawRect(x, y, width, height, depth=0) {
-      
-    //     if(currentExpression == undefined){
-    //       return false;
-    //     }
-
-    //     quadCount++;
-
-    //     if(depth<4){
-    //         pushRect(x,y,width/2,height/2,depth+1);
-    //         pushRect(x,y+height/2,width/2,height/2,depth+1);
-    //         pushRect(x+width/2,y,width/2,height/2,depth+1);
-    //         pushRect(x+width/2,y+height/2,width/2,height/2,depth+1);
-    //         quadCount--;
-    //         return false; //don't render me
-    //     }
-
-    //     // if(width<6 || height<6){
-    //     //     plotRect(x,y,width,height,true);
-    //     //     //ctx.rect(x,y,width,height);
-    //     //     //ctx.stroke();
-    //     //     return;
-    //     // }
-
-    //     //r
-    //     //true  -> iterate further
-    //     //false -> render now
-    //     //null  -> stop
-    //     const r = plotRect(x,y,width,height, false) ?? false;
-
-    //     if(r){
-    //         pushRect(x,y,width/2,height/2,depth+1);
-    //         pushRect(x,y+height/2,width/2,height/2,depth+1);
-    //         pushRect(x+width/2,y,width/2,height/2,depth+1);
-    //         pushRect(x+width/2,y+height/2,width/2,height/2,depth+1);
-    //         quadCount--;
-    //         return false; //don't render me
-    //     }
-
-    //     return true; //do render me
-
-    //     //if undefined at all corners, draw
-    //     //if ~linear, draw
-    //     //something about f(x) passing through 0?
-
-    //     //otherwise subdivide
-    //     //ctx.rect(x,y,width,height);
-    //     //ctx.stroke();
-
-    //     //ctx.rect(x,y,width,height);
-    //     //ctx.stroke();
-    // }
-
-    function tryPlotRect(x,y,w,h,forcePlot=false,doRender=true){
-      const q = evaluateQuad({
-          minX: x, maxX: x+w, 
-          minY: y, maxY: y+h
-      });
-
-      if(q.type != 10 || currentExpression.type != 1){
-        //console.log(q.value);
-        return;
-      }
-
-      const v=q.value;
-      const e=q.edge;
-
-      if((e.top[2] > 0) || 
-        (e.lft[2] > 0) ||
-        (e.rgt[2] > 0) ||
-        (e.btm[2] > 0)
-      ){
-        if(w > 3 && h > 3){
-          //Attempt to iterate further
-          
-          return true;
-        }else{
-          //return false;
-        }
-      }
-
-      if(
-        ((e.top[1] > 0) || 
-        (e.lft[1] > 0) ||
-        (e.rgt[1] > 0) ||
-        (e.btm[1] > 0)) && !forcePlot
-      ){
-        if(w > 3 && h > 3){
-          //Attempt to iterate further
-          
-          return true;
-        }else{
-          return false;
-        }
-      }
-
-      if(
-        (e.top[0] > 1) || 
-        (e.lft[0] > 1) ||
-        (e.rgt[0] > 1) ||
-        (e.btm[0] > 1)
-      ){
-        if(!forcePlot){
-          //If possible, iterate further
-          return true;
-        }
-        //Else continue as usual
-      }
-
-      const crossSum = 
-        (e.top[0]) +
-        (e.lft[0]) +
-        (e.rgt[0]) +
-        (e.btm[0]);
-
-      const v00 = v[0]; //tplf
-      const v10 = v[1]; //tprt
-      const v01 = v[2]; //btlf
-      const v11 = v[3]; //btrt
-
-      if(!forcePlot){
-        //check for if the quad is on/near f(x)=0
-        //if so, iterate further
-
-        const topDif = Math.abs(v00-v10)*Math.SQRT1_2;
-        const rgtDif = Math.abs(v10-v11)*Math.SQRT1_2;
-        const btmDif = Math.abs(v11-v01)*Math.SQRT1_2;
-        const lftDif = Math.abs(v01-v00)*Math.SQRT1_2;
-
-        if(Math.abs(v00)<lftDif || Math.abs(v00)<topDif) return true;
-        if(Math.abs(v10)<topDif || Math.abs(v10)<rgtDif) return true;
-        if(Math.abs(v11)<rgtDif || Math.abs(v11)<btmDif) return true;
-        if(Math.abs(v01)<btmDif || Math.abs(v01)<lftDif) return true;
-      }
-
-      
-
-      /*const linDif00 = Math.abs(v00/(scaleFactor*scaleFactor)*1.5/window.innerWidth);
-      const linDif10 = Math.abs(v10/(scaleFactor*scaleFactor)*1.5/window.innerWidth);
-      const linDif01 = Math.abs(v01/(scaleFactor*scaleFactor)*1.5/window.innerWidth);
-      const linDif11 = Math.abs(v11/(scaleFactor*scaleFactor)*1.5/window.innerWidth);
-
-      const m = w * 0.000001;
-      if((linDif00 < m || linDif01 < m || linDif10 < m || linDif11 < m )&& !forcePlot){
-        return true;
-      }*/
-
-      // Evaluate function at four corners
-      //const v00 = evalAt(x,   y);     // top-left
-      //const v10 = evalAt(x+w, y);     // top-right
-      //const v01 = evalAt(x,   y+h);   // bottom-left
-      //const v11 = evalAt(x+w, y+h);   // bottom-right
-
-      //ideal process
-      //evalAt is called once, and evaluates all four corners at once
-      //detects discontinuities across each edge by managing each operation serarately
-      //may also be faster to eval 4 values at once instead of each one individually
-
-      if(
-          v00 == undefined && 
-          v01 == undefined && 
-          v10 == undefined && 
-          v11 == undefined 
-      ){
-          console.log("undefined");
-          //don't render if is undefined
-          return null;
-      }
-
-      //check if is far out of bounds (0-line does not come close to this box)
-      //f(x) \neq 0
-
-
-      /*
-      let u = evalChangeAt(x+w/2,y+h/2);
-      let a = Math.abs(evalChangeChangeAt(x+w/2,y+h/2));
-
-      let t = w/200;
-      let s = u*t+0.5*a*Math.pow(t,2);
-
-      //s=ut+0.5at^2
-
-      //decent detection of 0-line being out-of-bounds but doesn't do asymptotes well
-      let max=Math.abs(s)*scaleFactor;
-      
-      if(
-          (Math.abs(v00)>max ||
-          Math.abs(v01)>max ||
-          Math.abs(v10)>max ||
-          Math.abs(v11)>max) &&
-          a < 10
-      ){
-          return false;
-      }*/
-
-
-      // Determine binary state for each corner: 1 if positive, 0 if negative
-      
-      //console.log(v);
-
-      if(!doRender){
-        //render as usual, no further iteration
-        return false;
-      }
-      
-      const s00 = v00 > 0 ? 1 : 0; //tplf
-      const s10 = v10 > 0 ? 1 : 0; //tprt
-      const s01 = v01 > 0 ? 1 : 0; //btlf
-      const s11 = v11 > 0 ? 1 : 0; //btrt
-
-      // Build case index (top-left, top-right, bottom-right, bottom-left)
-      const index = (s00 << 3) | (s10 << 2) | (s11 << 1) | s01;
-
-      // if(crossSum>0 && (index == 0 || index == 16) && !forcePlot){
-      //   console.log("0/16");
-      //   return true;
-      // }
-
-      // For simplicity, compute intersections along edges (assuming linear variation)
-      const interp = (a, b, va, vb) => {
-          const t = va / (va - vb);
-          return a + t * (b - a);
-      };
-
-      ctx.beginPath();
-      ctx.lineWidth = 2.5;
-      ctx.strokeStyle = currentExpression.color; //r 3,4,5,6
-
-      // Calculate intersections relative to translated square
-      switch (index) {
-        case 1: case 14:
-          ctx.moveTo(x, interp(y + h, y, v01, v00));
-          ctx.lineTo(interp(x, x + w, v01, v11), y + h);
-          break;
-        case 2: case 13:
-          ctx.moveTo(interp(x, x + w, v01, v11), y + h);
-          ctx.lineTo(x + w, interp(y + h, y, v11, v10));
-          break;
-        case 3: case 12:
-          ctx.moveTo(x, interp(y + h, y, v01, v00));
-          ctx.lineTo(x + w, interp(y + h, y, v11, v10));
-          break;
-        case 4: case 11:
-          ctx.moveTo(x + w, interp(y + h, y, v11, v10));
-          ctx.lineTo(interp(x, x + w, v00, v10), y);
-          break;
-        case 5: case 10:
-          ctx.moveTo(x, interp(y + h, y, v01, v00));
-          ctx.lineTo(interp(x, x + w, v00, v10), y);
-          ctx.moveTo(interp(x, x + w, v01, v11), y + h);
-          ctx.lineTo(x + w, interp(y + h, y, v11, v10));
-          break;
-        case 6: case 9:
-          ctx.moveTo(interp(x, x + w, v00, v10), y);
-          ctx.lineTo(interp(x, x + w, v01, v11), y + h);
-          break;
-        case 7: case 8:
-          ctx.moveTo(interp(x, x + w, v00, v10), y);
-          ctx.lineTo(x, interp(y + h, y, v01, v00));
-          break;
-        default:
-          //console.log(index);
-          break;
-      }
-
-      ctx.stroke();
-
-      if(doQuadTooltip){
-        //console.log(lastMouseX);
-        if( x < lastMouseX && lastMouseX < x+w && y < lastMouseY && y+h>lastMouseY){
-          quadSelected = [x,y,w,h];
-        }
-      }
-
-      if(showQuadOutlines){
-        ctx.beginPath();
-        ctx.strokeStyle = 'lightgray';
-        ctx.rect(x,y,w,h);
-        ctx.stroke();
-      }
-      
     }
 
     function drawHorizontalGridline(y) {
@@ -1878,7 +1306,7 @@
       const color = getNextColor();
       //console.log('new color: ', color);
 
-      let blankExpression = new Expression(
+      let blankExpression = new ExpressionEntry(
         getNextId(),
         -1,
         [],
@@ -1890,10 +1318,10 @@
         []
       );
 
-      appendExpression(blankExpression);
+      appendExpressionEntry(blankExpression);
 
       equationList.appendChild(generateEquationRow(blankExpression));
-      //console.log('generated blank',getAllExpressions());
+      //console.log('generated blank',getAllExpressionEntries());
 
       update();
     });

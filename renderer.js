@@ -5,6 +5,10 @@ import{
 } from './evaluator.js';
 
 import{
+    evaluateExpressionWithOptions
+} from './compiler.js';
+
+import{
     getDependable
 } from './expressions.js';
 
@@ -14,7 +18,7 @@ const ExpressionImageTypes = {
     CARTESIAN_X_OF_Y: 3,
 }
 
-const doSmartRendering = true;
+const doSmartRendering = false;
 const maxInstructions = 8000;
 const maxDepth = 32;
 
@@ -65,6 +69,8 @@ export function generateImage(expression, viewport, f){
     //const maxX = viewport.maxX;
     //const minY = viewport.minY;
     //const maxY = viewport.maxY;
+    console.log("Gen image with exp:",expression);
+
     const scaleX = viewport.scaleX;
     const scaleY = viewport.scaleY;
 
@@ -115,49 +121,21 @@ export function generateImage(expression, viewport, f){
  * @returns 
  */
 export function generateInstructionsForCartesianYofX(expression, arrayIndex, viewport){
-    const minX = viewport.minX;
-    const maxX = viewport.maxX;
+    const minX = viewport.minX, maxX = viewport.maxX;
     const xCount = viewport.xCount;
-    const minY = viewport.minY;
-    const maxY = viewport.maxY;
-    const scaleX = viewport.scaleX;
-    const scaleY = viewport.scaleY;
 
     let instructions = [];
 
     const dx = (maxX-minX)/xCount;
-
     if(dx === 0) return [];
 
-    //TODO: use ctx.translate instead of this arithmetic
-
-    let inputObj = { min: 0, max: 0};
-    let xprev = minX-dx;
-
-    const paramNum = expression.type === 8 ? 
-        expression.parameters.findIndex((p) => p.type === TokenType.FUNCPARAM && p.code === 0) :
-        expression.parameters.findIndex((p) => p.type === TokenType.UNKN && p.code === 1);
-
-    let result = evaluateExpression(expression, new Map([[paramNum, {min: xprev, max: minX}]]), arrayIndex);
-    if(result.type == 1){
-        return [
-            [false,minX,result.value,0],
-            [true,maxX,result.value,0]
-        ];
-    }
-
-    console.assert(paramNum === 0, paramNum, expression.parameters); //Only throw error when evaluation involves substitution
-
-    xprev = minX;
+    let result = 0;
     for(let x = minX; x<=maxX; x+= dx){
-        inputObj.min = xprev;
-        inputObj.max = x;
-        result = evaluateExpression(expression,new Map([[paramNum, inputObj]]), arrayIndex);
+        result = evaluateExpressionWithOptions(expression, new Map([["x",{value: x}]]), {});
 
-        console.assert(result.edge !== undefined,result,result.edge);
+        console.assert(result !== undefined);
 
-        instructions.push(getInstructionFrom((result.edge[1]) === 0 && !(x === minX),x,result.value[1],0));
-        xprev=x;
+        instructions.push([true,x,result,0]);
     }
 
     if(doSmartRendering){
@@ -235,30 +213,13 @@ export function generateInstructionsForCartesianXofY(expression, arrayIndex, vie
     let inputObj = { min: 0, max: 0};
     let yprev = minY-dy;
 
-    const paramNum = expression.type === 8 ? 
-        expression.parameters.findIndex((p) => p.type === TokenType.FUNCPARAM && p.code === 0) :
-        expression.parameters.findIndex((p) => p.type === TokenType.UNKN && p.code === 2);
-
-    let result = evaluateExpression(expression, new Map([[paramNum, {min: yprev, max: minY}]]), arrayIndex);
-    if(result.type == 1){
-        return [
-            [true,result.value,minY,0],
-            [true,result.value,maxY,0]
-        ];
-    }
-
-    console.assert(paramNum === 0, paramNum, expression.parameters); //Only throw error when evaluation involves substitution
-
+    let result = 0;
     for(let y = minY; y<maxY; y+=dy){
-        inputObj.min = yprev;
-        inputObj.max = y;
+        let result = evaluateExpressionWithOptions(expression,new Map([["y", {value: y}]]));
 
-        let result = evaluateExpression(expression,new Map([[paramNum, inputObj]]), arrayIndex);
+        console.assert(result !== undefined);
 
-        console.assert(result.edge !== undefined, result, result.edge);
-
-        instructions.push(getInstructionFrom((result.edge[1]) === 0, result.value[1],y,0));
-        yprev = y;
+        instructions.push([true, result, y, 0]);
     }
 
     if(doSmartRendering){
@@ -311,6 +272,40 @@ export function generateInstructionsForCartesianXofY(expression, arrayIndex, vie
 }
 
 export function generateInstructionsForCartesianImplicit(expression, arrayIndex, viewport){
+    //subdivide screen into 32x32
+    //push each quad to stack
+    //then loop through stack:
+        //draw quad based on results
+
+    const stepX = (viewport.maxX-viewport.minX)/32;//viewport.xCount;
+    const stepY = (viewport.maxY-viewport.minY)/32;//viewport.yCount;
+
+    const evalOptions = {};
+
+    let instructions = [];
+
+    console.assert(viewport.minX < viewport.maxX, viewport.minX, viewport.maxX);
+    console.assert(viewport.minY < viewport.maxY, viewport.minY, viewport.maxY);
+
+    for(let x = viewport.minX; x<viewport.maxX; x+= stepX){
+        for(let y = viewport.minY; y<viewport.maxY; y+= stepY){
+            const tl = evaluateExpressionWithOptions(expression, new Map([["x",{value: x}],["y",{value: y}]]), evalOptions);
+            const tr = evaluateExpressionWithOptions(expression, new Map([["x",{value: x+stepX}],["y",{value: y}]]), evalOptions);
+            const bl = evaluateExpressionWithOptions(expression, new Map([["x",{value: x}],["y",{value: y+stepY}]]), evalOptions);
+            const br = evaluateExpressionWithOptions(expression, new Map([["x",{value: x+stepX}],["y",{value: y+stepY}]]), evalOptions);
+
+            const instr = getInstructionFromQuadReturn({value: [tl,tr,bl,br]}, x, y, stepX, stepY);
+            // console.log(instr.length);
+
+            instructions = instructions.concat(instr);
+        }
+    }
+
+    console.log(instructions.length);
+    return instructions;
+}
+
+export function generateInstructionsForCartesianImplicitOldish(expression, arrayIndex, viewport){
     const minX = viewport.minX;
     const maxX = viewport.maxX;
     const columnCount = viewport.xCount;

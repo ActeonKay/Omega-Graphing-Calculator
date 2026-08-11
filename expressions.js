@@ -1,14 +1,10 @@
-export const expressionType = {
+export const ExpressionEntryType = {
     INVALID: -1,
-    EVALUATE: 0,
-    IMPLICIT: 1,
-    Y_OF_X: 2,
-    X_OF_Y: 3,
-    R_OF_THETA: 4,
-    THETA_OF_R: 5,
-    PARAMETRIC: 6,
-    VAR_DEFINITION: 7,
-    FUNC_DEFINITION: 8
+    RENDERED_EQUATION: 0,
+    EVALUATED_RESULT: 1,
+    VARIABLE_SLIDER: 2,
+    FUNCTION_DEFINITION: 3,
+    ACTION: 4
 }
 
 export const DependableType = {
@@ -49,7 +45,7 @@ const exprColors = [
 let nextId = 0;
 let nextColorId = 0;
 
-let expressions = [];
+let expressionEntries = [];
 let listEdits = []; //{type: int, ?index: int, ?expression: object}
 
 let dependables = new Map(); //functions, vars, etc; things other expressions can depend on
@@ -63,84 +59,60 @@ export function getNextColor(){
     return exprColors[(++nextColorId) % exprColors.length];
 }
 
-export function getAllExpressions(){
-    return expressions;
+export function getAllExpressionEntries(){
+    return expressionEntries;
 }
 
-export class ExpressionEvaluationInfo {
-    type; //int
-    dependencies; //String[]
-    internalConstants; //Map
-
-    constructor(type, dependencies, inConsts){
-        this.type = type;
-        this.dependencies = dependencies;
-        this.internalConstants = inConsts;
-    }
-}
-
-export class Expression {
+export class ExpressionEntry {
     id; /**Id */
     type;
-    dependencies;
+    tooltip;
     color;
     visible;
     latex;
-    tokens;
-    replace;
-    parameters;
+    expression;
     definedSymbol;
-    evaluationInfo;
+    context;
 
-    constructor(id, type, dependencies, color, visible, latex, tokens, replace, parameters, definedSymbol = null){
+    constructor(id, type, tooltip, color, visible, latex, expression, definedSymbol, context){
         this.id = id;
         this.type = type;
-        this.dependencies = dependencies;
+        this.tooltip = tooltip;
         this.color = color;
         this.visible = visible;
         this.latex = latex;
-        this.tokens = tokens;
-        this.replace = replace;
-        this.parameters = parameters;
+        this.expression = expression;
         this.definedSymbol = definedSymbol;
+        this.context = context;
 
-        return isValidExpression(this);
+        return isValidExpressionEntry(this);
     } 
 
-    static getEvaluationInfo() {
-        return this.evaluationInfo;
-    }
-
     static getType() {
-        return this.evaluationInfo.type;
+        return this.type;
     }
 
     static getDependencies() {
-        return this.evaluationInfo.dependencies;
-    }
-
-    static getInternalConstants() {
-        return this.evaluationInfo.internalConstants;
+        return this.expression.dependencies;
     }
 }
 
 /**
- * Checks if the input is a valid expression
+ * Checks if the input is a valid expression entry
  * @param {Object} expr input to check
  * @returns 
  */
-export function isValidExpression(expr){
-    if(typeof expr !== 'object') {console.error('expression not object'); return false;}
-    if(!expr instanceof Expression) {console.error('expression not Expression type'); return false;}
+export function isValidExpressionEntry(expr){
+    if(typeof expr !== 'object') {console.error('expression entry not object'); return false;}
+    if(!expr instanceof ExpressionEntry) {console.error('expression entry not ExpressionEntry'); return false;}
 
     if(typeof expr.id !== 'number') {console.error('id not number'); return false;}
     if(expr.id < 0 || expr.id > nextId) {console.error('id not in of range'); return false;}
 
     if(typeof expr.type !== 'number') {console.error('type not number'); return false;}
-    if(expr.type < -1 || expr.type > 9) {console.error('type not in range:',expr.type,expr); return false;}
+    if(expr.type < -1 || expr.type > 4) {console.error('type not in range:',expr.type,expr); return false;}
 
-    if(typeof expr.dependencies !== 'object') {console.error('dependencies not object'); return false;}
-    if(!expr.dependencies instanceof Array) {console.error('dependencies not array'); return false;}
+    if(typeof expr.expression !== 'object') {console.error('expression not object'); return false;}
 
     if(typeof expr.color !== 'string') {console.error('color not number'); return false;}
 
@@ -148,37 +120,33 @@ export function isValidExpression(expr){
 
     if(typeof expr.latex !== 'string') {console.error('latex not string'); return false;}
 
-    if(typeof expr.tokens !== 'object') {console.error('tokens not boject'); return false;}
-    if(typeof expr.tokens.length !== 'number') {console.error('tokens not array'); return false;}
-
-    if(typeof expr.replace !== 'object') {console.error('replace not object'); return false;}
-    if(!expr.replace instanceof Array) {console.error('replace not array',expr.replace); return false;}
+    if(typeof expr.context !== 'object') {console.error('context not boject'); return false;}
 
     return true;
 }
 
-export function appendExpression(expr){
-    if(!isValidExpression(expr)) return false;
+export function appendExpressionEntry(expr){
+    if(!isValidExpressionEntry(expr)) return false;
 
-    expressions.push(expr);
-    //listEdits.push({type: editType.APPEND, expression: expr});
+    expressionEntries.push(expr);
+    //listEdits.push({type: editType.APPEND, expressionEntry: expr});
 
     return true;
 }
 
-function findExpressionOfId(wanted){
+function findExpressionEntryOfId(wanted){
     //use iterator instead?
-    return expressions.findIndex(
+    return expressionEntries.findIndex(
         (e) => e.id === wanted
     );
 }
 
 export function remove(wantedId){
-    const index = findExpressionOfId(wantedId);
+    const index = findExpressionEntryOfId(wantedId);
 
     if(index === -1) return false;
 
-    expressions.splice(index,1);
+    expressionEntries.splice(index,1);
     //listEdits.push({type: editType.REMOVE, index: index});
 
     return true;
