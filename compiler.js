@@ -195,6 +195,18 @@ export function determineDependencies(tokensNSP){
             tokenDependencies = tokenDependencies.union(determineDependencies(token.metadata.superscript));
         }
 
+        if(token.metadata.requiredArguments){
+            token.metadata.requiredArguments.forEach((arg) => {
+                tokenDependencies = tokenDependencies.union(determineDependencies(arg));
+            });
+        }
+
+        if(token.metadata.optionalArguments){
+            token.metadata.optionalArguments.forEach((arg) => {
+                tokenDependencies = tokenDependencies.union(determineDependencies(arg));
+            });
+        }
+
         token.metadata.dependencies = tokenDependencies;
         expressionDependencies = expressionDependencies.union(tokenDependencies);
     });
@@ -377,9 +389,10 @@ export function typesetTokens(tokensNSP, isSubscript = false, isSuperscript = fa
                     const denominator = tokenNSP.metadata.requiredArguments[1];
 
                     tokens.push(...(typesetTokens(numerator).tokens)); //numerator
+                    tokens.push({type: TokenType.OPERATOR, code: OperatorCode.DIV, string: "/", metadata: {fullString: "/"}});
                     tokens.push(...(typesetTokens(denominator).tokens));
 
-                    type = TokenType.OPERATOR, code = OperatorCode.DIV;
+                    break;
                 }else {
                     if(tokenNSP.metadata.subscript && tokenNSP.metadata.subscript.length === 1 && tokenNSP.metadata.subscript[0].type === "alphanumeric"){
                         //replace token.string with base_subscript 
@@ -756,7 +769,7 @@ function substitute(tokens, input, options = {}){
         if(info == undefined){
             info = getDependableData(token.string);
 
-            console.assert(info.type === 1);
+            console.assert(info?.type === 1,token);
         }
             
         if(info == undefined) new Error("I don't know what "+token.string+" means");
