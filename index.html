@@ -448,19 +448,12 @@
         throw new Error('-^-^- WEIRD -^-^-'); 
       }
 
-      let tokenized = null;
+      let tokenized = {type: ExpressionType.INVALID, tokens: [], dependencies: []};
       try{
         tokenized = typesetTokens(tokenize(latex));
       }catch(e){
         console.warn('Error occured during tokenization.',e);
-        update();
-        return;
         //throw new Error("I don't understand this. Try typing it again.");
-      }
-
-      if(tokenized === null && canRecurse){
-        update();
-        return;
       }
 
       if(oldEntry.definedSymbol !== null) unregisterDependable(oldEntry.definedSymbol);
