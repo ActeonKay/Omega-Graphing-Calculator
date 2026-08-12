@@ -586,6 +586,8 @@ export function compileExpression(expression){
         }
     }
 
+    const isLeftBracket = (t) => t.type === TokenType.BRACKET && t.code % 2 === 0;
+
     tokens.forEach((token) => {
         // console.log("token: ", token);
         // console.log("outputs:",outputs);
@@ -628,8 +630,6 @@ export function compileExpression(expression){
                     //push bracket context arg start
                     operators.push(token);
                 }else{
-                    const isLeftBracket = (t) => t.type === TokenType.BRACKET && t.code % 2 === 0;
-
                     console.log("Clearing operators until (. Length: "+operators.length);
 
                     while(operators.length > 0 && !isLeftBracket(operators[operators.length-1])){
@@ -666,16 +666,16 @@ export function compileExpression(expression){
                     //while the operator at the top of the operator stack is not a left parenthesis:
                     //pop the operator from the operator stack into the output queue
 
-                    //HACK CHECK
-                    while(operators.length > 0){
-                        const nextOp = operators.pop();
-
-                        if(nextOp.type === TokenType.BRACKET && nextOp.code % 2 === 0){
-                            operators.push(nextOp);
-                        }
-
-                        outputs.push(nextOp);
+                    while(operators.length > 0 && !isLeftBracket(operators[operators.length-1])){
+                        outputs.push(operators.pop());
                     }
+
+                    console.assert(operators.length > 0);
+
+                    // const leftBracket = operators[operators.length-1];
+                    // console.assert(isLeftBracket(leftBracket));
+
+                    // operators.pop();
                 }
                 break;
             case TokenType.EXPRESSION:
@@ -772,7 +772,7 @@ function substitute(tokens, input, options = {}){
             console.assert(info?.type === 1,token);
         }
             
-        if(info == undefined) new Error("I don't know what "+token.string+" means");
+        if(info == undefined) throw new Error("I don't know what "+token.string+" means");
 
         const value = info.value;
 
