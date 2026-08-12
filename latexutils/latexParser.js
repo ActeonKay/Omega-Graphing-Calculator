@@ -336,6 +336,8 @@ function parseCommand(string, start){
         return {type: "bracket", string: substring, charCount: substring.length, metadata: {fullString: "\\\\"}};
     }
 
+    let fullString = substring;
+
     let optionalArguments = [];
     if(string.charAt(i) === "["){
 
@@ -348,7 +350,7 @@ function parseCommand(string, start){
 
             console.assert(string.charAt(i) === "]");
 
-            substring = substring.concat("["+optionalArgument+"]");
+            fullString = fullString.concat("["+optionalArgument+"]");
             i++;
         }
         
@@ -366,7 +368,7 @@ function parseCommand(string, start){
 
             console.assert(string.charAt(i) === "}");
 
-            substring = substring.concat("{"+requiredArgument+"}");
+            fullString = fullString.concat("{"+requiredArgument+"}");
             i++;
         }
     }
@@ -375,7 +377,7 @@ function parseCommand(string, start){
         type: "command", 
         string: substring, 
         charCount: i-start,
-        metadata: {requiredArguments, optionalArguments, fullString: substring} //note: attribute naming shortcut
+        metadata: {requiredArguments, optionalArguments, fullString: fullString} //note: attribute naming shortcut
     };
 }
 
