@@ -1,60 +1,17 @@
 import {
     TokenType
-} from '../evaluator.js';
+} from '../compiler.js';
 
 const decimalAccuracy = 8;
 
 export function convertTokenToLatex(token){
     if(isFinite(token)) return convertRealToString(token);
 
-    switch(token.type){
-        case TokenType.NUM: 
-            let r = token.value;
+    let r = token.value;
+    const str = convertRealToString(r);
+    const uncertaintySuffix = token.attributes.uncertainty ? '\\pm'+convertRealToString(token.attributes.uncertainty) : '';
 
-            const uncertainty = token.uncertainty ?? 0;
-            const asPercent = token.interpret === 'pct';
-            const asRadians = token.interpret === 'rad';
-
-            const uncertaintySuffix = uncertainty == 0 ? '' : '±'+(asPercent ? uncertainty*100+'%' : uncertainty);
-
-            if(asPercent) return convertRealToString(r*100)+'%';
-            else if(asRadians) return convertRealToString(r)+'\\operatorname{rad}'
-
-            const str = convertRealToString(r);
-            return str+uncertaintySuffix;
-        case TokenType.CMPLX:
-            let a = token.value[0];
-            let b = token.value[1];
-
-            if(isNaN(a) || isNaN(b)) return '\\operatorname{NaN}';
-            if(a === Infinity || a === -Infinity || b === Infinity || b === -Infinity) return '\\operatorname{NaN}'; //How should I handle this?
-            if(a === undefined || b === undefined) return '\\operatorname{undefined}';
-
-            if(isTooSmallToDisplay(a) && isTooSmallToDisplay(b)) return '0';
-
-            let sign = b < 0 ? '-' : (a === 0 || b === 0 ? '' : '+');
-
-            a = (a === 0) ? '' : a;
-            b = Math.abs(b);
-            b = b === 0 ? '' : (b === 1 ? 'i' : b+'i');
-
-            return a+sign+b;
-        case TokenType.ARRAY:
-            const elementType = token.elementType;
-
-            let result = convertTokenToLatex({type: elementType, value: token.value[0]});
-            for(let i = 1; i < token.value.length; i++){
-                result = result+','+convertTokenToLatex({type: token.elementType, value: token.value[i]});
-            }
-
-            return '\\left['+result+'\\right]';
-        case TokenType.TUPLE:
-            let nums = convertRealToString(token.value[0]);
-            for(let i = 1; i < token.value.length; i++){
-                nums = nums+','+convertRealToString(token.value[i]);
-            }
-            return '\\left('+nums+'\\right)';
-    }
+    return str+uncertaintySuffix;
 }
 
 export function convertRealToString(r, canRecurse = true){
