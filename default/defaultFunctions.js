@@ -1,8 +1,4 @@
-import{
-    FuncArgumentInputType
-} from "../evaluator.js"
-
-export const FuncCode = {
+export const FunctionCode = {
     FRAC: 100, //maybe temporary
     SIN: 101,
     COS: 102,
@@ -78,18 +74,18 @@ export const FuncCode = {
 }
 
 export const FunctionByLatex = {
-    "\\sin": FuncCode.SIN,
-    "\\cos": FuncCode.COS,
-    "\\tan": FuncCode.TAN,
-    "\\csc": FuncCode.CSC,
-    "\\sec": FuncCode.SEC,
-    "\\cot": FuncCode.COT,
-    "\\arcsin": FuncCode.ASIN,
-    "\\arccos": FuncCode.ACOS,
-    "\\arctan": FuncCode.ATAN,
-    "\\arccsc": FuncCode.ACSC,
-    "\\arcsec": FuncCode.ASEC,
-    "\\arccot": FuncCode.ACOT,
+    "\\sin": FunctionCode.SIN,
+    "\\cos": FunctionCode.COS,
+    "\\tan": FunctionCode.TAN,
+    "\\csc": FunctionCode.CSC,
+    "\\sec": FunctionCode.SEC,
+    "\\cot": FunctionCode.COT,
+    "\\arcsin": FunctionCode.ASIN,
+    "\\arccos": FunctionCode.ACOS,
+    "\\arctan": FunctionCode.ATAN,
+    "\\arccsc": FunctionCode.ACSC,
+    "\\arcsec": FunctionCode.ASEC,
+    "\\arccot": FunctionCode.ACOT,
 }
 
 export const FuncArgumentSchema = {
@@ -97,12 +93,12 @@ export const FuncArgumentSchema = {
 }
 
 // export const defaultFunctions = new Map([
-//     [FuncCode.FRAC, { symbol: "frac", code: FuncCode.FRAC, staticArgs: true, args: 2, inputType: FuncArgumentInputType.ALL_NUMERIC, returnType: TokenHandleType.REAL }],
-//     [FuncCode.SIN, { symbol: "sin", code: FuncCode.SIN, staticArgs: false, args: 1, inputType: FuncArgumentInputType.ALL_NUMERIC, returnType: TokenHandleType.REAL }],
-//     [FuncCode.COS, { symbol: "cos", code: FuncCode.COS, staticArgs: false, args: 1, inputType: FuncArgumentInputType.ALL_NUMERIC, returnType: TokenHandleType.REAL }],
-//     [FuncCode.TAN, { symbol: "tan", code: FuncCode.TAN, staticArgs: false, args: 1, inputType: FuncArgumentInputType.ALL_NUMERIC, returnType: TokenHandleType.REAL }],
-//     [FuncCode.SEC, { symbol: "sec", code: FuncCode.SEC, staticArgs: false, args: 1, inputType: FuncArgumentInputType.ALL_NUMERIC, returnType: TokenHandleType.REAL }],
-//     [FuncCode.CSC, { symbol: "csc", code: FuncCode.CSC, staticArgs: false, args: 1, inputType: FuncArgumentInputType.ALL_NUMERIC, returnType: TokenHandleType.REAL }],
+//     [FunctionCode.FRAC, { symbol: "frac", code: FunctionCode.FRAC, staticArgs: true, args: 2, inputType: FuncArgumentInputType.ALL_NUMERIC, returnType: TokenHandleType.REAL }],
+//     [FunctionCode.SIN, { symbol: "sin", code: FunctionCode.SIN, staticArgs: false, args: 1, inputType: FuncArgumentInputType.ALL_NUMERIC, returnType: TokenHandleType.REAL }],
+//     [FunctionCode.COS, { symbol: "cos", code: FunctionCode.COS, staticArgs: false, args: 1, inputType: FuncArgumentInputType.ALL_NUMERIC, returnType: TokenHandleType.REAL }],
+//     [FunctionCode.TAN, { symbol: "tan", code: FunctionCode.TAN, staticArgs: false, args: 1, inputType: FuncArgumentInputType.ALL_NUMERIC, returnType: TokenHandleType.REAL }],
+//     [FunctionCode.SEC, { symbol: "sec", code: FunctionCode.SEC, staticArgs: false, args: 1, inputType: FuncArgumentInputType.ALL_NUMERIC, returnType: TokenHandleType.REAL }],
+//     [FunctionCode.CSC, { symbol: "csc", code: FunctionCode.CSC, staticArgs: false, args: 1, inputType: FuncArgumentInputType.ALL_NUMERIC, returnType: TokenHandleType.REAL }],
 // ]);
 
 export function gamma(n) {

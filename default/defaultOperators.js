@@ -49,7 +49,7 @@ export const OperatorByLatex = {
     "\\sim": OperatorCode.NOT,
     "!": OperatorCode.FACT,
     "u-": OperatorCode.NEG,
-    "\\cdot": OperatorCode.DPR,
+    //"\\cdot": OperatorCode.DPR,
     "\\times": OperatorCode.CRP,
     "\\backslash": OperatorCode.ATT,
     "^n": OperatorCode.POWN,

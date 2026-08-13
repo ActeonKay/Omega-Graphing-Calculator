@@ -1,8 +1,10 @@
 //propagation of boundaries (undefined, asymptotes, etc.)
-import {
-    OpCode,
-    FuncCode
-} from '../evaluator';
+import { 
+    FunctionCode
+} from '../default/defaultFunctions.js';
+import { 
+    OperatorCode
+} from '../default/defaultOperators.js';
 
 class Boundary{
     crosses;
@@ -25,6 +27,105 @@ class Boundary{
  * ]
  */
 
+export function evalBoundary(code, args){
+    console.assert(args.every((token) => token.value.length == 2));
+
+    switch(code){
+        case OperatorCode.ADD:
+        case OperatorCode.SUB:
+        case OperatorCode.UNC:
+        case OperatorCode.LT:
+        case OperatorCode.LTE:
+        case OperatorCode.GT:
+        case OperatorCode.GTE:
+        case OperatorCode.EQ:
+        case OperatorCode.NEQ:
+            return boundaryAdd(args[1].value, args[1].attributes.boundary, args[0].value, args[0].attributes.boundary);
+        case OperatorCode.MUL:
+        case OperatorCode.AND:
+        case OperatorCode.OR:
+        case OperatorCode.XOR:
+            return boundaryAnd(args[1].value, args[1].attributes.boundary, args[0].value, args[0].attributes.boundary);
+        case OperatorCode.DIV:
+            return boundaryDiv(args[1].value, args[1].attributes.boundary, args[0].value, args[0].attributes.boundary);
+        case OperatorCode.POW:
+        case OperatorCode.POWN:
+            return boundaryPow(args[1].value, args[1].attributes.boundary, args[0].value, args[0].attributes.boundary);
+        //unary:
+        case OperatorCode.NOT:
+        case OperatorCode.NEG:
+            return args[0].attributes.boundary;
+        case OperatorCode.FACT:
+            return boundaryFact(args[0].value, args[0].attributes.boundary);
+    }
+}
+
+function boundaryAdd(l, lBoundary, r, rBoundary){
+    const [l1, l2] = l;
+    const [r1, r2] = r;
+
+    return [0, lBoundary[1]+rBoundary[1], lBoundary[2]+rBoundary[2]];
+}
+
+function boundaryAnd(l, lBoundary, r, rBoundary){
+    const [l1, l2] = l;
+    const [r1, r2] = r;
+
+    let crosses = ((l1>0) != (l2>0)) ? 1 : 0 + ((r1>0) != (r2>0)) ? 1 : 0;
+    return [crosses+lBoundary[0]+lBoundary[1], lBoundary[1]+rBoundary[1], lBoundary[2]+rBoundary[2]];
+}
+
+function boundaryDiv(l, lBoundary, r, rBoundary){
+    const [l1, l2] = l;
+    const [r1, r2] = r;
+
+    let crosses = 0;
+    let holes = lBoundary[1]+rBoundary[1];
+    let jumps = lBoundary[2]+rBoundary[2];
+
+    if((l1 > 0) != (l2 > 0)) crosses++; 
+    if((r1 > 0) != (r2 > 0)) crosses++; 
+    return [crosses, holes, jumps];
+}
+
+function boundaryPow(l, lBoundary, r, rBoundary){
+    const [l1, l2] = l;
+    const [r1, r2] = r;
+
+    let crosses = 0;
+    let holes = lBoundary[1]+rBoundary[1];
+    let jumps = lBoundary[2]+rBoundary[2];
+
+    if(l1>0 && l2 > 0) return [crosses, holes, jumps];
+
+    const o1 = l1**r1;
+    const o2 = l2**r2;
+
+    if(o1 == NaN || o2 == NaN) holes++;
+
+    if((o1 >= 0) != (o2 >= 0)){
+        crosses++, holes++, jumps++;
+    }
+
+    return [crosses, holes, jumps];
+}
+
+function boundaryFact(l, lBoundary){
+    const [l1, l2] = l;
+    let [crosses, holes, jumps] = lBoundary;
+
+    const n = Math.abs(
+        Math.floor(l1)-Math.floor(l2)
+    )-(
+        Math.floor(Math.max(-1,l1,l2)+1)
+        -Math.floor(Math.max(-1,Math.min(l1,l2))+1)
+    );
+    crosses += n;
+    holes += n;
+    jumps += n;
+    return [crosses, holes, jumps];
+}
+
 export function generateBoundaryMethodExpression(code){
     //ASSUMPTION: function and operator ids don't overlap
 
@@ -34,24 +135,24 @@ export function generateBoundaryMethodExpression(code){
     //for functions: 
 
     switch(code){
-        case OpCode.ADD:
-        case OpCode.SUB:
-        case OpCode.LT:
-        case OpCode.LTE:
-        case OpCode.GT:
-        case OpCode.GTE:
-        case OpCode.EQ:
-        case OpCode.NEQ:
+        case OperatorCode.ADD:
+        case OperatorCode.SUB:
+        case OperatorCode.LT:
+        case OperatorCode.LTE:
+        case OperatorCode.GT:
+        case OperatorCode.GTE:
+        case OperatorCode.EQ:
+        case OperatorCode.NEQ:
             return (l, r) => {
                 const [l1, l2, lBoundary] = l;
                 const [r1, r2, rBoundary] = r;
 
                 return [0, lBoundary[1]+rBoundary[1], lBoundary[2]+rBoundary[2]];
             }
-        case OpCode.MUL:
-        case OpCode.AND:
-        case OpCode.OR:
-        case OpCode.XOR:
+        case OperatorCode.MUL:
+        case OperatorCode.AND:
+        case OperatorCode.OR:
+        case OperatorCode.XOR:
             return (l, r) => {
                 const [l1, l2, lBoundary] = l;
                 const [r1, r2, rBoundary] = r;
@@ -59,7 +160,7 @@ export function generateBoundaryMethodExpression(code){
                 let crosses = ((l1>0) != (l2>0)) ? 1 : 0 + ((r1>0) != (r2>0)) ? 1 : 0;
                 return [crosses+lBoundary[0]+lBoundary[1], lBoundary[1]+rBoundary[1], lBoundary[2]+rBoundary[2]];
             }
-        case OpCode.DIV:
+        case OperatorCode.DIV:
             return (l, r) => {
                 const [l1, l2, lBoundary] = l;
                 const [r1, r2, rBoundary] = r;
@@ -70,10 +171,10 @@ export function generateBoundaryMethodExpression(code){
 
                 if((l1 > 0) != (l2 > 0)) crosses++; 
                 if((r1 > 0) != (r2 > 0)) crosses++; 
-                break;
+                return [crosses, holes, jumps];
             }
-        case OpCode.POW:
-        case OpCode.POWN:
+        case OperatorCode.POW:
+        case OperatorCode.POWN:
             return (l, r) => {
                 const [l1, l2, lBoundary] = l;
                 const [r1, r2, rBoundary] = r;
@@ -84,12 +185,12 @@ export function generateBoundaryMethodExpression(code){
 
                 if(l1>0 && l2 > 0) return [crosses, holes, jumps];
 
-                const r1 = l1**r1;
-                const r2 = l2**r2;
+                const o1 = l1**r1;
+                const o2 = l2**r2;
 
-                if(r1 == NaN || r2 == NaN) holes++;
+                if(o1 == NaN || o2 == NaN) holes++;
 
-                if((r1 >= 0) != (r2 >= 0)){
+                if((o1 >= 0) != (o2 >= 0)){
                     crosses++, holes++, jumps++;
                 }
 
@@ -119,13 +220,13 @@ export function computeBoundaryForUnaryOp(opcode, a1, a2){
     var n;
 
     switch(opcode){
-        case OpCode.NOT:
-        case OpCode.NEG:
+        case OperatorCode.NOT:
+        case OperatorCode.NEG:
             crosses += ((a1>0) != (a2>0)) ? 1 : 0;
             //holes += a1.holes + a2.holes;
             //jumps = a1.jumps + a2.jumps;
             break;
-        case OpCode.FACT:
+        case OperatorCode.FACT:
 
             n = Math.abs(
                 Math.floor(a1)-Math.floor(a2)
@@ -165,24 +266,24 @@ export function computeBoundaryForBinaryOp(opcode, a1, b1, a2, b2){
     var undefined = false;
 
     switch(opcode){
-        case OpCode.ADD:
-        case OpCode.SUB:
-        case OpCode.LT:
-        case OpCode.LTE:
-        case OpCode.GT:
-        case OpCode.GTE:
-        case OpCode.EQ:
-        case OpCode.NEQ:
+        case OperatorCode.ADD:
+        case OperatorCode.SUB:
+        case OperatorCode.LT:
+        case OperatorCode.LTE:
+        case OperatorCode.GT:
+        case OperatorCode.GTE:
+        case OperatorCode.EQ:
+        case OperatorCode.NEQ:
             //??
             break;
-        case OpCode.MUL:
-        case OpCode.AND:
-        case OpCode.OR:
-        case OpCode.XOR:
+        case OperatorCode.MUL:
+        case OperatorCode.AND:
+        case OperatorCode.OR:
+        case OperatorCode.XOR:
             if((a1 > 0) != (a2 > 0)) crosses++; 
             if((b1 > 0) != (b2 > 0)) crosses++; 
             break;
-        case OpCode.DIV:
+        case OperatorCode.DIV:
             //  a/b
 
             log(a1,a2,b1,b2);
@@ -201,8 +302,8 @@ export function computeBoundaryForBinaryOp(opcode, a1, b1, a2, b2){
             }
             //jumps += crosses of arg2 instead of this ^^
             break;
-        case OpCode.POW: 
-        case OpCode.POWN:
+        case OperatorCode.POW: 
+        case OperatorCode.POWN:
             //  a^b
             if(a1>0 && a2 > 0){
                 break;
@@ -261,7 +362,7 @@ export function computeBoundaryForFunction(funccode, args1, args2, edgeinfo){
     const negativeSmallOrPositive = (a) =>( Math.abs(a) < 1) ? 0 : Math.sign(a); //divides Reals into three sections: {n<=1, -1<n<1, n>=1}
 
     switch(funccode){
-        case FuncCode.FRAC: 
+        case FunctionCode.FRAC: 
             //argsn[k] kth argument of point n
 
             //1st argument --> numerator
@@ -283,13 +384,13 @@ export function computeBoundaryForFunction(funccode, args1, args2, edgeinfo){
             }
             
             break;
-        case FuncCode.SIN:
+        case FunctionCode.SIN:
             crosses = Math.abs(Math.floor(args1[0]/Math.PI)-Math.floor(args2[0]/Math.PI));
             holes = edgeinfo[0][1];
             jumps = edgeinfo[0][2];
             //log(args1[0], args2[0], "=>", crosses);
             break;
-        case FuncCode.COS:
+        case FunctionCode.COS:
             n = Math.abs(
                 Math.round(args1[0]/Math.PI + 0)
                 -Math.round(args2[0]/Math.PI + 0)
@@ -298,8 +399,8 @@ export function computeBoundaryForFunction(funccode, args1, args2, edgeinfo){
             holes = edgeinfo[0][1];
             jumps = edgeinfo[0][2];
             break;
-        case FuncCode.TAN:
-        case FuncCode.SEC:
+        case FunctionCode.TAN:
+        case FunctionCode.SEC:
             crosses = 0;
             n = Math.abs(
                 Math.round(args1[0]/Math.PI + 0)
@@ -311,8 +412,8 @@ export function computeBoundaryForFunction(funccode, args1, args2, edgeinfo){
             jumps = n+edgeinfo[0][2];
             break;
             //return [n, n, n]; //jumps, holes, crosses
-        case FuncCode.CSC:
-        case FuncCode.COT: 
+        case FunctionCode.CSC:
+        case FunctionCode.COT: 
             crosses = 0;
             n = Math.abs(
                 Math.floor(args1[0]/Math.PI + 0)
@@ -321,16 +422,16 @@ export function computeBoundaryForFunction(funccode, args1, args2, edgeinfo){
             holes = n+edgeinfo[0][1];
             jumps = n+edgeinfo[0][2];
             break;
-        case FuncCode.ASIN:
-        case FuncCode.ACOS:
-        case FuncCode.ATANH:
+        case FunctionCode.ASIN:
+        case FunctionCode.ACOS:
+        case FunctionCode.ATANH:
             n = Math.abs(negativeSmallOrPositive(args1[0])-negativeSmallOrPositive(args2[0]));
             crosses = 0;
             holes = ((n > 0) ? 1 : 0) + edgeinfo[0][1];
             jumps = n+edgeinfo[0][2];
             break;
-        case FuncCode.ASEC:
-        case FuncCode.ACSC:
+        case FunctionCode.ASEC:
+        case FunctionCode.ACSC:
             n = Math.abs( negativeSmallOrPositive(args1[0]) - negativeSmallOrPositive(args2[0]) );
 
             holes = edgeinfo[0][1] + (n>0)?1:0;
@@ -342,42 +443,42 @@ export function computeBoundaryForFunction(funccode, args1, args2, edgeinfo){
             //     jumps += 1;
             // }
             break;
-        case FuncCode.ACOT:
+        case FunctionCode.ACOT:
             n=isSameSign(args1[0],args2[0]) ? 0 : 1;
             holes = edgeinfo[0][1]+n;
             jumps = edgeinfo[0][2]+n;
             break;
-        case FuncCode.CSCH:
-        case FuncCode.COTH:
-        case FuncCode.ACSCH:
+        case FunctionCode.CSCH:
+        case FunctionCode.COTH:
+        case FunctionCode.ACSCH:
             crosses = 0;
             n = ((args1[0] > 0) !== (args2[0] > 0)) ? 1 : 0;
             holes = n+edgeinfo[0][1];
             jumps = n+edgeinfo[0][2];
             break;
-        case FuncCode.ACOSH:
+        case FunctionCode.ACOSH:
             n = isSameSign(args1[0]-1,args2[0]-1) ? 0 : 1;
             holes = edgeinfo[0][1]+n;
             jumps = edgeinfo[0][2]+n;
             //log(crosses,holes,jumps)
             break;
-        case FuncCode.ASECH:
+        case FunctionCode.ASECH:
             n = (args1[0] < 0 || args1[0] > 1)||(args2[0] < 0 || args2[0] > 1) ? 1 : 0;
             holes = edgeinfo[0][1]+n;
             jumps = edgeinfo[0][2];
             break;
-        case FuncCode.ACOTH:
+        case FunctionCode.ACOTH:
             n = Math.abs(negativeSmallOrPositive(args1[0])-negativeSmallOrPositive(args2[0]));
             holes = edgeinfo[0][1]+n;
             jumps = edgeinfo[0][2]+n;
         //case 
-        case FuncCode.SQRT:
+        case FunctionCode.SQRT:
             crosses = 0;
             holes = edgeinfo[0][1] + (args1[0] < 0 != args2[0] < 0);
             jumps = edgeinfo[0][2];
             undefined = (args1[0] < 0 || args2[0] < 0);
             break;
-        case FuncCode.GAMMA:
+        case FunctionCode.GAMMA:
             n = Math.abs(
                 Math.floor(args1[0])-Math.floor(args2[0])
             )-(
@@ -388,26 +489,26 @@ export function computeBoundaryForFunction(funccode, args1, args2, edgeinfo){
             holes = edgeinfo[0][1] + n;
             jumps = edgeinfo[0][2] + n;
             break;
-        case FuncCode.FLOOR:
-        case FuncCode.CEIL:
+        case FunctionCode.FLOOR:
+        case FunctionCode.CEIL:
             crosses = 0;
             holes = edgeinfo[0][1];
             jumps = edgeinfo[0][2] + Math.abs(Math.floor(args1[0])-Math.floor(args2[0]));
             break;
-        case FuncCode.TRUNC:
+        case FunctionCode.TRUNC:
             crosses = 0;
             holes = edgeinfo[0][1];
             jumps = edgeinfo[0][2] + Math.abs(Math.floor(args1[0])-Math.floor(args2[0]));
             if((args1[0]>0) !== (args2[0]>0)) jumps -= 1;
             break;
-        case FuncCode.ROUND:
+        case FunctionCode.ROUND:
             crosses = 0;
             holes = edgeinfo[0][1];
             jumps = edgeinfo[0][2] + Math.abs(Math.floor(args1[0]-0.5)-Math.floor(args2[0]-0.5));
             break;
-        case FuncCode.LN:
-        case FuncCode.LOG:
-        case FuncCode.LOGN:
+        case FunctionCode.LN:
+        case FunctionCode.LOG:
+        case FunctionCode.LOGN:
             holes = (args1[0]<=0)===(args2[0]<=0) ? 0 : 1;
             crosses = (args1[0]<1)===(args2[0]<1) ? 0 : holes;
             jumps = holes;
