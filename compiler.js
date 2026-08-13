@@ -764,29 +764,34 @@ function substitute(tokens, input, attributes){
             continue;
         }
 
+        let value = undefined;
+
         if(token.metadata.value){
-            outputs.push({type: TokenType.OPERAND, value: token.metadata.value});
-            continue;
+            value = token.metadata.value;
+        }else{
+            let info = input.get(token.string);
+            if(info == undefined){
+                info = getDependableData(token.string);
+
+                console.assert(info?.type === 1,token);
+            }
+
+            value = info.value;
+                
+            if(info == undefined) throw new Error("I don't know what "+token.string+" means");
         }
 
-        let info = input.get(token.string);
-        if(info == undefined){
-            info = getDependableData(token.string);
-
-            console.assert(info?.type === 1,token);
-        }
-            
-        if(info == undefined) throw new Error("I don't know what "+token.string+" means");
+        let attributes = {};
+        if(propagateBoundary) attributes.boundary = [0,0,0]; 
+        if(propagateInterval) attributes.interval = info.interval;
+        if(propagateUncertainty) attributes.uncertainty = 0;
+        if(propagatePeriodicity) attributes.periodicity = 0; 
 
         const result = {
             type: TokenType.OPERAND,
-            value: info.value
+            value: value,
+            attributes: attributes
         }
-
-        if(propagateBoundary) token.boundary = [0,0,0]; 
-        if(propagateInterval) token.interval = info.interval;
-        if(propagateUncertainty) token.uncertainty = 0;
-        if(propagatePeriodicity) token.periodicity = 0; 
 
         outputs.push(result);
     };
