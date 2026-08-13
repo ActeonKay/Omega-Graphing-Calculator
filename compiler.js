@@ -118,12 +118,13 @@ const DelimiterByLatex = {
     "\|": DelimiterCode.VERTICAL_BAR
 }
 
-import { FunctionByLatex } from "./functions/defaultFunctions.js";
-import { Operators, OperatorAssociativity, OperatorByLatex, OperatorCode, OperatorInfo } from "./functions/defaultOperators.js";
-import { ConstantCode, ConstantByLatex } from "./functions/defaultConstants.js";
+import { FunctionByLatex, FunctionCode } from "./default/defaultFunctions.js";
+import { Operators, OperatorAssociativity, OperatorByLatex, OperatorCode, OperatorInfo } from "./default/defaultOperators.js";
+import { ConstantCode, ConstantByLatex } from "./default/defaultConstants.js";
 
 import { getDependable, getDependableData } from "./expressions.js";
-import { OpCode } from "./evaluator.js";
+import { evalUncertainty } from "./attributeArithmetic/uncertaintyArithmetic.js"
+import { evalBoundary } from "./attributeArithmetic/boundaryArithmetic.js";
 
 /**
  * Determines if a token is a valid variable token (i.e., can be used as a variable, function parameter, or function name)
@@ -714,10 +715,14 @@ export function compileExpression(expression){
         pushTokenToOutput(operators.pop());
     }
 
+    const requiredAttributes = new Set();
+    if(tokens.some((token) => token.string == "\\pm")) requiredAttributes.add("uncertainty");
+
     const result = {
         type: expression.type,
         tokens: outputs,
-        dependencies: expression.dependencies
+        dependencies: expression.dependencies,
+        requiredAttributes: requiredAttributes
     };
 
     if(expression.assignment !== undefined) result.assignment = expression.assignment;
@@ -741,15 +746,14 @@ export function compileExpression(expression){
  * @param {*} name Name of substituted value
  * @param {*} value Value to substitute in
  */
-function substitute(tokens, input, options = {}){
-    const evaluateEqualityAsDifference = options.evaluateEqualityAsDifference ?? false;
-    const propagateBoundary = options.propagateBoundary ?? false;
-    const propagateInterval = options.propagateInterval ?? false;
-    const propagateUncertainty = options.propagateUncertainty ?? false;
-    const propagatePeriodicity = options.propagatePeriodicity ?? false;
-    const doNonPrincipalBranch = options.doNonPrincipalBranch ?? false;
+function substitute(tokens, input, attributes){
+    const propagateBoundary = attributes.has("boundary");
+    const propagateInterval = attributes.has("interval");
+    const propagateUncertainty = attributes.has("uncertainty");
+    const propagatePeriodicity = attributes.has("periodicity");
+    const doNonPrincipalBranch = attributes.has("multiplicity"); //?
 
-    const evalAsObject = propagateBoundary + propagateInterval + doNonPrincipalBranch + propagateUncertainty > 0;
+    const evalAsObject = attributes.size > 0;
 
     let outputs = [];
     for(let i = 0; i<tokens.length; i++) {
@@ -760,8 +764,8 @@ function substitute(tokens, input, options = {}){
             continue;
         }
 
-        if(token.metadata.value && !evalAsObject){
-            outputs.push(token.metadata.value);
+        if(token.metadata.value){
+            outputs.push({type: TokenType.OPERAND, value: token.metadata.value});
             continue;
         }
 
@@ -774,20 +778,11 @@ function substitute(tokens, input, options = {}){
             
         if(info == undefined) throw new Error("I don't know what "+token.string+" means");
 
-        const value = info.value;
-
-        if(!evalAsObject){
-            outputs.push(value);
-            continue;
-        }
-
-        throw new Error("Not yet implemented");
-
         const result = {
-            value: value
+            type: TokenType.OPERAND,
+            value: info.value
         }
 
-        if(evaluateEqualityAsDifference) token.evaluateEqualityAsDifference = true;
         if(propagateBoundary) token.boundary = [0,0,0]; 
         if(propagateInterval) token.interval = info.interval;
         if(propagateUncertainty) token.uncertainty = 0;
@@ -803,10 +798,11 @@ function substitute(tokens, input, options = {}){
  * 
  * @param {*} expression 
  * @param {Map} input 
- * @param {*} options 
+ * @param {*} attributes List of token attributes to include in calculations
+ * @param {*} evaluateTruth
  */
-export function evaluateExpressionWithOptions(expression, input, options){
-    let tokens = substitute(expression.tokens, input, options);
+export function evaluateExpressionWithOptions(expression, input, attributes, evaluateTruth){
+    let tokens = substitute(expression.tokens, input, attributes);
 
     let solve = [];
     tokens.forEach((token) => {
@@ -818,20 +814,24 @@ export function evaluateExpressionWithOptions(expression, input, options){
                 const code = token.code;
 
                 const arity = Operators.get(token.code).arity;
-                const args = arity === 1 ? [solve.pop()] : [solve.pop(),solve.pop()];
+                const operands = arity === 1 
+                    ? [solve.pop()]
+                    : [solve.pop(), solve.pop()];
 
-                solve.push(op(code, args));
+                solve.push(performOperation(code, operands, attributes));
 
                 break;
             case TokenType.FUNCTION:
-                const funcResult = func(token.code, solve.pop());
+                const funcResult = performFunction(token.code, [solve.pop()]);
+
+
                 solve.push(funcResult);
 
                 break;
             default:
                 //if(token.type || !options)
-                    solve.push(token);
-                //throw new Error("Unknown token type identified");
+                //solve.push(token);
+                throw new Error("Unknown token type identified");
                 break;
             //case TokenType.ALPHANUMERIC:
                 //break;
@@ -843,30 +843,58 @@ export function evaluateExpressionWithOptions(expression, input, options){
     return solve[0];
 }
 
-function op(code, args){
-    switch(code){
-        case OpCode.ADD:
-            return args[1]+args[0];
-        case OpCode.SUB:
-        case OpCode.EQ:
-            return args[1]-args[0];
-        case OpCode.MUL:
-            return args[1]*args[0];
-        case OpCode.DIV:
-            return args[1]/args[0];
-        case OpCode.POW:
-        case OpCode.POWN:
-            return args[1]**args[0];
-        case OpCode.NEG:
-            return -args[0];
+function performOperation(code, operands, attributes){
+    let result = { type: TokenType.OPERAND, value: evalValue(code, operands), attributes: {} };
 
+    if(attributes.has("uncertainty")) result.attributes.uncertainty = evalUncertainty(code, operands);
+    if(attributes.has("boundary")) result.attributes.boundary = evalBoundary(code, operands);
+
+    return result;
+}
+
+function evalValue(code, args){
+    switch(code){
+        case OperatorCode.ADD:
+            return args[1].value+args[0].value;
+        case OperatorCode.SUB:
+        case OperatorCode.EQ:
+            return args[1].value-args[0].value;
+        case OperatorCode.MUL:
+            return args[1].value*args[0].value;
+        case OperatorCode.DIV:
+            return args[1].value/args[0].value;
+        case OperatorCode.POW:
+        case OperatorCode.POWN:
+            return args[1].value**args[0].value;
+        case OperatorCode.NEG:
+            return -args[0].value;
+        case OperatorCode.PCT:
+            return 0.01*args[0].value;
+        case OperatorCode.DEG: 
+            return 0.017453292519943295*args[0].value;
+        case OperatorCode.UNC:
+            return args[1].value;
+        case FunctionCode.SIN:
+            return Math.sin(args[0].value);
+        case FunctionCode.COS:
+            return Math.cos(args[0].value);
+        case FunctionCode.TAN:
+            return Math.tan(args[0].value);
     }
 } 
 
-function func(code, arg){
+function performFunction(code, operands, attributes){
+    let result = { type: TokenType.OPERAND, value: evalValue(code, operands), attributes: {} };
+
+    //attributes
+
+    return result;
+}
+
+function func(code, args){
     switch(code){
-        case 101: return Math.sin(arg);
-        case 102: return Math.cos(arg);
-        case 103: return Math.tan(arg);
+        case 101: return Math.sin(args[0].value);
+        case 102: return Math.cos(args[0].value);
+        case 103: return Math.tan(args[0].value);
     }
 }

@@ -17,7 +17,7 @@
 //Done separately because wow it is simpler and easier to debug/manage
 //Actual structuring is left for compliation
 
-import { OperatorByLatex } from "../functions/defaultOperators.js";
+import { OperatorByLatex } from "../default/defaultOperators.js";
 
 const parseParenthesisTests = [
     ["(1)",1,"1"],
@@ -313,11 +313,19 @@ function parseCommand(string, start){
         return {type: "delimiter", string: "\\\\", charCount: 2, metadata: {fullString: "\\\\"}};
     }
 
+    if(string.charAt(start+1) === "%"){
+        return {type: "operator", string: "\\%", charCount: 2, metadata: {fullString: "\\%"}};
+    }
+
     let i = start+1;
     let substring = "\\";
     while(isLetter(string.charAt(i))){
         substring = substring.concat(string.charAt(i));
         i++;
+    }
+
+    if(substring.length === 1){
+        throw new Error("Sorry, I don't know what "+string.charAt(start+1)+" means.");
     }
 
     if(substring === "\\left"){

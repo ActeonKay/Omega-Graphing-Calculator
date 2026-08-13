@@ -128,19 +128,6 @@
 
   <script type="module">
     import { 
-        evaluateExpressionSimple,
-        
-        //evaluateExpression,
-        getTokenizedExpressions, 
-        getTokenizedExpressionMetas, 
-        getCompiledExpressions
-        //getCompiledExpressionMetas
-    } from "./evaluator.js";
-    
-  </script>
-
-  <script type="module">
-    import { 
         //evaluateExpression, evaluate, 
         finalizeExpression,
         //tokenizeExpression, getTokenizedExpressions, getTokenizedExpressionMetas,
@@ -526,12 +513,12 @@
         //call render algorithm
 
       switch(newExpr.type){
-        case ExpressionType.EVALUATE:
+        case ExpressionType.EVALUATION:
         case ExpressionType.ASSIGNMENT_DIRECT:
         case ExpressionType.ASSIGNMENT_INDIRECT:
           console.log('++ Evaluating expression ++',newExpr);
 
-          const evalObj = evaluateExpressionWithOptions(newExpr, new Map());
+          const evalObj = evaluateExpressionWithOptions(newExpr, new Map(), newExpr.requiredAttributes);
           
           console.log('++ Eval result:',evalObj,'++');
 
@@ -560,10 +547,8 @@
           
           return; //DELETE LATER
           break;
-        case ExpressionType.FUNCDEF:
-            if(newExpr.type === ExpressionType.FUNCDEF) registerDependable(newExpr.definedSymbol, DependableType.FUNCTION, newExpr.tokens, newExpr.dependencies);
-
-            newExpr.tokens = finalizeExpression(newExpr.tokens, newExpr.type ?? ExpressionType.IMPLICIT, ExpressionInfoByType[newExpr.type].tokType);
+        case ExpressionType.DEFINITION:
+            if(newExpr.type === ExpressionType.DEFINITION) registerDependable(newExpr.definition.name, DependableType.FUNCTION, newExpr.tokens, newExpr.dependencies);
 
             drawExpression(newExpr);
 
@@ -575,7 +560,7 @@
       if(newExpr.type === ExpressionType.ASSIGNMENT_DIRECT || newExpr.type === ExpressionType.ASSIGNMENT_INDIRECT){
         console.log('-- Evaluating Result of Definition ('+newExpr.definedSymbol+') --');
         //const evalResult = evaluateExpression(newExpr, new Map(),-1);
-        const evalResult = evaluateExpressionWithOptions(newExpr, new Map());
+        const evalResult = evaluateExpressionWithOptions(newExpr, new Map(), new Set());
 
         console.log('-- Set Variable '+newExpr.definedSymbol+' to result of evaluation:',evalResult,' --'); 
         const value = evalResult //evalResult.value; 
@@ -638,7 +623,7 @@
 
         console.log('-- Evaluating expression result for rendering --');
         //const evalObj = evaluate(newExpr, new Map(), -1);
-        const evalObj = evaluateExpressionWithOptions(newExpr, new Map());
+        const evalObj = evaluateExpressionWithOptions(newExpr, new Map(), new Set());
 
         console.log('-- Rendering evaluation result: ',evalObj,'--');
         const displayedResult = convertTokenToLatex(evalObj);
@@ -715,7 +700,7 @@
     }
 
     function requiresExpressionResult(type){
-      return type === ExpressionType.EVALUATE || type === ExpressionType.ASSIGNMENT_INDIRECT;
+      return type === ExpressionType.EVALUATION || type === ExpressionType.ASSIGNMENT_INDIRECT;
     }
 
     // function updateExpressionResult(eqRow, expression){
@@ -923,7 +908,7 @@
     function drawEvalResult(entry){
       console.log('-- Evaluating Expression to Draw --');
       //const evalResult = evaluate(currentExpression, new Map(), -1);
-      const evalResult = evaluateExpressionWithOptions(entry.expression, new Map());
+      const evalResult = evaluateExpressionWithOptions(entry.expression, new Map(), new Set());
 
       console.log('-- Draw result:',evalResult,'--');
 

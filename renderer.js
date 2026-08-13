@@ -1,6 +1,5 @@
 import{
     evaluateExpression,
-    ExpressionType,
     TokenType
 } from './evaluator.js';
 
@@ -131,11 +130,11 @@ export function generateInstructionsForCartesianYofX(expression, arrayIndex, vie
 
     let result = 0;
     for(let x = minX; x<=maxX; x+= dx){
-        result = evaluateExpressionWithOptions(expression, new Map([["x",{value: x}]]), {});
+        result = evaluateExpressionWithOptions(expression, new Map([["x",{value: x}]]), new Set());
 
         console.assert(result !== undefined);
 
-        instructions.push([true,x,result,0]);
+        instructions.push([true,x,result.value,0]);
     }
 
     if(doSmartRendering){
@@ -215,11 +214,11 @@ export function generateInstructionsForCartesianXofY(expression, arrayIndex, vie
 
     let result = 0;
     for(let y = minY; y<maxY; y+=dy){
-        let result = evaluateExpressionWithOptions(expression,new Map([["y", {value: y}]]));
+        let result = evaluateExpressionWithOptions(expression,new Map([["y", {value: y}]]), new Set());
 
         console.assert(result !== undefined);
 
-        instructions.push([true, result, y, 0]);
+        instructions.push([true, result.value, y, 0]);
     }
 
     if(doSmartRendering){
@@ -280,7 +279,7 @@ export function generateInstructionsForCartesianImplicit(expression, arrayIndex,
     const stepX = (viewport.maxX-viewport.minX)/32;//viewport.xCount;
     const stepY = (viewport.maxY-viewport.minY)/32;//viewport.yCount;
 
-    const evalOptions = {};
+    const evalAttributes = new Set();
 
     let instructions = [];
 
@@ -289,12 +288,12 @@ export function generateInstructionsForCartesianImplicit(expression, arrayIndex,
 
     for(let x = viewport.minX; x<viewport.maxX; x+= stepX){
         for(let y = viewport.minY; y<viewport.maxY; y+= stepY){
-            const tl = evaluateExpressionWithOptions(expression, new Map([["x",{value: x}],["y",{value: y}]]), evalOptions);
-            const tr = evaluateExpressionWithOptions(expression, new Map([["x",{value: x+stepX}],["y",{value: y}]]), evalOptions);
-            const bl = evaluateExpressionWithOptions(expression, new Map([["x",{value: x}],["y",{value: y+stepY}]]), evalOptions);
-            const br = evaluateExpressionWithOptions(expression, new Map([["x",{value: x+stepX}],["y",{value: y+stepY}]]), evalOptions);
+            const tl = evaluateExpressionWithOptions(expression, new Map([["x",{value: x}],["y",{value: y}]]), evalAttributes);
+            const tr = evaluateExpressionWithOptions(expression, new Map([["x",{value: x+stepX}],["y",{value: y}]]), evalAttributes);
+            const bl = evaluateExpressionWithOptions(expression, new Map([["x",{value: x}],["y",{value: y+stepY}]]), evalAttributes);
+            const br = evaluateExpressionWithOptions(expression, new Map([["x",{value: x+stepX}],["y",{value: y+stepY}]]), evalAttributes);
 
-            const instr = getInstructionFromQuadReturn({value: [tl,tr,bl,br]}, x, y, stepX, stepY);
+            const instr = getInstructionFromQuadReturn({value: [tl.value,tr.value,bl.value,br.value]}, x, y, stepX, stepY);
             // console.log(instr.length);
 
             instructions = instructions.concat(instr);
