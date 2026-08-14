@@ -838,20 +838,27 @@
       const expression = entry.expression;
 
       switch(expression.type){
-        case 7: //Implicit
-          drawAsQuad(entry);
-          break;
-        case 3: //y=f(x)
-          drawAsYofX(entry);
-          break;
-        case 2: //x=f(y)
-          drawAsXofY(entry);
-          break;
-        case 1:
-        case 10:
+        case ExpressionType.EVALUATION:
+        case ExpressionType.ASSIGNMENT_INDIRECT:
           drawEvalResult(entry);
           break;
-        case 9: //blank
+        case ExpressionType.EXPLICIT_Y: //y=f(x)
+          drawAsYofX(entry);
+          break;
+        case ExpressionType.EXPLICIT_X: //x=f(y)
+          drawAsXofY(entry);
+          break;
+        case ExpressionType.EXPLICIT_R:
+          //
+          break;
+        case ExpressionType.EXPLICIT_THETA:
+          //
+          break;
+        case ExpressionType.IMPLICIT:
+          drawAsQuad(entry);
+          break;
+        case ExpressionType.DEFINITION:
+          //
           break;
         default:
           //drawAsQuad(expr);

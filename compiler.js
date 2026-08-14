@@ -121,6 +121,7 @@ const DelimiterByLatex = {
 import { FunctionByLatex, FunctionCode } from "./default/defaultFunctions.js";
 import { Operators, OperatorAssociativity, OperatorByLatex, OperatorCode, OperatorInfo } from "./default/defaultOperators.js";
 import { ConstantCode, ConstantByLatex } from "./default/defaultConstants.js";
+import { BigOperatorByLatex, compileFractionFromToken, compileRadicalFromToken } from "./default/defaultBigOperators.js";
 
 import { getDependable, getDependableData } from "./expressions.js";
 import { evalUncertainty } from "./attributeArithmetic/uncertaintyArithmetic.js"
@@ -377,20 +378,12 @@ export function typesetTokens(tokensNSP, isSubscript = false, isSuperscript = fa
 
                 //Attempt to determine token type based on command name
                 //If unnsuccessful, default to TokenType.OPERAND with metadata.parameter = command and let compilation handle it
-                if(command in FunctionByLatex){
-                    type = TokenType.FUNCTION, code = FunctionByLatex[command];
+                if(command in BigOperatorByLatex){
+                    type = TokenType.BIG_OPERATOR, code = BigOperatorByLatex[command];
                 }else if(command in OperatorByLatex){
                     type = TokenType.OPERATOR, code = OperatorByLatex[command];
-                }else if(command === "\\frac") {
-                    //treat entire fraction as an operand
-
-                    tokens.push({
-                        type: TokenType.BIG_OPERATOR,
-                        code: null,
-                        string: tokenNSP.string,
-                        metadata: tokenNSP.metadata
-                    });
-                    break;
+                }else if(command in FunctionByLatex) {
+                    type = TokenType.FUNCTION, code = FunctionByLatex[command];
                 }else {
                     if(tokenNSP.metadata.subscript && tokenNSP.metadata.subscript.length === 1 && tokenNSP.metadata.subscript[0].type === "alphanumeric"){
                         //replace token.string with base_subscript 
@@ -515,7 +508,7 @@ export function insertImplicitOperations(tokensNSP){
 }
 
 function isValidLeftOperand(token){
-    const isOperandToken = (token.type === TokenType.OPERAND);
+    const isOperandToken = (token.type === TokenType.OPERAND || token.type === TokenType.BIG_OPERATOR);
     const isRightBracket = (token.type === TokenType.BRACKET && token.code % 2 === 1);
     const isLeftAssociativeUnary = (token.type === TokenType.OPERATOR) && (Operators.get(token.code)?.arity === 1) && (Operators.get(token.code)?.associativity === OperatorAssociativity.LEFT);
 
@@ -523,7 +516,7 @@ function isValidLeftOperand(token){
 }
 
 function isValidRightOperand(token){
-    const isOperandToken = (token.type === TokenType.OPERAND);
+    const isOperandToken = (token.type === TokenType.OPERAND || token.type === TokenType.BIG_OPERATOR);
     const isLeftBracket = (token.type === TokenType.BRACKET && token.code % 2 === 0);
     const isRightAssociativeUnary = (token.type === TokenType.OPERATOR) && (Operators.get(token.code)?.arity === 1) && (Operators.get(token.code)?.associativity === OperatorAssociativity.RIGHT);
 
@@ -682,18 +675,10 @@ export function compileExpression(expression){
             case TokenType.BIG_OPERATOR:
                 switch(token.string){
                     case "\\frac":
-                        const numeratorNSP = token.metadata.requiredArguments[0];
-                        const denominatorNSP = token.metadata.requiredArguments[1];
-
-                        const numeratorTypeset = typesetTokens(numeratorNSP);
-                        const denominatorTypeset = typesetTokens(denominatorNSP);
-
-                        const numerator = compileExpression(numeratorTypeset);
-                        const denominator = compileExpression(denominatorTypeset);
-
-                        outputs.push(...numerator.tokens);
-                        outputs.push(...denominator.tokens);
-                        outputs.push({type: TokenType.OPERATOR, code: OperatorCode.DIV, string: "/", metadata: {fullString: "/"}});
+                        outputs.push(...compileFractionFromToken(token));
+                        break;
+                    case "\\sqrt":
+                        outputs.push(...compileRadicalFromToken(token));
                         break;
                 }
                 break;
@@ -790,10 +775,10 @@ function substitute(tokens, input, attributes){
                     break;
                 }
             }
-
-            value = info.value;
                 
             if(info == undefined) throw new Error("I don't know what "+token.string+" means");
+
+            value = info.value;
         }
 
         let attributes = {};
@@ -906,6 +891,42 @@ function evalValue(code, args){
             return 1/Math.sin(args[0].value);
         case FunctionCode.COT:
             return 1/Math.tan(args[0].value);
+        case FunctionCode.ASIN:
+            return Math.asin(args[0].value);
+        case FunctionCode.ACOS:
+            return Math.acos(args[0].value);
+        case FunctionCode.ATAN:
+            return Math.atan(args[0].value);
+        case FunctionCode.ASEC:
+            return Math.acos(1/args[0].value);
+        case FunctionCode.ACSC:
+            return Math.asin(1/args[0].value);
+        case FunctionCode.ACOT:
+            return Math.atan(1/args[0].value);
+        case FunctionCode.SINH:
+            return Math.sinh(args[0].value);
+        case FunctionCode.COSH:
+            return Math.cosh(args[0].value);
+        case FunctionCode.TANH:
+            return Math.tanh(args[0].value);
+        case FunctionCode.SECH:
+            return 1/Math.cosh(args[0].value);
+        case FunctionCode.CSCH:
+            return 1/Math.sinh(args[0].value);
+        case FunctionCode.COTH:
+            return 1/Math.tanh(args[0].value);
+        case FunctionCode.ASINH:
+            return Math.asinh(args[0].value);
+        case FunctionCode.ACOSH:
+            return Math.acosh(args[0].value);
+        case FunctionCode.ATANH:
+            return Math.atanh(args[0].value);
+        case FunctionCode.ASECH:
+            return Math.acosh(1/args[0].value);
+        case FunctionCode.ACSCH:
+            return Math.asinh(1/args[0].value);
+        case FunctionCode.ACOTH:
+            return Math.atanh(1/args[0].value);
         //other trig
         case FunctionCode.EXP:
             return Math.exp(args[0].value);
