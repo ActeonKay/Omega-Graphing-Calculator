@@ -516,7 +516,7 @@ function isValidLeftOperand(token){
 }
 
 function isValidRightOperand(token){
-    const isOperandToken = (token.type === TokenType.OPERAND || token.type === TokenType.BIG_OPERATOR);
+    const isOperandToken = (token.type === TokenType.OPERAND || token.type === TokenType.BIG_OPERATOR || token.type === TokenType.FUNCTION);
     const isLeftBracket = (token.type === TokenType.BRACKET && token.code % 2 === 0);
     const isRightAssociativeUnary = (token.type === TokenType.OPERATOR) && (Operators.get(token.code)?.arity === 1) && (Operators.get(token.code)?.associativity === OperatorAssociativity.RIGHT);
 
