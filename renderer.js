@@ -68,7 +68,6 @@ export function generateImage(expression, viewport, f){
     //const maxX = viewport.maxX;
     //const minY = viewport.minY;
     //const maxY = viewport.maxY;
-    console.log("Gen image with exp:",expression);
 
     const scaleX = viewport.scaleX;
     const scaleY = viewport.scaleY;
