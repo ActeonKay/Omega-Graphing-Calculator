@@ -287,13 +287,7 @@ export function generateInstructionsForCartesianImplicit(expression, arrayIndex,
 
     for(let x = viewport.minX; x<viewport.maxX; x+= stepX){
         for(let y = viewport.minY; y<viewport.maxY; y+= stepY){
-            const tl = evaluateExpressionWithOptions(expression, new Map([["x",{value: x}],["y",{value: y}]]), evalAttributes);
-            const tr = evaluateExpressionWithOptions(expression, new Map([["x",{value: x+stepX}],["y",{value: y}]]), evalAttributes);
-            const bl = evaluateExpressionWithOptions(expression, new Map([["x",{value: x}],["y",{value: y+stepY}]]), evalAttributes);
-            const br = evaluateExpressionWithOptions(expression, new Map([["x",{value: x+stepX}],["y",{value: y+stepY}]]), evalAttributes);
-
-            const instr = getInstructionFromQuadReturn({value: [tl.value,tr.value,bl.value,br.value]}, x, y, stepX, stepY);
-            // console.log(instr.length);
+            const instr = evaluateQuad(expression, evalAttributes, x, y, stepX, stepY, 0);
 
             instructions = instructions.concat(instr);
         }
@@ -301,6 +295,25 @@ export function generateInstructionsForCartesianImplicit(expression, arrayIndex,
 
     console.log(instructions.length);
     return instructions;
+}
+
+function evaluateQuad(expression, evalAttributes, x, y, w, h, depth = -1){
+    const tl = evaluateExpressionWithOptions(expression, new Map([["x",{value: x}],["y",{value: y}]]), evalAttributes);
+    const tr = evaluateExpressionWithOptions(expression, new Map([["x",{value: x+w}],["y",{value: y}]]), evalAttributes);
+    const bl = evaluateExpressionWithOptions(expression, new Map([["x",{value: x}],["y",{value: y+h}]]), evalAttributes);
+    const br = evaluateExpressionWithOptions(expression, new Map([["x",{value: x+w}],["y",{value: y+h}]]), evalAttributes);
+
+    let instr = getInstructionFromQuadReturn({value: [tl.value,tr.value,bl.value,br.value]}, x, y, w, h);
+
+    if(depth === -1 || depth > 3 || instr.length === 0) return instr;
+
+    instr = [];
+    instr.push(...evaluateQuad(expression, evalAttributes, x, y, w/2,h/2, depth+1));
+    instr.push(...evaluateQuad(expression, evalAttributes, x+w/2, y, w/2,h/2, depth+1));
+    instr.push(...evaluateQuad(expression, evalAttributes, x, y+h/2, w/2,h/2, depth+1));
+    instr.push(...evaluateQuad(expression, evalAttributes, x+w/2, y+h/2, w/2,h/2, depth+1));
+
+    return instr;
 }
 
 export function generateInstructionsForCartesianImplicitOldish(expression, arrayIndex, viewport){
@@ -821,8 +834,7 @@ function getInstructionFromQuadReturn(quad, x, y, w, h){
             ];
             break;
         default:
-            return [
-            ];
+            return [];
             break;
     }
 }
