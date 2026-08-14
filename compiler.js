@@ -270,11 +270,7 @@ export function typesetExpression(tokensNSP){
             return {type: varDict[lhsToken.string], trimmedExpression: rhs}; //format: ? = (anything but '?')
         }
 
-        if(lhsToken.type === "letter" || lhsToken.type === "command"){
-            if(!isValidVariableToken(lhsToken)){
-                return {type: ExpressionType.INVALID, trimmedExpression: tokensNSP}; //TODO: validate setting variables to latex commands with arguments like \vector{a} = (1,2,3) but not \frac{1}{2} = 3
-            }
-
+        if(isValidVariableToken(lhsToken)){
             if(rhs.length === 1 && rhs[0].type === "number") return {type: ExpressionType.ASSIGNMENT_DIRECT, trimmedExpression: rhs, assignment: {variable: lhsToken.string, value: rhs[0].string}}; //Ex: a=5
 
             if(rhs.some((t) => t.metadata.dependencies.has(lhsToken.string))) return {type: ExpressionType.INVALID, trimmedExpression: tokensNSP}; //you can't define a variable in terms of itself
@@ -789,7 +785,10 @@ function substitute(tokens, input, attributes){
             if(info == undefined){
                 info = getDependableData(token.string);
 
-                console.assert(info?.type === 1,token);
+                if(info){
+                    outputs.push(info.value);
+                    break;
+                }
             }
 
             value = info.value;
