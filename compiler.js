@@ -386,13 +386,14 @@ export function typesetTokens(tokensNSP, isSubscript = false, isSuperscript = fa
                 }else if(command in OperatorByLatex){
                     type = TokenType.OPERATOR, code = OperatorByLatex[command];
                 }else if(command === "\\frac") {
-                    const numerator = tokenNSP.metadata.requiredArguments[0];
-                    const denominator = tokenNSP.metadata.requiredArguments[1];
+                    //treat entire fraction as an operand
 
-                    tokens.push(...(typesetTokens(numerator).tokens)); //numerator
-                    tokens.push({type: TokenType.OPERATOR, code: OperatorCode.DIV, string: "/", metadata: {fullString: "/"}});
-                    tokens.push(...(typesetTokens(denominator).tokens));
-
+                    tokens.push({
+                        type: TokenType.BIG_OPERATOR,
+                        code: null,
+                        string: tokenNSP.string,
+                        metadata: tokenNSP.metadata
+                    });
                     break;
                 }else {
                     if(tokenNSP.metadata.subscript && tokenNSP.metadata.subscript.length === 1 && tokenNSP.metadata.subscript[0].type === "alphanumeric"){
@@ -683,7 +684,22 @@ export function compileExpression(expression){
                 //??
                 break;
             case TokenType.BIG_OPERATOR:
-                //??
+                switch(token.string){
+                    case "\\frac":
+                        const numeratorNSP = token.metadata.requiredArguments[0];
+                        const denominatorNSP = token.metadata.requiredArguments[1];
+
+                        const numeratorTypeset = typesetTokens(numeratorNSP);
+                        const denominatorTypeset = typesetTokens(denominatorNSP);
+
+                        const numerator = compileExpression(numeratorTypeset);
+                        const denominator = compileExpression(denominatorTypeset);
+
+                        outputs.push(...numerator.tokens);
+                        outputs.push(...denominator.tokens);
+                        outputs.push({type: TokenType.OPERATOR, code: OperatorCode.DIV, string: "/", metadata: {fullString: "/"}});
+                        break;
+                }
                 break;
             
         }
@@ -885,6 +901,19 @@ function evalValue(code, args){
             return Math.cos(args[0].value);
         case FunctionCode.TAN:
             return Math.tan(args[0].value);
+        case FunctionCode.SEC:
+            return 1/Math.cos(args[0].value);
+        case FunctionCode.CSC:
+            return 1/Math.sin(args[0].value);
+        case FunctionCode.COT:
+            return 1/Math.tan(args[0].value);
+        //other trig
+        case FunctionCode.EXP:
+            return Math.exp(args[0].value);
+        case FunctionCode.LN:
+            return Math.log(args[0].value);
+        case FunctionCode.LOG:
+            return Math.log10(args[0].value);
     }
 } 
 
