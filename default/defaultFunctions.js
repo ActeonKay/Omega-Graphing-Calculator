@@ -36,12 +36,14 @@ export const FunctionCode = {
     CEIL: 130,
     ROUND: 131,
     TRUNC: 132,
+
     MOD: 133,
     MIN: 134,
     MAX: 135,
     AVG: 136,
     MED: 137,
     MODE: 138,
+
     EXP: 139,
     LN: 140,
     LOG: 141,
@@ -86,6 +88,63 @@ export const FunctionByLatex = {
     "\\arccsc": FunctionCode.ACSC,
     "\\arcsec": FunctionCode.ASEC,
     "\\arccot": FunctionCode.ACOT,
+    "\\sinh": FunctionCode.SINH,
+    "\\cosh": FunctionCode.COSH,
+    "\\tanh": FunctionCode.TANH,
+    "\\csch": FunctionCode.CSCH,
+    "\\sech": FunctionCode.SECH,
+    "\\coth": FunctionCode.COTH,
+    "\\arcsinh": FunctionCode.ASINH,
+    "\\arccosh": FunctionCode.ACOSH,
+    "\\arctanh": FunctionCode.ATANH,
+    "\\arccsch": FunctionCode.ACSCH,
+    "\\arcsech": FunctionCode.ASECH,
+    "\\arccoth": FunctionCode.ACOTH,
+    "\\gd": FunctionCode.GD,
+    "\\lam": FunctionCode.LAM,
+    "\\abs": FunctionCode.ABS,
+    "\\sign": FunctionCode.SIGN,
+    "\\floor": FunctionCode.FLOOR,
+    "\\ceil": FunctionCode.CEIL,
+    "\\round": FunctionCode.ROUND,
+    "\\trunc": FunctionCode.TRUNC,
+    "\\mod": FunctionCode.MOD,
+    "\\min": FunctionCode.MIN,
+    "\\max": FunctionCode.MAX,
+    "\\avg": FunctionCode.AVG,
+    "\\med": FunctionCode.MED,
+    "\\mode": FunctionCode.MODE,
+
+    "\\exp": FunctionCode.EXP,
+    "\\ln": FunctionCode.LN,
+    "\\log": FunctionCode.LOG,
+    "\\logn": FunctionCode.LOGN,
+    "\\sqrt": FunctionCode.SQRT,
+    "\\cbrt": FunctionCode.CBRT,
+    "\\nthroot": FunctionCode.NTHRT,
+
+    "\\Gamma": FunctionCode.GAMMA,
+    //digamma
+    //polygamma
+    //zeta 
+    //arctan2
+    //Real
+    //Image
+    //Conjugate
+    //complex abs()
+    //complex argument = atan2(b,a)
+    //amplitude or modulus of complex number
+    //sinc
+    //array
+    //tuple
+    // BINOM: 160,
+    // IN: 161, //∈
+    // NOTIN: 162, //∉
+    // FACTOR: 163,
+    // CIS: 164,
+
+    // D_NORM: 170,
+    // D_BINM: 171
 }
 
 export const FuncArgumentSchema = {
