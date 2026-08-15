@@ -189,7 +189,7 @@ export function determineDependencies(tokensNSP){
             tokenDependencies = tokenDependencies.union(new Set([token.string]));
         }
 
-        if(token.metadata.subscriptn){
+        if(token.metadata.subscript){
             tokenDependencies = tokenDependencies.union(determineDependencies(token.metadata.subscript));
         }
 
@@ -763,7 +763,7 @@ function substitute(tokens, input, attributes){
 
         let value = undefined;
 
-        if(token.metadata.value){
+        if(token.metadata.value !== undefined){
             value = token.metadata.value;
         }else{
             let info = input.get(token.string);
