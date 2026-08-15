@@ -267,11 +267,10 @@ export function typesetExpression(tokensNSP){
 
         if(lhsToken.string in CoordinateByLatex){
             if(rhs.some((t) => t.metadata.dependencies.has(lhsToken.string))) return {type: ExpressionType.IMPLICIT, trimmedExpression: tokensNSP};
-
-            return {type: varDict[lhsToken.string], trimmedExpression: rhs}; //format: ? = (anything but '?')
+            if(lhsToken.metadata.superscript === undefined) return {type: varDict[lhsToken.string], trimmedExpression: rhs}; //format: ? = (anything but '?')
         }
 
-        if(isValidVariableToken(lhsToken)){
+        if(isValidVariableToken(lhsToken) && !lhsToken in CoordinateByLatex){
             if(rhs.length === 1 && rhs[0].type === "number") return {type: ExpressionType.ASSIGNMENT_DIRECT, trimmedExpression: rhs, assignment: {variable: lhsToken.string, value: rhs[0].string}}; //Ex: a=5
 
             if(rhs.some((t) => t.metadata.dependencies.has(lhsToken.string))) return {type: ExpressionType.INVALID, trimmedExpression: tokensNSP}; //you can't define a variable in terms of itself
