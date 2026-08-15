@@ -72,9 +72,10 @@ export class ExpressionEntry {
     latex;
     expression;
     definedSymbol;
-    context;
+    image; //{instructions: [], x: float, y: float, xScale: float, yScale: float}
+    rendering;
 
-    constructor(id, type, tooltip, color, visible, latex, expression, definedSymbol, context){
+    constructor(id, type, tooltip, color, visible, latex, expression, definedSymbol, image, rendering){
         this.id = id;
         this.type = type;
         this.tooltip = tooltip;
@@ -83,7 +84,8 @@ export class ExpressionEntry {
         this.latex = latex;
         this.expression = expression;
         this.definedSymbol = definedSymbol;
-        this.context = context;
+        this.image = image;
+        this.rendering = rendering;
 
         return isValidExpressionEntry(this);
     } 
@@ -119,8 +121,6 @@ export function isValidExpressionEntry(expr){
     if(typeof expr.visible !== 'boolean') {console.error('visibility not a boolean'); return false;}
 
     if(typeof expr.latex !== 'string') {console.error('latex not string'); return false;}
-
-    if(typeof expr.context !== 'object') {console.error('context not boject'); return false;}
 
     return true;
 }

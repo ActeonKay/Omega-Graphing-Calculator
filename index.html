@@ -144,7 +144,8 @@
       generateImage,
       generateInstructionsForCartesianYofX,
       generateInstructionsForCartesianXofY,
-      generateInstructionsForCartesianImplicit
+      generateInstructionsForCartesianImplicit,
+      ExpressionImage
     } from "./renderer.js";
 
     import {
@@ -454,7 +455,8 @@
         latex,
         {},
         null,
-        {}
+        blankExpressionImage(),
+        false
       );
       let compiledExpression = {};
 
@@ -470,7 +472,8 @@
           oldEntry.latex,
           compiledExpression,
           compiledExpression?.assignment?.variable ?? compiledExpression?.definition?.name,
-          {}
+          blankExpressionImage(),
+          false
         );
 
         console.log('Compilation successful:',compiledExpression);
@@ -766,7 +769,8 @@
         '',
         {},
         '',
-        {}
+        blankExpressionImage(),
+        false
       );
 
       expressions.splice(index, 0, expression);
@@ -782,6 +786,16 @@
       //console.log(field instanceof MQ.MathField, field);
 
       return field;
+    }
+
+    function blankExpressionImage(){
+      return new ExpressionImage(
+        [],
+        offsetX,
+        offsetY,
+        scaleX,
+        scaleY
+      );
     }
 
     function update() {
@@ -816,18 +830,11 @@
           drawExpressionEntry(entry);
         });
 
-        if(doQuadTooltip && quadSelected.length == 4){
-          ctx.beginPath();
-          ctx.strokeStyle = 'yellow';
-          ctx.rect(...quadSelected);
-          ctx.stroke();
-        }
-
         // end timer
         var end = window.performance.now();
         var time = end - start;
 
-        fpsDisplay.innerHTML = "FPS: " + Math.floor(1000/time);
+        fpsDisplay.innerHTML = "frame (ms)= " + Math.floor(time);
     }
 
     function drawExpressionEntry(entry){
@@ -837,33 +844,53 @@
 
       const expression = entry.expression;
 
+      if(expression.type === ExpressionType.EVALUATION || expression.type === ExpressionType.ASSIGNMENT_INDIRECT){
+        drawEvalResult(entry);
+        return;
+      }
+      
+      if(entry.rendering){
+        console.log('rendering');
+        drawFromImage(entry.image,entry.color);
+        return;
+      }
+
+      const maxY = toGraphCoordsY(0);
+      const minY = toGraphCoordsY(window.innerHeight);
+
+      const minX = toGraphCoordsX(0);
+      const maxX = toGraphCoordsX(window.innerWidth);
+
+      let xCount = window.innerWidth;
+      let yCount = window.innerHeight;
+
+      let renderFunction = null;
       switch(expression.type){
-        case ExpressionType.EVALUATION:
-        case ExpressionType.ASSIGNMENT_INDIRECT:
-          drawEvalResult(entry);
+        case ExpressionType.EXPLICIT_X: 
+          renderFunction = generateInstructionsForCartesianXofY; 
           break;
-        case ExpressionType.EXPLICIT_Y: //y=f(x)
-          drawAsYofX(entry);
+        case ExpressionType.EXPLICIT_Y: 
+          renderFunction = generateInstructionsForCartesianYofX; 
           break;
-        case ExpressionType.EXPLICIT_X: //x=f(y)
-          drawAsXofY(entry);
-          break;
-        case ExpressionType.EXPLICIT_R:
-          //
-          break;
-        case ExpressionType.EXPLICIT_THETA:
-          //
-          break;
-        case ExpressionType.IMPLICIT:
-          drawAsQuad(entry);
-          break;
-        case ExpressionType.DEFINITION:
-          //
-          break;
-        default:
-          //drawAsQuad(expr);
+        case ExpressionType.IMPLICIT: 
+          renderFunction = generateInstructionsForCartesianImplicit; 
+          let xCount = 32;
+          let yCount = 32;
           break;
       }
+
+      if(renderFunction === null) return;
+
+      const viewport = {minX, maxX, minY, maxY, scaleX, scaleY, xCount, yCount}; //note: shorthand
+
+      entry.rendering = true;
+        generateImage(expression, viewport, renderFunction)
+        .then(image => {
+          console.log('.then')
+          entry.image = image;
+          entry.rendering = false;
+          drawFromImage(entry.image,"orange");
+        });
     }
 
     function toGraphCoordsX(x){
@@ -949,57 +976,35 @@
       if(fill) ctx.fill(); else ctx.stroke();
     }
 
-    function drawAsQuad(entry){
-      const maxY = toGraphCoordsY(0);
-      const minY = toGraphCoordsY(window.innerHeight);
+    function drawFromImage(image, color){
+      //
+      const originalX = image.x;
+      const originalY = image.y;
+      const originalScaleX = image.scaleX;
+      const originalScaleY = image.scaleY;
 
-      const minX = toGraphCoordsX(0);
-      const maxX = toGraphCoordsX(window.innerWidth);
+      const translateX = (x) => x; //((x + offsetX)/scaleX * originalScaleX) + originalX;
+      const translateY = (y) => y; //((y + originalY)/scaleY * originalScaleY) - offsetY;
 
-      const image = generateImage(entry.expression, {minX, maxX, minY, maxY, scaleX, scaleY, xCount: 32, yCount: 32}, generateInstructionsForCartesianImplicit);
       const instructions = image.instructions;
-
-      drawFromInstructions(instructions,entry.color);
-    }
-
-    function drawAsYofX(entry){
-      const maxY = toGraphCoordsY(0);
-      const minY = toGraphCoordsY(window.innerHeight);
-
-      const minX = toGraphCoordsX(0);
-      const maxX = toGraphCoordsX(window.innerWidth);
-
-      const image = generateImage(entry.expression, {minX, maxX, xCount: window.innerWidth, minY, maxY, scaleX, scaleY}, generateInstructionsForCartesianYofX);
-      const instructions = image.instructions;
-
-      drawFromInstructions(instructions,entry.color);
-    }
-
-    function drawAsXofY(entry){
-      const minX = toGraphCoordsX(0);
-      const maxX = toGraphCoordsX(window.innerWidth);
-
-      const maxY = toGraphCoordsY(0);
-      const minY = toGraphCoordsY(window.innerHeight);
-
-      const image = generateImage(entry.expression, {minY, maxY, yCount: window.innerHeight, minX, maxX, scaleX, scaleY}, generateInstructionsForCartesianXofY);
-      const instructions = image.instructions;
-
-      drawFromInstructions(instructions,entry.color);
-    }
-
-    function drawFromInstructions(instructions, color){
-      //console.log("Drawing instructions: ", instructions);
+      if(instructions.length === 0 || instructions.length === undefined){
+        console.warn("blank image");
+        return;
+      }
 
       ctx.beginPath();
       ctx.lineWidth = 3;
       ctx.lineCap = "round";
       ctx.strokeStyle = color;
 
-      ctx.moveTo(toScreenCoordsX([0][1]),toScreenCoordsY([0][2]));
+      let xprev = toScreenCoordsX(instructions[0][1]), yprev = toScreenCoordsY(instructions[0][2]);
+      ctx.moveTo(xprev,yprev);
 
       for(let i = 0; i < instructions.length; i++){
         const instruction = instructions[i];
+
+        //console.log(instruction.length);
+        //if(instruction.length < 3) throw new Error("Not really an instruction then");
 
         // if(instruction[0] == null){
         //   console.assert(instruction.length === 2);
@@ -1007,8 +1012,10 @@
         //   ctx.strokeStyle = instruction[1]
         // }
 
-        let x = toScreenCoordsX(instruction[1]);
-        let y = toScreenCoordsY(instruction[2]);
+        let x = toScreenCoordsX(translateX(instruction[1]));
+        let y = toScreenCoordsY(translateY(instruction[2]));
+
+        //Translate based on past/vs/current 
 
         if(y < 0) y = -window.innerHeight;
         if(y>window.innerHeight) y = 2*window.innerHeight;
@@ -1017,11 +1024,16 @@
         if(x>window.innerWidth) x = 2*window.innerWidth;
 
         if(instruction[0]) {
-          ctx.lineTo(x,y);
-          if(!(instructions[i-1]??[false])[0] ) ctx.moveTo(x,y);
+          ctx.strokeRect(xprev,yprev, xprev-x, yprev-y);
+          //ctx.lineTo(x,y);
+          // if(!(instructions[i-1]??[false])[0] ) ctx.moveTo(x,y);
+          // else ctx.lineTo(x,y);
         } else {
           ctx.moveTo(x,y);
         }
+
+        xprev=x;
+        yprev=y;
       }
 
       ctx.stroke();
@@ -1236,7 +1248,7 @@
       lastMouseX = e.clientX;
       lastMouseY = e.clientY;
 
-      update();
+      draw();
     });
 
     canvas.addEventListener('mouseup', () => {
@@ -1300,7 +1312,8 @@
         '',
         [],
         [],
-        []
+        blankExpressionImage(),
+        false
       );
 
       appendExpressionEntry(blankExpression);

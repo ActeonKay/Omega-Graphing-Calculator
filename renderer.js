@@ -21,7 +21,7 @@ const doSmartRendering = false;
 const maxInstructions = 8000;
 const maxDepth = 32;
 
-class ExpressionImage{
+export class ExpressionImage{
     instructions;
     x;
     y;
@@ -63,7 +63,7 @@ function generateViewportInfo(minX, maxX, minY, maxY, scaleX, scaleY, xCount, yC
  * @param {*} f Other renderer.js function that generates an instruction list
  * @returns 
  */
-export function generateImage(expression, viewport, f){
+export async function generateImage(expression, viewport, f){
     //const minX = viewport.minX;
     //const maxX = viewport.maxX;
     //const minY = viewport.minY;
@@ -293,25 +293,28 @@ export function generateInstructionsForCartesianImplicit(expression, arrayIndex,
         }
     }
 
-    console.log(instructions.length);
+    //console.warn(instructions.length);
     return instructions;
 }
 
 function evaluateQuad(expression, evalAttributes, x, y, w, h, depth = -1){
+    //TODO: optimize this:
     const tl = evaluateExpressionWithOptions(expression, new Map([["x",{value: x}],["y",{value: y}]]), evalAttributes);
     const tr = evaluateExpressionWithOptions(expression, new Map([["x",{value: x+w}],["y",{value: y}]]), evalAttributes);
     const bl = evaluateExpressionWithOptions(expression, new Map([["x",{value: x}],["y",{value: y+h}]]), evalAttributes);
     const br = evaluateExpressionWithOptions(expression, new Map([["x",{value: x+w}],["y",{value: y+h}]]), evalAttributes);
 
-    let instr = getInstructionFromQuadReturn({value: [tl.value,tr.value,bl.value,br.value]}, x, y, w, h);
+    const currentInstr = getInstructionFromQuadReturn({value: [tl.value,tr.value,bl.value,br.value]}, x, y, w, h);
 
-    if(depth === -1 || depth > 3 || instr.length === 0) return instr;
+    if(depth === -1 || depth > 3 || currentInstr.length === 0) return currentInstr;
 
-    instr = [];
+    let instr = [];
     instr.push(...evaluateQuad(expression, evalAttributes, x, y, w/2,h/2, depth+1));
     instr.push(...evaluateQuad(expression, evalAttributes, x+w/2, y, w/2,h/2, depth+1));
     instr.push(...evaluateQuad(expression, evalAttributes, x, y+h/2, w/2,h/2, depth+1));
     instr.push(...evaluateQuad(expression, evalAttributes, x+w/2, y+h/2, w/2,h/2, depth+1));
+
+    if(instr.length === 0) return currentInstr;
 
     return instr;
 }
