@@ -89,3 +89,36 @@ Using the calculator is simple. But here are a few tips:
 `Gamma` Γ Function
 
 `plusmn` ± Operator
+
+# Roadmap
+These are the list of planned features.
+
+1. Finish basic feature list
+- Define variables to use in other expressions
+- Define functions to use in other expressions
+- Inequalities
+- Subscripts to denote a variable or function name
+- Expression evaluation over a boundary
+  - Symbolic detection of discontinuities
+
+2. Improve UI and Documentation
+Currently, the UI is limited. This step includes:
+- Moving expressions around
+- Coordinate edit panel
+- Graph appearance settings
+- Equation edit panel
+  - Color and transparency settings
+  - Bounding the X and Y axis 
+- Mouse-graph interactions
+  - Intercepts
+  - Coordinates at mouse
+  - Copy to table: Selected point or Tangent line
+- Add graph labels
+  - Axis labels
+  - Equation/point labels
+- Graph export functionality
+- For contributors:
+  - Clear documentation of each function/algorithm
+  - Plans for future algorithms
+  - Diagrams for explaining processes
+  
