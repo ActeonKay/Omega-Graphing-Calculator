@@ -108,6 +108,8 @@ export const Operators = new Map([
     [OperatorCode.UNC, { symbol: "±", precedence: 1.5, associativity: OperatorAssociativity.LEFT, arity: 2 }],
 ]);
 
+const validOperators = ["+", "-", "\\cdot", "/", "^", "<", "\\leq", ">", "\\geq", "=", "\\neq", "\\wedge", "\\vee", "\\otimes", "\\neg", "\\%", "_"];
+
 export const OperatorInfo = {
     "+": { code: OperatorCode.ADD, precedence: 1, associativity: OperatorAssociativity.LEFT, arity: 2 },
     "-": { code: OperatorCode.SUB, precedence: 1, associativity: OperatorAssociativity.LEFT, arity: 2 },

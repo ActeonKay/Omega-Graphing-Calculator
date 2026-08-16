@@ -1,9 +1,6 @@
 //complex numbers a+bi represented as [a, b]
-import{
-    OpCode,
-    FuncCode,
-    TokenHandleType
-} from '../evaluator.js';
+import { OperatorCode } from '../default/defaultOperators.js';
+import { FunctionCode } from '../default/defaultFunctions.js';
 
 export function convertValueToComplex(value){
     return value.length === undefined ? [value,0] : value;
@@ -16,32 +13,32 @@ export function convertValueToComplex(value){
  */
 export function generateComplexOperatorMethodExpression(opcode){
     switch(opcode){
-        case OpCode.ADD: return (a,b)=>complexRound(complexAdd(a,b));
-        case OpCode.SUB: return (a,b)=>complexRound(complexSubtract(a,b));
-        case OpCode.MUL: return (a,b)=>complexRound(complexMultiply(a,b));
-        case OpCode.DIV: return (a,b)=>complexRound(complexDivide(a,b));
-        case OpCode.POW: 
-        case OpCode.POWN: return (a,b)=>complexRound(complexPow(a,b));
-        case OpCode.LT: return (a,b)=>a[0]<b[0];
-        case OpCode.LTE: return (a,b)=>a[0]<=b[0];
-        case OpCode.GT: return (a,b)=>a[0]>b[0];
-        case OpCode.GTE: return (a,b)=>a[0]>=b[0];
-        case OpCode.EQ: return (a,b)=>a[0]==b[0];
-        case OpCode.NEQ: return (a,b)=>a[0]==b[0];
-        case OpCode.AND: return (a,b)=>0;
-        case OpCode.OR: return (a,b)=>0;
-        case OpCode.XOR: return (a,b)=>0;
-        case OpCode.NOT: return (a,b)=>0;
-        case OpCode.FACT: return (a)=>0; //complex gamma?
-        case OpCode.NEG: return (a)=>[0-a[0],0-a[1]];
-        case OpCode.DPR: return (a,b)=>0;
-        case OpCode.CRP: return (a,b)=>0;
-        case OpCode.ATT: return (a,b)=>0;
-        case OpCode.SUBS: return (a,b)=>0;
-        case OpCode.PM: return (a,b)=>[a[0],a[1]];
-        case OpCode.PCT: return (a)=>[0.01*a[0],0.01*a[1]];
-        case OpCode.DEG: return (a)=>[57.2957795131*a[0],57.2957795131*a[1]];
-        case OpCode.ABS: return complexModulus;
+        case OperatorCode.ADD: return (a,b)=>complexRound(complexAdd(a,b));
+        case OperatorCode.SUB: return (a,b)=>complexRound(complexSubtract(a,b));
+        case OperatorCode.MUL: return (a,b)=>complexRound(complexMultiply(a,b));
+        case OperatorCode.DIV: return (a,b)=>complexRound(complexDivide(a,b));
+        case OperatorCode.POW: 
+        case OperatorCode.POWN: return (a,b)=>complexRound(complexPow(a,b));
+        case OperatorCode.LT: return (a,b)=>a[0]<b[0];
+        case OperatorCode.LTE: return (a,b)=>a[0]<=b[0];
+        case OperatorCode.GT: return (a,b)=>a[0]>b[0];
+        case OperatorCode.GTE: return (a,b)=>a[0]>=b[0];
+        case OperatorCode.EQ: return (a,b)=>a[0]==b[0];
+        case OperatorCode.NEQ: return (a,b)=>a[0]==b[0];
+        case OperatorCode.AND: return (a,b)=>0;
+        case OperatorCode.OR: return (a,b)=>0;
+        case OperatorCode.XOR: return (a,b)=>0;
+        case OperatorCode.NOT: return (a,b)=>0;
+        case OperatorCode.FACT: return (a)=>0; //complex gamma?
+        case OperatorCode.NEG: return (a)=>[0-a[0],0-a[1]];
+        case OperatorCode.DPR: return (a,b)=>0;
+        case OperatorCode.CRP: return (a,b)=>0;
+        case OperatorCode.ATT: return (a,b)=>0;
+        case OperatorCode.SUBS: return (a,b)=>0;
+        case OperatorCode.PM: return (a,b)=>[a[0],a[1]];
+        case OperatorCode.PCT: return (a)=>[0.01*a[0],0.01*a[1]];
+        case OperatorCode.DEG: return (a)=>[57.2957795131*a[0],57.2957795131*a[1]];
+        case OperatorCode.ABS: return complexModulus;
         default:
             console.error('Unknown op code passed to complex methodExpr generator: ', opcode);
             return (a,b)=>[0,0]; 
@@ -50,9 +47,9 @@ export function generateComplexOperatorMethodExpression(opcode){
 
 export function generateComplexFunctionMethodExpression(funccode){
     switch (funccode) {
-        case FuncCode.FRAC: return (a,b) => complexRound(complexDivide(a,b));
-        // case FuncCode.BINOM: return (a,b) => func_choose(b,a);
-        case FuncCode.SIN: 
+        case FunctionCode.FRAC: return (a,b) => complexRound(complexDivide(a,b));
+        // case FunctionCode.BINOM: return (a,b) => func_choose(b,a);
+        case FunctionCode.SIN: 
             return complexSin;
             // return (a) => {
             //     let e = a/Math.PI;
@@ -66,44 +63,44 @@ export function generateComplexFunctionMethodExpression(funccode){
             //         o = t & 1 ? Math.cos(Math.PI*r) : Math.sin(Math.PI*r); //if t is odd: cos, else sin
             //     return n*o;
             // }
-        case FuncCode.COS: return complexCos;
-        case FuncCode.TAN: return complexTan;
-        case FuncCode.SEC: return complexSec;
-        case FuncCode.CSC: return complexCsc;
-        case FuncCode.COT: return complexCot;
-        case FuncCode.ASIN: return (a) => Math.asin(a); 
-        case FuncCode.ACOS: return (a) => Math.acos(a); 
-        case FuncCode.ATAN: return (a) => Math.atan(a); 
-        case FuncCode.ASEC: return (a) => Math.acos(1 / a); 
-        case FuncCode.ACSC: return (a) => Math.asin(1 / a); 
-        case FuncCode.ACOT: return (a) => Math.atan(1 / a); 
-        case FuncCode.SINH: return (a) => 0.5*(Math.exp(a)-Math.exp(-a)); 
-        case FuncCode.COSH: return (a) => 0.5*(Math.exp(a)+Math.exp(-a)); 
-        case FuncCode.TANH: return (a) => (Math.exp(a)-Math.exp(-a))/(Math.exp(a)+Math.exp(-a));
-        case FuncCode.SECH: return (a) => 2/(Math.exp(a)+Math.exp(-a)); 
-        case FuncCode.CSCH: return (a) => 2/(Math.exp(a)-Math.exp(-a)); 
-        case FuncCode.COTH: return (a) => (Math.exp(a)+Math.exp(-a))/(Math.exp(a)-Math.exp(-a));
-        case FuncCode.ASINH: return (a) => Math.log(a+Math.sqrt(a*a+1));
-        case FuncCode.ACOSH: return (a) => Math.log(a+Math.sqrt(a*a-1));
-        case FuncCode.ATANH: return (a) => 0.5*Math.log((1+a)/(1-a));
-        case FuncCode.ASECH: return (a) => Math.log(1/a+Math.sqrt(1/(a*a)-1));
-        case FuncCode.ACSCH: return (a) => Math.log(1/a+Math.sqrt(1/(a*a)+1));
-        case FuncCode.ACOTH: return (a) => 0.5*Math.log((a+1)/(a-1));
-        case FuncCode.GD: return (a) => Math.atan(Math.sinh(a)); 
-        case FuncCode.LAM: return (a) => a; 
-        case FuncCode.ABS: return (a) => Math.abs(a); 
-        case FuncCode.SIGN: return (a) => Math.sign(a); 
-        case FuncCode.FLOOR: return (a) => Math.floor(a); 
-        case FuncCode.CEIL: return (a) => Math.ceil(a); 
-        case FuncCode.ROUND: return (a) => Math.round(a); 
-        case FuncCode.TRUNC: return (a) => Math.trunc(a); 
-        case FuncCode.MOD: return (a,b) => a % b; 
-        case FuncCode.MIN: return (...a) => Math.min(...a); 
-        case FuncCode.MAX: return (...a) => Math.max(...a); 
+        case FunctionCode.COS: return complexCos;
+        case FunctionCode.TAN: return complexTan;
+        case FunctionCode.SEC: return complexSec;
+        case FunctionCode.CSC: return complexCsc;
+        case FunctionCode.COT: return complexCot;
+        case FunctionCode.ASIN: return (a) => Math.asin(a); 
+        case FunctionCode.ACOS: return (a) => Math.acos(a); 
+        case FunctionCode.ATAN: return (a) => Math.atan(a); 
+        case FunctionCode.ASEC: return (a) => Math.acos(1 / a); 
+        case FunctionCode.ACSC: return (a) => Math.asin(1 / a); 
+        case FunctionCode.ACOT: return (a) => Math.atan(1 / a); 
+        case FunctionCode.SINH: return (a) => 0.5*(Math.exp(a)-Math.exp(-a)); 
+        case FunctionCode.COSH: return (a) => 0.5*(Math.exp(a)+Math.exp(-a)); 
+        case FunctionCode.TANH: return (a) => (Math.exp(a)-Math.exp(-a))/(Math.exp(a)+Math.exp(-a));
+        case FunctionCode.SECH: return (a) => 2/(Math.exp(a)+Math.exp(-a)); 
+        case FunctionCode.CSCH: return (a) => 2/(Math.exp(a)-Math.exp(-a)); 
+        case FunctionCode.COTH: return (a) => (Math.exp(a)+Math.exp(-a))/(Math.exp(a)-Math.exp(-a));
+        case FunctionCode.ASINH: return (a) => Math.log(a+Math.sqrt(a*a+1));
+        case FunctionCode.ACOSH: return (a) => Math.log(a+Math.sqrt(a*a-1));
+        case FunctionCode.ATANH: return (a) => 0.5*Math.log((1+a)/(1-a));
+        case FunctionCode.ASECH: return (a) => Math.log(1/a+Math.sqrt(1/(a*a)-1));
+        case FunctionCode.ACSCH: return (a) => Math.log(1/a+Math.sqrt(1/(a*a)+1));
+        case FunctionCode.ACOTH: return (a) => 0.5*Math.log((a+1)/(a-1));
+        case FunctionCode.GD: return (a) => Math.atan(Math.sinh(a)); 
+        case FunctionCode.LAM: return (a) => a; 
+        case FunctionCode.ABS: return (a) => Math.abs(a); 
+        case FunctionCode.SIGN: return (a) => Math.sign(a); 
+        case FunctionCode.FLOOR: return (a) => Math.floor(a); 
+        case FunctionCode.CEIL: return (a) => Math.ceil(a); 
+        case FunctionCode.ROUND: return (a) => Math.round(a); 
+        case FunctionCode.TRUNC: return (a) => Math.trunc(a); 
+        case FunctionCode.MOD: return (a,b) => a % b; 
+        case FunctionCode.MIN: return (...a) => Math.min(...a); 
+        case FunctionCode.MAX: return (...a) => Math.max(...a); 
         //sum()
         //
         /* Todo: add handling for variables that are arrays */
-        case FuncCode.ARRAY: //{type: TokenType.ARRAY, valueType: TokenType.NUM, values: [], uncertainties: []}
+        case FunctionCode.ARRAY: //{type: TokenType.ARRAY, valueType: TokenType.NUM, values: [], uncertainties: []}
             return (...args) => {
                 console.log('compargs',args);
 
@@ -127,7 +124,7 @@ export function generateComplexFunctionMethodExpression(funccode){
                 }
                 return args.reverse();
             }
-        case FuncCode.TUPLE: //{type: TokenType.TUPLE, valueType: TokenType.NUM, values: [], uncertainties: []}
+        case FunctionCode.TUPLE: //{type: TokenType.TUPLE, valueType: TokenType.NUM, values: [], uncertainties: []}
             return (...args) => {
                 if(arg.outputType !== TokenHandleType.REAL || arg.outputType !== TokenHandleType.COMPLEX){
                     console.error('All tuple elements must be of real or complex type. ');
@@ -136,7 +133,7 @@ export function generateComplexFunctionMethodExpression(funccode){
 
                 return args.reverse();
             } //args are passed in backwards order
-        case FuncCode.AVG: 
+        case FunctionCode.AVG: 
             return (...args) => {
                 var sum = 0;
                 for (var i = 0; i < args.length; i++) {
@@ -144,7 +141,7 @@ export function generateComplexFunctionMethodExpression(funccode){
                 }
                 return sum / args.length;
             }   
-        case FuncCode.MED:
+        case FunctionCode.MED:
             return (...args) => {
                 if (args.length % 2 == 1) return args[(args.length - 1) / 2];
                 else {
@@ -152,30 +149,30 @@ export function generateComplexFunctionMethodExpression(funccode){
                     return args[mid - 1] + args[mid]
                 }
             }
-        case FuncCode.MODE: return (a) => a; 
-        case FuncCode.EXP: return complexExp;
-        case FuncCode.LN: return (a) => Math.log(a); 
-        case FuncCode.LOG: 
+        case FunctionCode.MODE: return (a) => a; 
+        case FunctionCode.EXP: return complexExp;
+        case FunctionCode.LN: return (a) => Math.log(a); 
+        case FunctionCode.LOG: 
             if(attributes.get(AttributiveCode.BASE) === undefined) return (a) => Math.log(a) / Math.log(10); 
             else return (a) => Math.log(a) / Math.log(attributes.get(AttributiveCode.BASE));
         
-        case FuncCode.LOGN: return (a,b) => Math.log(a) / Math.log(b); 
-        case FuncCode.SQRT: return (a) => complexPowReal(a,0.5); 
-        case FuncCode.CBRT: return (a) => complexPowReal(a,1/3); 
-        case FuncCode.NTHRT: return (a,b) => Math.pow(a, 1 / b); 
-        case FuncCode.GAMMA: return (a) => func_gamma(a); 
-        case FuncCode.DGAMA: return (a)=>0; 
-        case FuncCode.PGAMA: return (a)=>0; 
-        case FuncCode.ZETA: return (a)=>0; 
-        case FuncCode.SINC: return (a)=>a===0?1:Math.sin(a)/a;
-        case FuncCode.FACTOR: return (a) => func_factor(Math.floor(a));
-        case FuncCode.CONJ: return (a) => complexConjugate(a);
-        case FuncCode.REAL: return (a) => Real(a);
-        case FuncCode.IMAG: return (a) => Imag(a);
-        case FuncCode.ABS:
-        case FuncCode.ABSCP: return (a) => complexModulus(a);
-        case FuncCode.ARG: return (a) => complexArgument(a);
-        case FuncCode.CIS: return (a) => complexRound(complexCis(a));
+        case FunctionCode.LOGN: return (a,b) => Math.log(a) / Math.log(b); 
+        case FunctionCode.SQRT: return (a) => complexPowReal(a,0.5); 
+        case FunctionCode.CBRT: return (a) => complexPowReal(a,1/3); 
+        case FunctionCode.NTHRT: return (a,b) => Math.pow(a, 1 / b); 
+        case FunctionCode.GAMMA: return (a) => func_gamma(a); 
+        case FunctionCode.DGAMA: return (a)=>0; 
+        case FunctionCode.PGAMA: return (a)=>0; 
+        case FunctionCode.ZETA: return (a)=>0; 
+        case FunctionCode.SINC: return (a)=>a===0?1:Math.sin(a)/a;
+        case FunctionCode.FACTOR: return (a) => func_factor(Math.floor(a));
+        case FunctionCode.CONJ: return (a) => complexConjugate(a);
+        case FunctionCode.REAL: return (a) => Real(a);
+        case FunctionCode.IMAG: return (a) => Imag(a);
+        case FunctionCode.ABS:
+        case FunctionCode.ABSCP: return (a) => complexModulus(a);
+        case FunctionCode.ARG: return (a) => complexArgument(a);
+        case FunctionCode.CIS: return (a) => complexRound(complexCis(a));
         default: 
             console.error("Unknown function code", funccode);
             return ()=>0;

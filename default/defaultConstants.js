@@ -55,3 +55,22 @@ export const ConstantByLatex = {
     "\\varphi": ConstantCode.PHI,
     "\\infty": ConstantCode.INFINITY
 }
+
+export const Constants = new Map([
+    [ConstantCode.I, { symbol: "i", value: [0,1] }],
+    [ConstantCode.PI, { symbol: "\\pi", value: Math.PI }],
+    [ConstantCode.E, { symbol: "e", value: Math.E }],
+    [ConstantCode.INFINITY, { symbol: "\\infty", value: Infinity }],
+    [ConstantCode.TRUE, { symbol: "\\true", value: 1 }],
+    [ConstantCode.FALSE, { symbol: "\\false", value: 0 }]
+]);
+
+const validConstants = [
+    "true", "false",
+    "pi", "eunum", "eucon", "phi",
+    "egrav", "sc",
+    "grav", "NA", "gascon",
+    "bmc", "sbc", "culuk", "epzo", "muzo", "speli", "plcon",
+    "elcharge", "elmas", "prmas", "numas", "uam",
+    "radfer", "infty"
+];

@@ -1,11 +1,8 @@
 import{
-    evaluateExpression,
-    TokenType
-} from './evaluator.js';
-
-import{
-    evaluateExpressionWithOptions
+    CoordinateByLatex, CoordinateCode, TokenType
 } from './compiler.js';
+
+import { evaluateExpressionWithOptions } from "./evaluator.js";
 
 import{
     getDependable
@@ -72,7 +69,7 @@ export async function generateImage(expression, viewport, f){
     const scaleX = viewport.scaleX;
     const scaleY = viewport.scaleY;
 
-    if(!expression.tokens.some((t) => t.inputElementsSeparately === true)){
+    if(true){
         return new ExpressionImage(
             f(expression, -1, viewport),
             (viewport.minX + viewport.maxX)*0.5,
@@ -299,14 +296,21 @@ export function generateInstructionsForCartesianImplicit(expression, arrayIndex,
 
 function evaluateQuad(expression, evalAttributes, x, y, w, h, depth = -1){
     //TODO: optimize this:
-    const tl = evaluateExpressionWithOptions(expression, new Map([["x",{value: x}],["y",{value: y}]]), evalAttributes);
-    const tr = evaluateExpressionWithOptions(expression, new Map([["x",{value: x+w}],["y",{value: y}]]), evalAttributes);
-    const bl = evaluateExpressionWithOptions(expression, new Map([["x",{value: x}],["y",{value: y+h}]]), evalAttributes);
-    const br = evaluateExpressionWithOptions(expression, new Map([["x",{value: x+w}],["y",{value: y+h}]]), evalAttributes);
+    const top = ["y",{value: y}], bottom = ["y",{value: y+h}];
+    const left = ["x",{value: x}], right = ["x",{value: x+w}];
+    
+    const tl = evaluateExpressionWithOptions(expression, new Map([left,top]), evalAttributes);
+    const tr = evaluateExpressionWithOptions(expression, new Map([right,top]), evalAttributes);
+    const bl = evaluateExpressionWithOptions(expression, new Map([left,bottom]), evalAttributes);
+    const br = evaluateExpressionWithOptions(expression, new Map([right,bottom]), evalAttributes);
 
     const currentInstr = getInstructionFromQuadReturn({value: [tl.value,tr.value,bl.value,br.value]}, x, y, w, h);
 
     if(depth === -1 || depth > 3 || currentInstr.length === 0) return currentInstr;
+
+    if(Math.hypot(tl.value, tr.value, bl.value, br.value) > Math.max(w,h)){
+        return currentInstr;
+    }
 
     let instr = [];
     instr.push(...evaluateQuad(expression, evalAttributes, x, y, w/2,h/2, depth+1));
@@ -332,8 +336,8 @@ export function generateInstructionsForCartesianImplicitOldish(expression, array
     const stepX = (maxX-minX)/columnCount;
     const stepY = (maxY-minY)/rowCount;
 
-    const paramNumX = expression.parameters.findIndex((p) => p.type === TokenType.UNKN && p.code === 1);
-    const paramNumY = expression.parameters.findIndex((p) => p.type === TokenType.UNKN && p.code === 2);
+    const paramNumX = expression.parameters.findIndex((p) => p.string in CoordinateByLatex && p.code === CoordinateCode.CARTESIAN_X);
+    const paramNumY = expression.parameters.findIndex((p) => p.string in CoordinateByLatex && p.code === CoordinateCode.CARTESIAN_Y);
 
     let instructions = [];
     for(let x = minX; x<maxX; x+=stepX){
@@ -386,8 +390,8 @@ export function generateInstructionsForCartesianImplicitSmart(expression, arrayI
     const scaleX = viewport.scaleX;
     const scaleY = viewport.scaleY;
     
-    const paramNumX = expression.parameters.findIndex((p) => p.type === TokenType.UNKN && p.code === 1);
-    const paramNumY = expression.parameters.findIndex((p) => p.type === TokenType.UNKN && p.code === 2);
+    const paramNumX = expression.parameters.findIndex((p) => p.string in CoordinateByLatex && p.code === CoordinateCode.CARTESIAN_X);
+    const paramNumY = expression.parameters.findIndex((p) => p.string in CoordinateByLatex && p.code === CoordinateCode.CARTESIAN_Y);
 
     //BASE
     //Rows {0 -> rowCount-1}
@@ -525,8 +529,8 @@ export function generateInstructionsForCartesianImplicitOld(expression, arrayInd
     const width = maxX-minX;
     const height = maxY-minY;
 
-    const paramNumX = expression.parameters.findIndex((p) => p.type === TokenType.UNKN && p.code === 1);
-    const paramNumY = expression.parameters.findIndex((p) => p.type === TokenType.UNKN && p.code === 2);
+    const paramNumX = expression.parameters.findIndex((p) => p.string in CoordinateByLatex && p.code === CoordinateCode.CARTESIAN_X);
+    const paramNumY = expression.parameters.findIndex((p) => p.string in CoordinateByLatex && p.code === CoordinateCode.CARTESIAN_Y);
 
     const evaluateQuadAtIndex = (i) => {
         //sectors[i] = true;

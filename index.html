@@ -127,13 +127,15 @@
   <script src="mathquill-0.10.1/mathquill.js"></script>
 
   <script type="module">
-    import { 
-        //evaluateExpression, evaluate, 
-        finalizeExpression,
-        //tokenizeExpression, getTokenizedExpressions, getTokenizedExpressionMetas,
-        /*compileExpression, */getCompiledExpressions, tokenizeLatexExpression, latexToTokenObjects,
-        validFunctions,
-    } from "./evaluator.js";  
+    import {
+      typesetExpression,
+      testExpressionTypeset,
+      typesetTokens,
+      compileExpression,
+      ExpressionType
+    } from "./compiler.js";
+
+    import { evaluateExpressionWithOptions } from "./evaluator.js";
 
     import {
       ExpressionEntry, ExpressionEntryType, DependableType,
@@ -158,14 +160,7 @@
       testLatexParse
     } from "./latexutils/latexParser.js";
 
-    import {
-      typesetExpression,
-      testExpressionTypeset,
-      typesetTokens,
-      compileExpression,
-      evaluateExpressionWithOptions,
-      ExpressionType
-    } from "./compiler.js";
+    import { validFunctions } from "./default/defaultFunctions.js";
 
     //TESTS
     console.log("Startup");
@@ -886,10 +881,10 @@
       entry.rendering = true;
         generateImage(expression, viewport, renderFunction)
         .then(image => {
-          console.log('.then')
+          //console.log('.then')
           entry.image = image;
           entry.rendering = false;
-          drawFromImage(entry.image,"orange");
+          drawFromImage(entry.image,entry.color);
         });
     }
 
@@ -925,10 +920,6 @@
         let y1 = toGraphCoordsY(quad.minY);
         let y2 = toGraphCoordsY(quad.maxY);
 
-        //console.log(currentExpression);
-
-        //let exprs = getCompiledExpressions();
-        //console.log(exprs);
         throw new Error("Param replacement is not yet working for this expression");
         return;
 
@@ -1024,8 +1015,8 @@
         if(x>window.innerWidth) x = 2*window.innerWidth;
 
         if(instruction[0]) {
-          ctx.strokeRect(xprev,yprev, xprev-x, yprev-y);
-          //ctx.lineTo(x,y);
+          //ctx.strokeRect(xprev,yprev, xprev-x, yprev-y);
+          ctx.lineTo(x,y);
           // if(!(instructions[i-1]??[false])[0] ) ctx.moveTo(x,y);
           // else ctx.lineTo(x,y);
         } else {
