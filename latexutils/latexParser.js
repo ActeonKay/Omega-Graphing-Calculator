@@ -23,10 +23,12 @@ const parseParenthesisTests = [
     ["(1)",1,"1"],
     ["a^{20}",3,"20"],
     ["()",1,""],
-    ["list=[1,2,[3,4],5]+1",6,"1,2,[3,4],5"]
+    ["list=[1,2,[3,4],5]+1",6,"1,2,[3,4],5"],
+    ["[[]]",1,"[]"]
 ];
 
 const parseNumberTests = [
+    ["(x-1)(x+1)=0",11,"0"],
     ["...12a",3,"12"],
     ["1+0.1+0.01+...",2,"0.1"],
     ["-1-127",3,"127"],
@@ -62,32 +64,36 @@ const latexTests = [
 ];
 
 export function testLatexParse(){
+    let testTotal = 0;
+    let testsPassed = 0;
+
     console.log(" -- Parenthesis --");
     parseParenthesisTests.forEach(pTest => {
-        console.log("Test/parse/parenthesis: ", pTest[0],pTest[1], "expected: ",pTest[2]);
-
         const result = parseParenthesis(pTest[0],pTest[1]);
-        console.log(result);
-        console.log("Passed: ", result == pTest[2]);
+        if(result != pTest[2]) console.warn("Test failed. Expected: "+pTest[2]+" but got: "+result);
+        testTotal++, testsPassed += (result == pTest[2]);
     });
 
     console.log(" -- Numbers --");
     parseNumberTests.forEach(nTest => {
-        console.log("Test(ParseNum): ", nTest[0], nTest[1], "expected: ",nTest[2]);
-
-        const result = parseNumber(nTest[0],nTest[1]);
-        console.log(result.string);
-        console.log("Passed: ", result.string == nTest[2]);
+        const result = parseNumber(nTest[0],nTest[1]).string;
+        if(result != nTest[2]) console.warn("Test failed. Expected: "+nTest[2]+" but got: "+result);
+        testTotal++, testsPassed += (result == nTest[2]);
     });
 
     console.log(" -- Commands --");
     parseCommandTests.forEach(cTest => {
-        console.log("Test(ParseNum): ", cTest[0], cTest[1], "expected: ",cTest[2]);
-
-        const result = parseCommand(cTest[0],cTest[1]);
-        console.log(result.string);
-        console.log("Passed: ", result.string == cTest[2]);
+        const result = parseCommand(cTest[0],cTest[1]).metadata.fullString;
+        if(result != cTest[2]) console.warn("Test failed. Expected: "+cTest[2]+" but got: "+result);
+        testTotal++, testsPassed += (result == cTest[2]);
     });
+
+    if(testsPassed < testTotal){
+        console.warn("Not all tests passed. Only "+testsPassed+"/"+testTotal+" passed.");
+        return;
+    }
+
+    console.log("All tests passed. "+testsPassed+"/"+testTotal+" passed.");
 
     console.log(" -- Full Test --");
     latexTests.forEach(test => {
