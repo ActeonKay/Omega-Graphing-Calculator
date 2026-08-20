@@ -1,4 +1,5 @@
 import { TokenType } from "./compiler.js";
+import { getDependableData } from "./expressions.js";
 import { Functions, FunctionCode } from "./default/defaultFunctions.js";
 import { Operators, OperatorCode } from "./default/defaultOperators.js";
 
@@ -28,33 +29,24 @@ function substitute(tokens, input, attributes){
 
     const evalAsObject = attributes.size > 0;
 
-    let outputs = [];
+    //let outputs = [];
     for(let i = 0; i<tokens.length; i++) {
-        const token = tokens[i];
+        let token = tokens[i];
 
         if(token.type !== TokenType.OPERAND) {
-            outputs.push(token); 
             continue;
         }
 
-        let value = undefined;
-
-        if(token.metadata.value !== undefined){
-            value = token.metadata.value;
-        }else{
-            let info = input.get(token.string);
-            if(info == undefined){
-                info = getDependableData(token.string);
-
-                if(info){
-                    outputs.push(info.value);
-                    break;
-                }
+        if(token.metadata.value === undefined){
+            if(input.has(token.string)){
+                token.value = input.get(token.string).value;
+            }else if(getDependableData(token.string) !== undefined){
+                token.value = getDependableData(token.string).value.value;
+            }else{
+                throw new Error("I don't know what "+token.string+" means");
             }
-                
-            if(info == undefined) throw new Error("I don't know what "+token.string+" means");
-
-            value = info.value;
+        }else{
+            token.value = token.metadata.value;
         }
 
         let attributes = {};
@@ -63,16 +55,16 @@ function substitute(tokens, input, attributes){
         if(propagateUncertainty) attributes.uncertainty = 0;
         if(propagatePeriodicity) attributes.periodicity = 0; 
 
-        const result = {
-            type: TokenType.OPERAND,
-            value: value,
-            attributes: attributes
-        }
+        token.attributes = attributes;
 
-        outputs.push(result);
+        // console.log(token.string);
+        // console.log(token.value);
+        // console.log(token.attributes);
     };
 
-    return outputs;
+    // console.log("After substitution:",tokens);
+
+    return tokens;
 }
 
 /**
