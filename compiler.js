@@ -145,7 +145,7 @@ import { evalBoundary } from "./attributeArithmetic/boundaryArithmetic.js";
 function isValidVariableToken(NSPToken){
     //should disregard coordinates?
 
-    if(NSPToken.type === "letter") return true;
+    if(NSPToken.type == "letter") return true;
 
     if(NSPToken.type === "command"){
         if(NSPToken.metadata.optionalArguments.length > 0 || NSPToken.metadata.requiredArguments.length > 0) return false;
@@ -168,7 +168,7 @@ function isValidVariableToken(NSPToken){
 function isFunctionDefinition(tokensNSP){
     if(tokensNSP.length < 3) return false;
 
-    if(tokensNSP[0].type !== "letter") return false;
+    if(!isValidVariableToken(tokensNSP[0])) return false;
     if(tokensNSP[1].string !== "(") return false;
 
     let i = 2;
@@ -187,6 +187,27 @@ function isFunctionDefinition(tokensNSP){
     }
 
     throw new Error("Unexpected end of tokens in function definition: " + tokensNSP.map((t) => t.string).join(' '));
+}
+
+/**
+ * 
+ * @param {*} tokensNSP Token list of LHS of expression 
+ * @returns {boolean} if it is a valid variable definition
+ */
+function isVariableDefinition(tokensNSP){
+    if(tokensNSP.length !== 1) return false;
+
+    const varToken = tokensNSP[0];
+
+    if(varToken.string in CoordinateByLatex) return false;
+
+    if(!isValidVariableToken(varToken)) return false;
+
+    console.log("::");
+
+    if(getDependableData(varToken.string) == undefined) return true;
+
+    return false;
 }
 
 export function determineDependencies(tokensNSP){
@@ -263,6 +284,37 @@ export function typesetExpression(tokensNSP){
 
     if(lhs.length === 0 || rhs.length === 0) return {type: ExpressionType.INVALID, trimmedExpression: tokensNSP};
 
+    if(isFunctionDefinition(lhs)){
+        if(rhs.some((t) => t.metadata.dependencies.has(lhs[0].string))) {
+            return {type: ExpressionType.INVALID, trimmedExpression: rhs, problem: "You can't define a function in terms of itself"};
+        }
+
+        return {type: ExpressionType.DEFINITION, trimmedExpression: rhs, definition: {name: lhs[0].string, parameters: lhs.slice(2,lhs.length-1).filter((t) => t.string !== ",").map((t) => t.string)}};
+    }
+
+    const v = isVariableDefinition(lhs);
+    console.log("is valid vd:",lhs,"="+v);
+
+    if(v){
+        if(rhs.some((t) => t.metadata.dependencies.has(lhs[0].string))) {
+            return {type: ExpressionType.INVALID, trimmedExpression: rhs, problem: "You can't define a variable in terms of itself"};
+        } 
+
+        if(rhs.some((t) => isValidVariableToken(t) && !(t in CoordinateByLatex)  && getDependableData(t.string) === undefined)){
+            return {type: ExpressionType.INVALID, trimmedExpression: rhs, problem: "You can't define a variable in terms of unknown variables"};
+        }
+
+        const isDirectAssignment = rhs.length === 1 && (rhs[0].metadata.value !== undefined);
+        let assignmentInfo = {name: lhs[0].string};
+
+        if(isDirectAssignment){
+            assignmentInfo.value = rhs[0].metadata.value;
+            return {type: ExpressionType.ASSIGNMENT_DIRECT, trimmedExpression: rhs, assignment: assignmentInfo};
+        }
+
+        return {type: ExpressionType.ASSIGNMENT_INDIRECT, trimmedExpression: rhs, assignment: assignmentInfo};
+    }
+
     //TODO: make this easier to update
     const varDict = {
         "x": ExpressionType.EXPLICIT_X,
@@ -275,30 +327,32 @@ export function typesetExpression(tokensNSP){
     if(lhs.length === 1){
         const lhsToken = lhs[0];
 
+        
+        console.log("susp = correct");
+
         if(lhsToken.string in CoordinateByLatex){
-            if(rhs.some((t) => t.metadata.dependencies.has(lhsToken.string))) return {type: ExpressionType.IMPLICIT, trimmedExpression: tokensNSP};
-            if(lhsToken.metadata.superscript === undefined) return {type: varDict[lhsToken.string], trimmedExpression: rhs}; //format: ? = (anything but '?')
+            if(rhs.some((t) => t.metadata.dependencies.has(lhsToken.string))) {
+                return {type: ExpressionType.IMPLICIT, trimmedExpression: tokensNSP};
+            }
+
+            if(lhsToken.metadata.superscript === undefined) {
+                return {type: varDict[lhsToken.string], trimmedExpression: rhs}; //format: ? = (anything but '?')
+            }
         }
 
-        if(isValidVariableToken(lhsToken) && !lhsToken in CoordinateByLatex){
-            if(rhs.length === 1 && rhs[0].type === "number") return {type: ExpressionType.ASSIGNMENT_DIRECT, trimmedExpression: rhs, assignment: {variable: lhsToken.string, value: rhs[0].string}}; //Ex: a=5
+        // if(isValidVariableToken(lhsToken) && !lhsToken in CoordinateByLatex){
+        //     if(rhs.length === 1 && rhs[0].type === "number") return {type: ExpressionType.ASSIGNMENT_DIRECT, trimmedExpression: rhs, assignment: {variable: lhsToken.string, value: rhs[0].string}}; //Ex: a=5
 
-            if(rhs.some((t) => t.metadata.dependencies.has(lhsToken.string))) return {type: ExpressionType.INVALID, trimmedExpression: tokensNSP}; //you can't define a variable in terms of itself
+        //     if(rhs.some((t) => t.metadata.dependencies.has(lhsToken.string))) return {type: ExpressionType.INVALID, trimmedExpression: tokensNSP}; //you can't define a variable in terms of itself
 
-            return {type: ExpressionType.ASSIGNMENT_INDIRECT, trimmedExpression: rhs, assignment: {variable: lhsToken.string}};
-        }
+        //     return {type: ExpressionType.ASSIGNMENT_INDIRECT, trimmedExpression: rhs, assignment: {variable: lhsToken.string}};
+        // }
 
-        if(rhs.length === 1 && rhs[0].string in CoordinateByLatex){
-            return {type: varDict[rhs[0].string], trimmedExpression: lhs}; //Ex: 0=x, 15=theta
-        }
+        // if(rhs.length === 1 && rhs[0].string in CoordinateByLatex){
+        //     return {type: varDict[rhs[0].string], trimmedExpression: lhs}; //Ex: 0=x, 15=theta
+        // }
 
-        return {type: ExpressionType.IMPLICIT, trimmedExpression: tokensNSP}; //Ex: 0=...xyz...
-    }
-
-    if(isFunctionDefinition(lhs)){
-        if(rhs.some((t) => t.metadata.dependencies.has(lhs[0].string))) return {type: ExpressionType.INVALID, trimmedExpression: rhs}; //you can't define a function in terms of itself
-
-        return {type: ExpressionType.DEFINITION, trimmedExpression: rhs, definition: {name: lhs[0].string, parameters: lhs.slice(2,lhs.length-1).filter((t) => t.string !== ",").map((t) => t.string)}};
+        // return {type: ExpressionType.IMPLICIT, trimmedExpression: tokensNSP}; //Ex: 0=...xyz...
     }
 
     if(rhs.length === 1){
