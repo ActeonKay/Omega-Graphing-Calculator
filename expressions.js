@@ -134,14 +134,12 @@ export function appendExpressionEntry(expr){
     return true;
 }
 
-function findExpressionEntryOfId(wanted){
+export function findExpressionEntryOfId(wanted){
     //use iterator instead?
-    return expressionEntries.findIndex(
-        (e) => e.id === wanted
-    );
+    return expressionEntries.findIndex((e) => e.id === wanted);
 }
 
-export function remove(wantedId){
+export function removeExpressionEntry(wantedId){
     const index = findExpressionEntryOfId(wantedId);
 
     if(index === -1) return false;
