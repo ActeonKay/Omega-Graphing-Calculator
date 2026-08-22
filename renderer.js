@@ -60,7 +60,7 @@ function generateViewportInfo(minX, maxX, minY, maxY, scaleX, scaleY, xCount, yC
  * @param {*} f Other renderer.js function that generates an instruction list
  * @returns 
  */
-export async function generateImage(expression, viewport, f){
+export function generateImage(expression, viewport, f){
     //const minX = viewport.minX;
     //const maxX = viewport.maxX;
     //const minY = viewport.minY;

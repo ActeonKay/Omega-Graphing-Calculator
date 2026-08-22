@@ -315,44 +315,7 @@
             wrapper.appendChild(eq);
             
             row.appendChild(wrapper);
-            
-            // var eqMathField = MQ.MathField(eq, {
-            //     handlers: {
-            //       edit: async function() {
-            //         var enteredMath = eqMathField?.latex();
-            //         if(enteredMath !== undefined) await checkAnswer(enteredMath, eq);
-            //       },
-            //       enter: function() {
-            //         //HACK
-            //         let eqRow = eq.parentElement.parentElement;
-            
-            //         let eqNew = insertBlankExpression(eq);
-            //         eqNew.focus();
-            //       },
-            //       deleteOutOf: function() {
-            //         var enteredMath = eqMathField?.latex();
-            //         if(enteredMath === undefined){
-            //           return;
-            //         }
-            
-            //         console.log('deleted ex len', enteredMath.length);
-            
-            //         if(enteredMath.length !== 0){
-            //           return;
-            //         }
-            
-            //         if(getAllExpressionEntries().length <= 1){
-            //           return;
-            //         }
-            
-            //         //HACK
-            //         let eqRow = eq.parentElement.parentElement;
-            
-            //         removeExpression(eqRow);
-            //       }
-            //     }
-            //   }).config(mathQuillConfig).latex(expression.latex);
-            
+
             var eqMathField = generateMathField(eq);
             
             return row;
@@ -439,354 +402,182 @@
             let expressionEntries = getAllExpressionEntries();
             const index = expressionEntries.findIndex((ex) => ex.id === id);
             const oldEntry = expressionEntries[index];
-            
-            if(oldEntry === undefined) {
-                console.log(index, getAllExpressionEntries().length);
-                throw new Error('-^-^- WEIRD -^-^-'); 
-            }
 
-            if(oldEntry.definedSymbol !== null) {
-                unregisterDependable(oldEntry.definedSymbol);
+            updateExpressionEntry(latex, eqSpan, oldEntry);
 
-                //go through all dependencies and update them
-                updateExpressionEntries(oldEntry.definedSymbol, true);
-            }
-            
-            let tokenized = {type: ExpressionType.INVALID, tokens: [], dependencies: []};
-            try{
-                tokenized = typesetTokens(tokenize(latex));
-            }catch(e){
-                console.warn('Error occured during tokenization.',e);
-                //throw new Error("I don't understand this. Try typing it again.");
-            }
-            
-            let expressionEntry = new ExpressionEntry(
-                oldEntry.id,
-                ExpressionEntryType.INVALID,
-                "",
-                oldEntry.color,
-                oldEntry.visible,
-                latex,
-                {},
-                null,
-                blankExpressionImage(),
-                false
-            );
-            let compiledExpression = {};
-            
-            try{
-                compiledExpression = compileExpression(tokenized); //new compileExpression() from compiler.js
-
-                const definedSymbol = getDefinedSymbolFromExpression(compiledExpression);
-
-                console.log("compiled expression: ",compiledExpression);
-                
-                expressionEntry = new ExpressionEntry(
-                    id,
-                    ExpressionEntryType.RENDERED_EQUATION,
-                    "",
-                    oldEntry.color,
-                    oldEntry.visible ?? true,
-                    latex,
-                    compiledExpression,
-                    definedSymbol,
-                    blankExpressionImage(),
-                    false
-                );
-                
-                console.log('Compilation successful:',expressionEntry);
-            }catch(e){
-                //show error to user
-                console.warn("Error occurred during compilation.",e);
-            }
-            
-            expressionEntries[index] = expressionEntry;
-            console.log(getAllExpressionEntries()[0]);
-            
-            onExpressionChange(eqRow, compiledExpression, oldEntry.expression, canRecurse);
-            
-            update();
+            return;
         }
-        
-        function onExpressionChange(eqRow, newExpr, oldExpr, canRecurse){
-            //get expression
-            let wrapperElement = eqRow.childNodes[1]; //HACK
-            const prevRequiredResultDisplay = requiresExpressionResult(oldExpr.type);
-            const requireResultDisplay = requiresExpressionResult(newExpr.type);
-            
-            //Dependables are unregistered in checkAnswer. Should this be done here instead?
 
-            // if(oldExpr.type === ExpressionType.ASSIGNMENT_DIRECT || oldExpr.type === ExpressionType.ASSIGNMENT_INDIRECT){
-            //     if(!unregisterDependable(oldExpr.assignment.name)){
-            //         throw new Error("Unable to unregister:"+oldExpr.assignment.name);
-            //     }
-            // }
+        function updateExpressionEntry(latex, exprSpan, oldEntry){
+            //must be done before compilation so that compiler will recognize var definitions
+            //unregister -> expression compiled -> check if is assignment -> only is if var not defined yet
+            if(oldEntry.definedSymbol !== "") unregisterDependable(oldEntry.definedSymbol);
             
-            // if(oldExpr.type === oldExpr.type === ExpressionType.DEFINITION){
-            //     if(!unregisterDependable(oldExpr.definition.name)){
-            //         throw new Error("Unable to unregister:"+oldExpr.definition.name);
-            //     }
-            // }
+
+            let newEntry; //new expression entry
+            const exprRow = exprSpan.parentElement.parentElement;
+            const id = parseInt(exprRow.id.slice(7));
+
+            let expressionEntries = getAllExpressionEntries();
+            const index = expressionEntries.findIndex((ex) => ex.id === id);
             
-            const indexOfDisplayElement = findIndexInNodeList(
-                wrapperElement.childNodes, 
-                function (n) { 
-                    return n.classList.contains(expResultClass);
-                }
+            const toolTip = "";
+            const color = oldEntry.color;
+            const visible = oldEntry.visible;
+            let definedSymbol = "";
+
+            try{
+                const tokens = tokenize(latex);
+                const typeset = typesetTokens(tokens);
+                const compiledExpression = compileExpression(typeset);
+
+                definedSymbol = getDefinedSymbolFromExpression(compiledExpression);
+
+                newEntry = new ExpressionEntry(id, ExpressionEntryType.RENDERED_EQUATION, toolTip, color, visible, latex, compiledExpression, definedSymbol, blankExpressionImage(), false);
+            }catch(e){
+                console.warn(e.message);
+                const compiledExpression = {type: ExpressionType.INVALID, tokens: [], dependencies: new Set(), requiredAttributes: new Set()}
+                newEntry = new ExpressionEntry(id, ExpressionEntryType.INVALID, toolTip, color, visible, latex, compiledExpression, definedSymbol, blankExpressionImage(), false);
+            }
+
+            console.log("newEntry:",newEntry);
+            expressionEntries[index] = newEntry;
+
+            updateEntryVisual(exprRow, newEntry, oldEntry);
+
+            updateExpressionEntries(definedSymbol, oldEntry.definedSymbol != "" && definedSymbol == "");
+            draw();
+        }
+
+        function updateEntryVisual(exprRow, newEntry, oldEntry){
+            const evalResult = updateExpressionDependable(newEntry, oldEntry);
+            console.log(evalResult);
+
+            updateExpressionHTML(exprRow, newEntry, oldEntry, evalResult);
+
+            updateExpressionImage(newEntry, evalResult);
+        }
+
+        /**
+         * If the expression currently or previously defined a variable, update it to be correct
+         * @param newEntry
+         * @param oldEntry
+        */
+        function updateExpressionDependable(newEntry, oldEntry){
+            if(oldEntry.definedSymbol !== "") unregisterDependable(oldEntry.definedSymbol);
+
+            if(!requiresExpressionResult(newEntry.expression.type) && !definesOrAssigns(newEntry.expression.type)) return null;
+
+            const evalResult = evaluateExpressionWithOptions(newEntry.expression, new Map(), newEntry.expression.requiredAttributes, false);
+
+            if(definesOrAssigns(newEntry.expression.type)){
+                const dependableType = newEntry.type === ExpressionType.DEFINITION 
+                    ? DependableType.FUNCTION
+                    : DependableType.VARIABLE;
+                
+                registerDependable(newEntry.definedSymbol, dependableType, evalResult, newEntry.expression.dependencies);
+            }
+
+            return evalResult;
+        }
+
+        /**
+         * Sync an expression's HTML elements with its values
+         * This includes, currently, the expressionResult element as latex is handled by default
+         * In the future, this will also handle things like changes in icon, etc.
+        */
+        function updateExpressionHTML(exprRow, newEntry, oldEntry, evalResult){
+            const hadResultDisplay = requiresExpressionResult(oldEntry.expression.type ?? 0);
+            const needResultDisplay = requiresExpressionResult(newEntry.expression.type) && evalResult !== null && evalResult !== undefined;
+
+            if(!hadResultDisplay && !needResultDisplay) return;
+
+            let wrapperElement = exprRow.childNodes[1]; //HACK
+            const displayElementIndex = findIndexInNodeList(
+                wrapperElement.childNodes, (n) => n.classList.contains(expResultClass)
             );
 
-            if(requiresExpressionResult(oldExpr.type) && !requiresExpressionResult(newExpr.type)){
-                //remove display
-                wrapperElement.removeChild(wrapperElement.childNodes[indexOfDisplayElement]);
-            }
-
-            //TODO: if old required slider bar but new doesn't:
-                //remove slider bar
-
-            let evaluationResult = null;
-            if(requiresExpressionResult(newExpr.type)){
-                try{
-                    evaluationResult = evaluateExpressionWithOptions(newExpr, new Map(), newExpr.requiredAttributes);
-                }catch(e){
-                    evaluationResult = {type: -1, value: undefined, code: null, metadata: {}, attributes: {}, dependencies: new Set()};
-                }         
-
-                const resultLatex = '='+convertTokenToLatex(evaluationResult);
-
-                let resultMathField = indexOfDisplayElement === -1 
-                    ? newExpressionResultElement(wrapperElement, resultLatex) 
-                    : MQ(wrapperElement.childNodes[indexOfDisplayElement]);
-                    
-                resultMathField.latex(resultLatex);
-            }
-
-            const definedSymbol = getDefinedSymbolFromExpression(newExpr);
-            if(definedSymbol == null || newExpr.type === ExpressionType.INVALID) return;
-
-            if(newExpr.type === ExpressionType.ASSIGNMENT_DIRECT || newExpr.type === ExpressionType.ASSIGNMENT_INDIRECT){
-                //define variable
-
-                console.log("Defining variable:"+definedSymbol);
-                if(!registerDependable(definedSymbol, DependableType.VARIABLE, evaluationResult, newExpr.dependencies)){
-                    throw new Error("Couldn't define variable: "+definedSymbol);
+            if(!needResultDisplay){
+                if(displayElementIndex !== -1){
+                    wrapperElement.removeChild(wrapperElement.childNodes[displayElementIndex])
                 }
+
+                return;
             }
 
-            //TODO: define function
-            //below algorithm is slow, pending update to dependency tree system
+            console.assert(needResultDisplay);
 
-            //dependablesUpToDate = [this dependable]
-            //for all expressions:
-                //if dependablesUpToDate doesn't have all my dependencies
-                    //back of the queue
-                //if dependablesUpToDate doesn't include this dependable
-                    //ignore
-                //update value
+            const resultLatex = '='+convertTokenToLatex(evalResult);
 
-            if(canRecurse) updateExpressionEntries(definedSymbol);
-
-            // let expressionEntries = [...getAllExpressionEntries()];
-
-            // let dependablesUpdated = [definedSymbol];
-            // while(expressionEntries.length > 0){
-            //     const entry = expressionEntries.pop();
-
-            //     const dependencyList = Array.from(entry.expression.dependencies);
-
-            //     if(dependencyList === undefined) throw new Error("No dependencies");
+            let resultMathField = displayElementIndex === -1 
+                ? newExpressionResultElement(wrapperElement, resultLatex) 
+                : MQ(wrapperElement.childNodes[displayElementIndex]);
                 
-            //     if(dependencyList.length < 1) continue;
-
-            //     const fullyUpdated = dependencyList.every((d) => dependablesUpdated.includes(d) || d in CoordinateByLatex);
-            //     if(!fullyUpdated){
-            //         console.log(dependencyList, dependablesUpdated);
-            //         if(expressionEntries.length === 0) throw new Error("Expression cannot be updated.");
-            //         expressionEntries.unshift(entry);
-            //         continue;
-            //     }
-
-            //     if(!dependablesUpdated.includes(entry.definedSymbol)){
-            //         const depEqRow = document.getElementById(expRowId+entry.id);
-                            
-            //         console.assert(depEqRow !== undefined);
-                    
-            //         const depEqWrapper = depEqRow.childNodes[1];
-                    
-            //         console.assert(depEqWrapper !== undefined);
-            //         console.assert(depEqWrapper.childNodes.length > 0);
-                    
-            //         const depEqSpanIndex = findIndexInNodeList(depEqWrapper.childNodes,(n) => n.classList.contains(expMathPlaceholderClass));
-            //         console.assert(depEqSpanIndex >= 0);
-                    
-            //         const spanElement = depEqWrapper.childNodes[depEqSpanIndex];
-            //         //console.log(spanElement);
-                    
-            //         checkAnswer(entry.latex,spanElement,false);
-            //     }
-            // }
-            
-            // switch(newExpr.type){
-            //     case ExpressionType.EVALUATION:
-            //     case ExpressionType.ASSIGNMENT_DIRECT:
-            //     case ExpressionType.ASSIGNMENT_INDIRECT:
-
-            //         evaluationResult = evaluateExpressionWithOptions(newExpr, new Map(), newExpr.requiredAttributes);
-                    
-            //         if(newExpr.type === ExpressionType.EVALUATION) break; 
-                    
-            //         //Assignment:
-                    
-            //         console.assert(newExpr.assignment !== undefined, newExpr);
-            //         if(registerDependable(newExpr.assignment.variable, DependableType.VARIABLE, evalObj, newExpr.dependencies)){
-            //             //var set succeeded
-            //         }else{
-            //             throw new Error("Could not set variable: "+newExpr.assignment.variable);
-            //         }
-                    
-            //         // const resultLatex = '='+convertTokenToLatex(evalObj);
-                    
-            //         // const indexOfDisplayElement = findIndexInNodeList(
-            //         //   wrapperElement.childNodes, 
-            //         //   function (n) { 
-            //         //     return n.classList.contains(expResultClass);
-            //         //   }
-            //         // );
-                    
-            //         // //if no display element 'resultMathField' exists, create 'resultMathField'
-            //         // //update 'resultMathField' with latex
-                    
-            //         // let resultMathField = indexOfDisplayElement === -1 ? newExpressionResultElement(wrapperElement, resultLatex) : MQ(wrapperElement.childNodes[indexOfDisplayElement]);
-                    
-            //         // resultMathField.latex(resultLatex);
-                    
-            //         // drawResult({value: evalObj, type: 18});
-            //         return; //DELETE LATER
-            //     break;
-            //     case ExpressionType.DEFINITION:
-            //         if(registerDependable(newExpr.definition.name, DependableType.FUNCTION, newExpr.tokens, newExpr.dependencies)){
-            //             //func def succeeded
-            //         }else{
-            //             throw new Error("Could not define function: "+newExpr.definition.name);
-            //         }
-                    
-            //         //drawExpression(newExpr);
-            //     break;
-            // }
-
-            // if(requiresExpressionResult())
-            
-            // //console.log('expression change to', newExpr.type);
-            
-            // if(newExpr.type === ExpressionType.ASSIGNMENT_DIRECT || newExpr.type === ExpressionType.ASSIGNMENT_INDIRECT){
-            //     console.log('-- Evaluating Result of Definition ('+newExpr.definedSymbol+') --');
-            //     //const evalResult = evaluateExpression(newExpr, new Map(),-1);
-            //     const evalResult = evaluateExpressionWithOptions(newExpr, new Map(), new Set());
-                
-            //     console.log('-- Set Variable '+newExpr.definedSymbol+' to result of evaluation:',evalResult,' --'); 
-            //     const value = evalResult //evalResult.value; 
-            //     const unc = 0; //evalResult.uncertainty; 
-                
-            //     console.assert(newExpr.definedSymbol !== undefined);
-            //     console.assert(newExpr.dependencies !== undefined);
-                
-            //     if(registerDependable(newExpr.definedSymbol, DependableType.VARIABLE, evalResult,newExpr.dependencies)){
-            //         //console.log('set var ', newExpr.definedSymbol , ' to ', value);
-            //     }else{
-            //         console.log('failed to set var ', newExpr.definedSymbol , ' to ', evalResult);
-            //     }
-                
-            //     if(canRecurse){
-            //         const expressions = getAllExpressionEntries();
-                    
-            //         expressions.forEach((exp) => {
-            //             if(exp.id === newExpr.id) return;
-            //             console.assert(exp.dependencies !== undefined);
-                        
-                        
-            //             //console.log('exp: ', exp, 'vs', newExpr,'dependencies:', exp.dependencies);
-            //             if(exp.dependencies.length === 0) return;
-                        
-            //             if(exp.dependencies.has(newExpr.definedSymbol)){
-            //                 const depEqRow = document.getElementById(expRowId+exp.id);
-                            
-            //                 console.assert(depEqRow !== undefined);
-                            
-            //                 const depEqWrapper = depEqRow.childNodes[1];
-                            
-            //                 console.assert(depEqWrapper !== undefined);
-            //                 console.assert(depEqWrapper.childNodes.length > 0);
-                            
-            //                 const depEqSpanIndex = findIndexInNodeList(depEqWrapper.childNodes,(n) => n.classList.contains(expMathPlaceholderClass));
-            //                 console.assert(depEqSpanIndex >= 0);
-                            
-            //                 const spanElement = depEqWrapper.childNodes[depEqSpanIndex];
-            //                 //console.log(spanElement);
-                            
-            //                 checkAnswer(exp.latex,spanElement,false);
-            //                 //console.log('updated: ', exp.id);
-            //             }
-            //         })
-            //     }
-            // }
-                       
-            // if(requiresExpressionResult(newExpr.type)){
-            //     const index = findIndexInNodeList(
-            //         wrapperElement.childNodes, 
-            //         function (n) { 
-            //             return n.classList.contains(expResultClass);
-            //         }
-            //     );
-                
-            //     console.log('-- Evaluating expression result for rendering --');
-            //     //const evalObj = evaluate(newExpr, new Map(), -1);
-            //     const evalObj = evaluateExpressionWithOptions(newExpr, new Map(), new Set());
-                
-            //     console.log('-- Rendering evaluation result: ',evalObj,'--');
-            //     const displayedResult = convertTokenToLatex(evalObj);
-            //     // '='+ (
-            //     // evalObj.didByIndexEvaluation 
-            //     // ? '['+evalObj.result.map((t)=>t.value).join(', ')+']'
-            //     // : convertTokenToLatex(evalObj.result));
-            //     //console.log(displayedResult);
-                
-            //     let result;
-            //     let resultMathField;
-            //     if(index === -1){
-            //         //add new exp result element
-                    
-            //         //console.log('new result');
-            //         result = newDivWithClass(expResultClass);
-            //         result.style.outline = 'solid';
-                    
-            //         wrapperElement.appendChild(result);
-                    
-            //         resultMathField = generateStaticMath(result,displayedResult); 
-                    
-            //         const autoOpNames = validFunctions.concat('undefined','NaN').join(' ');
-            //         resultMathField.autoOperatorNames = autoOpNames;
-            //     }else{
-            //         //replace current exp result element
-                    
-            //         resultMathField = MQ(wrapperElement.childNodes[index]);
-            //     }
-                
-            //     resultMathField.latex(displayedResult); //set to display result
-            // }else if(requiresExpressionResult(oldExpr.type)){
-            //     //console.warn('finding index of', expResultClass, ' in ', wrapperElement.childNodes);
-            //     const index = findIndexInNodeList(
-            //     wrapperElement.childNodes, 
-            //     function (n) { 
-            //         //console.log(n.classList,expResultClass);
-            //         return n.classList.contains(expResultClass);
-            //     }
-            //     );
-            //     //console.log('doing???????');
-            //     if(index === -1) return;
-                
-            //     //console.log('removing ', index,wrapperElement.childNodes.length, 'because ', oldExpr.type);
-            //     wrapperElement.removeChild(wrapperElement.childNodes[index]);
-            // }
+            resultMathField.latex(resultLatex);
         }
+
+        function updateExpressionImage(entry, evalResult){
+            if(entry === undefined || entry.type === ExpressionEntryType.INVALID || (!entry.visible)){
+                return;
+            }
+            
+            const expression = entry.expression;
+            
+            if(expression.type === ExpressionType.EVALUATION || expression.type === ExpressionType.ASSIGNMENT_INDIRECT){
+                if(evalResult) drawResult(evalResult);
+                return;
+            }
+            
+            if(entry.rendering){
+                console.log('rendering already');
+                return;
+            }
+            
+            const maxY = toGraphCoordsY(0);
+            const minY = toGraphCoordsY(window.innerHeight);
+            
+            const minX = toGraphCoordsX(0);
+            const maxX = toGraphCoordsX(window.innerWidth);
+            
+            let xCount = window.innerWidth;
+            let yCount = window.innerHeight;
+            
+            let renderFunction = null;
+            switch(expression.type){
+                case ExpressionType.EXPLICIT_X: 
+                renderFunction = generateInstructionsForCartesianXofY; 
+                break;
+                case ExpressionType.EXPLICIT_Y: 
+                renderFunction = generateInstructionsForCartesianYofX; 
+                break;
+                case ExpressionType.IMPLICIT: 
+                renderFunction = generateInstructionsForCartesianImplicit; 
+                let xCount = 32;
+                let yCount = 32;
+                break;
+            }
+            
+            if(renderFunction === null) return;
+            
+            const viewport = {minX, maxX, minY, maxY, scaleX, scaleY, xCount, yCount}; //note: shorthand
+
+            try{
+                entry.image = generateImage(expression, viewport, renderFunction);
+            }catch(e){
+                entry.image = blankExpressionImage();
+            }
+
+            return;
+            
+            entry.rendering = true;
+            generateImage(expression, viewport, renderFunction)
+            .then(image => {
+                //console.log('.then')
+                entry.image = image;
+                entry.rendering = false;
+            });
+        }
+
 
         function reloadExpressionEntry(entry){
             const depEqRow = document.getElementById(expRowId+entry.id);
@@ -803,12 +594,18 @@
             
             const spanElement = depEqWrapper.childNodes[depEqSpanIndex];
             //console.log(spanElement);
+
+            const eqRow = spanElement.parentElement.parentElement;
+            const id = parseInt(eqRow.id.slice(7));
             
-            try{
-                checkAnswer(entry.latex,spanElement,false);
-            }catch(e){
-                
-            }
+            let expressionEntries = getAllExpressionEntries();
+            const index = expressionEntries.findIndex((ex) => ex.id === id);
+            const oldEntry = expressionEntries[index];
+
+            const evalResult = updateExpressionDependable(entry, oldEntry);
+            console.log(evalResult);
+            updateExpressionHTML(depEqRow, entry, oldEntry, evalResult);
+            updateExpressionImage(entry, evalResult);
         }
 
         /**
@@ -821,87 +618,65 @@
 
             console.log(sortedEntries);
             sortedEntries.forEach((entry) => {
-                if(entry.definedSymbol === changedSymbol){
+                if(entry.definedSymbol === changedSymbol && changedSymbol !== null){
                     return;
                     console.log(entry);
                     throw new Error("a");
                 }
 
+                console.log("evaluating child:"+entry.latex);
                 reloadExpressionEntry(entry);
             });
-
-            return;
-
-            let dependablesUpdated = [changedSymbol];
-            while(expressionEntries.length > 0){
-                const entry = expressionEntries.pop();
-
-                console.log(entry);
-                const dependencyList = Array.from(entry.expression.dependencies);
-
-                if(dependencyList === undefined) throw new Error("No dependencies");
-                
-                if(dependencyList.length < 1) continue;
-
-                const fullyUpdated = dependencyList.every((d) => dependablesUpdated.includes(d) || d in CoordinateByLatex);
-                if(!fullyUpdated && !removingSymbol){
-                    console.log(dependencyList, dependablesUpdated);
-                    if(expressionEntries.length === 0) throw new Error("Expression cannot be updated.");
-                    expressionEntries.unshift(entry);
-                    continue;
-                }
-
-                if(!dependablesUpdated.includes(entry.definedSymbol)){
-                    if(removingSymbol){
-                        unregisterDependable(entry.definedSymbol);
-                    }
-
-                    reloadExpressionEntry(entry);
-                }
-            }
         }
 
         function sortDependencies(entries){
-            const sorted = [];
+            let sorted = [];
 
             const coordinateSet = new Set(["x","y"]);
 
             entries.forEach((entry) => {
                 const t = entry.expression.type;
 
+                console.log(entry.expression);
+
                 const isSetter = (t === ExpressionType.ASSIGNMENT_DIRECT || t === ExpressionType.ASSIGNMENT_INDIRECT || t === ExpressionType.DEFINITION);
                 const isGetter = entry.expression.dependencies.difference(coordinateSet).size > 0;
 
-                if(!isSetter && !isGetter) return;
+                if(!isSetter && !isGetter){
+                    console.log("irrelevant");
+                    return;
+                }
                 if(isSetter && !isGetter){
                     sorted.unshift(entry);
+                    console.log("sorted.unshift");
                     return;
                 }
 
                 if(isGetter && !isSetter){
+                    console.log("sorted.push");
                     sorted.push(entry);
                     return;
                 }
 
                 //getters and setters:
-                let i = 0;
-                while(i<sorted.length){
-                    //we want a place to insert st. there are no parents below (greater index) us and no children above (lower index) us
-                    const parents = sorted.filterIndex((e) => expression.dependencies.has(e.definedSymbol));
-                    const lowestParentIndex = Math.min(...parents);
+                //we want a place to insert st. there are no parents below (greater index) us and no children above (lower index) us
+                const lowestParentIndex = sorted.findIndex((e) => entry.expression.dependencies.has(e.definedSymbol));
+                const highestChildIndex = sorted.findLastIndex((e) => e.expression.dependencies.has(entry.definedSymbol));
 
-                    const children = sorted.filterIndex((e) => e.expression.dependencies.has(entry.definedSymbol));
-                    const highestChildIndex = Math.max(...children);
-
-                    if(lowestParentIndex >= highestChildIndex){
-                        throw new Error("Cyclical expression dependency.");
-                    }
-
-                    sorted.splice(highestChildIndex,0,entry); //insert before highest child
+                if(lowestParentIndex >= highestChildIndex && !(lowestParentIndex === -1 && highestChildIndex == -1)){
+                    console.error(sorted);
+                    throw new Error("Cyclical expression dependency.");
                 }
+
+                console.log("both set/get");
+                sorted.splice(highestChildIndex,0,entry); //insert before highest child
             });
 
             return sorted;
+        }
+
+        function drawExpressionEntry(entry){
+            drawFromImage(entry.image, entry.color);
         }
         
         function newExpressionResultElement(parentElement, latex){
@@ -930,41 +705,25 @@
             }
             return -1;
         }
+
+        function requiresRender(type){
+            return (type >= ExpressionType.EXPLICIT_X && type <= ExpressionType.PARAMETRIC) || type === ExpressionType.DEFINITION;
+                // (type === ExpressionType.EXPLICIT_X) || 
+                // (type === ExpressionType.EXPLICIT_Y) || 
+                // (type === ExpressionType.EXPLICIT_Z) || 
+                // (type === ExpressionType.EXPLICIT_R) || 
+                // (type === ExpressionType.EXPLICIT_THETA) ||
+                // (type === ExpressionType.IMPLICIT);
+        }
+
+        function definesOrAssigns(type){
+            return type === ExpressionType.DEFINITION || type === ExpressionType.ASSIGNMENT_INDIRECT || type === ExpressionType.ASSIGNMENT_DIRECT;
+        }
         
         function requiresExpressionResult(type){
             return type === ExpressionType.EVALUATION || type === ExpressionType.ASSIGNMENT_INDIRECT || type === ExpressionType.ASSIGNMENT_DIRECT;
         }
-        
-        // function updateExpressionResult(eqRow, expression){
-        //   let wrapper = eqRow.childNodes[1];
-        
-        //   console.assert(wrapper.childNodes.length > 0);
-        
-        //   if(wrapper.childNodes.length === 1){
-        //     var resultMathField = wrapper.childNodes[1]; //HACK
-        //     if(expression.type === 0){
-        //       let result = newDivWithClass(expResultClass);
-        //       result.style.outline = 'solid';
-        
-        //       resultMathField = generateStaticMath(result,expression.latex); 
-        
-        //       wrapper.appendChild(result);
-        //     }
-        
-        //     const numericResult = evaluateExpression(expression);
-        //     console.log(numericResult);
-        //     resultMathField.latex(numericResult.value);
-        
-        //   }else{
-        //     if(expression.type !== 0){
-        //       const s = eqRow.childNodes[0];
-        //       while(s.nextElementSibling !== null){
-        //         eqRow.removeChild(s.nextElementSibling);
-        //       }
-        //     }
-        //   }
-        // }
-        
+       
         function removeExpression(eqRow){
             console.log('removing row: ', eqRow);
             const equationList = document.getElementById('equationList');
@@ -1047,6 +806,7 @@
         }
         
         function draw() {
+            console.log("now drawing");
             // clear
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
@@ -1056,9 +816,13 @@
             drawGrid();
             
             getAllExpressionEntries().forEach((entry) => {
+                console.log("now entry: "+entry.latex);
+                drawExpressionEntry(entry);
+
                 try {
-                    drawExpressionEntry(entry);
+                    
                 } catch(error){
+                    console.warn(error.message);
                     //if(error.)
                     reloadExpressionEntry(entry);
                 }
@@ -1070,63 +834,7 @@
             
             fpsDisplay.innerHTML = "frame (ms)= " + Math.floor(time);
         }
-        
-        function drawExpressionEntry(entry){
-            if(entry === undefined || entry.type === ExpressionEntryType.INVALID || (!entry.visible)){
-                return;
-            }
-            
-            const expression = entry.expression;
-            
-            if(expression.type === ExpressionType.EVALUATION || expression.type === ExpressionType.ASSIGNMENT_INDIRECT){
-                drawEvalResult(entry);
-                return;
-            }
-            
-            if(entry.rendering){
-                console.log('rendering');
-                drawFromImage(entry.image,entry.color);
-                return;
-            }
-            
-            const maxY = toGraphCoordsY(0);
-            const minY = toGraphCoordsY(window.innerHeight);
-            
-            const minX = toGraphCoordsX(0);
-            const maxX = toGraphCoordsX(window.innerWidth);
-            
-            let xCount = window.innerWidth;
-            let yCount = window.innerHeight;
-            
-            let renderFunction = null;
-            switch(expression.type){
-                case ExpressionType.EXPLICIT_X: 
-                renderFunction = generateInstructionsForCartesianXofY; 
-                break;
-                case ExpressionType.EXPLICIT_Y: 
-                renderFunction = generateInstructionsForCartesianYofX; 
-                break;
-                case ExpressionType.IMPLICIT: 
-                renderFunction = generateInstructionsForCartesianImplicit; 
-                let xCount = 32;
-                let yCount = 32;
-                break;
-            }
-            
-            if(renderFunction === null) return;
-            
-            const viewport = {minX, maxX, minY, maxY, scaleX, scaleY, xCount, yCount}; //note: shorthand
-            
-            entry.rendering = true;
-            generateImage(expression, viewport, renderFunction)
-            .then(image => {
-                //console.log('.then')
-                entry.image = image;
-                entry.rendering = false;
-                drawFromImage(entry.image,entry.color);
-            });
-        }
-        
+                
         function toGraphCoordsX(x){
             return (x/window.innerWidth-0.5)*scaleX+offsetX;
         }
@@ -1217,10 +925,14 @@
             const translateY = (y) => y; //((y + originalY)/scaleY * originalScaleY) - offsetY;
             
             const instructions = image.instructions;
+            console.assert(instructions != undefined, image);
+
             if(instructions.length === 0 || instructions.length === undefined){
                 console.warn("blank image");
                 return;
             }
+
+            console.log("now drawing instructions "+instructions.length);
             
             ctx.beginPath();
             ctx.lineWidth = 3;
