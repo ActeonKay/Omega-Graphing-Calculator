@@ -75,7 +75,13 @@ function substitute(tokens, input, attributes){
  * @param {*} evaluateTruth
  */
 export function evaluateExpressionWithOptions(expression, input, attributes, evaluateTruth){
-    let tokens = substitute(expression.tokens, input, attributes);
+    let tokens;
+    try{
+        tokens = substitute(structuredClone(expression.tokens), input, attributes);
+    }catch(e){
+        return undefined;
+    }
+    
 
     let solve = [];
     tokens.forEach((token) => {
