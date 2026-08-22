@@ -659,7 +659,7 @@ export function compileExpression(expression){
                     const nextOpToken = operators[operators.length-1];
 
                     if(nextOpToken.type !== TokenType.OPERATOR){
-                        console.error("Top of operator stack is not an operator: ",nextOpToken);
+                        console.assert(isLeftBracket(nextOpToken), "Top of operator stack is not an operator: ",nextOpToken);
                         break;
                     }
 
