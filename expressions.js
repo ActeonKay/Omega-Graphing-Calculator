@@ -151,7 +151,7 @@ export function removeExpressionEntry(wantedId){
 }
 
 function getDependencies(name){
-    if(dependableData.get(name) === undefined) return undefined;
+    if(getDependableData(name) === undefined) return undefined;
 
     let found = new Set();
     dependableData.get(name).dependencies.forEach((d1) => {
@@ -180,13 +180,13 @@ export function registerDependable(name, type, info, directDependencies){
 
     if(type < 1 || type > 2) return false; //HARDCODE
 
-    let dependencies = new Set();
-    directDependencies.forEach((dd) => {
-        dependencies.union(getDependencies(dd));
-        dependencies.add(dd);
-    });
+    // let dependencies = new Set();
+    // directDependencies.forEach((dd) => {
+    //     dependencies.union(getDependencies(dd));
+    //     dependencies.add(dd);
+    // });
 
-    dependableData.set(name, {type: type, value: info, dependencies: dependencies});
+    dependableData.set(name, {type: type, value: info});
     return true;
 }
 
