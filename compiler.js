@@ -166,22 +166,26 @@ function isValidVariableToken(NSPToken){
  * @returns {bool}
  */ 
 function isFunctionDefinition(tokensNSP){
-    if(tokensNSP.length < 3) return false;
+    if(tokensNSP.length < 3) return "false1";
 
-    if(!isValidVariableToken(tokensNSP[0])) return false;
-    if(tokensNSP[1].string !== "(") return false;
+    if(!isValidVariableToken(tokensNSP[0])) return "false2";
+
+    const isLeftBracket = (t) => t.string in BracketByLatex && BracketByLatex[t.string].code % 2 === 0;
+    const isRightBracket = (t) => t.string in BracketByLatex && BracketByLatex[t.string].code % 2 === 1;
+
+    if(!isLeftBracket(tokensNSP[1])) return "false3";
 
     let i = 2;
     while(i<tokensNSP.length-1){
         const paramToken = tokensNSP[i];
-        if(!isValidVariableToken(paramToken)) return false;
+        if(!isValidVariableToken(paramToken)) return "false4";
 
-        if(tokensNSP[i+1].string === ")"){
-            if(i+1 !== tokensNSP.length-1) return false; //there are extra tokens after the closing parenthesis
+        if(isRightBracket(tokensNSP[i+1])){
+            if(i+1 !== tokensNSP.length-1) return "false5"; //there are extra tokens after the closing parenthesis
             return true;
         }
 
-        if(tokensNSP[i+1].string !== ",") return false; //throw new Error("Unexpected token in function definition: " + tokensNSP[i+1].string);
+        if(tokensNSP[i+1].string !== ",") return "false6"; //throw new Error("Unexpected token in function definition: " + tokensNSP[i+1].string);
 
         i += 2;
     }
@@ -284,7 +288,10 @@ export function typesetExpression(tokensNSP){
 
     if(lhs.length === 0 || rhs.length === 0) return {type: ExpressionType.INVALID, trimmedExpression: tokensNSP};
 
-    if(isFunctionDefinition(lhs)){
+    const f = isFunctionDefinition(lhs);
+    console.log("is valid fnc def:",lhs,"="+f);
+
+    if(f){
         if(rhs.some((t) => t.metadata.dependencies.has(lhs[0].string))) {
             return {type: ExpressionType.INVALID, trimmedExpression: rhs, problem: "You can't define a function in terms of itself"};
         }
@@ -642,6 +649,8 @@ export function compileExpression(expression){
 
     const isLeftBracket = (t) => t.type === TokenType.BRACKET && t.code % 2 === 0;
 
+    //TODO: replace letters that are parameters with parameter placeholders
+
     tokens.forEach((token) => {
         // console.log("token: ", token);
         // console.log("outputs:",outputs);
@@ -733,7 +742,7 @@ export function compileExpression(expression){
                 }
                 break;
             case TokenType.EXPRESSION:
-                //??
+                //insert tokens of expression
                 break;
             case TokenType.BIG_OPERATOR:
                 switch(token.string){
