@@ -474,7 +474,7 @@
                 const dependableType = newEntry.type === ExpressionType.DEFINITION 
                     ? DependableType.FUNCTION
                     : DependableType.VARIABLE;
-                
+
                 registerDependable(newEntry.definedSymbol, dependableType, evalResult, newEntry.expression.dependencies);
             }
 
@@ -806,7 +806,7 @@
         }
         
         function draw() {
-            console.log("now drawing");
+            //console.log("now drawing");
             // clear
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
@@ -816,16 +816,8 @@
             drawGrid();
             
             getAllExpressionEntries().forEach((entry) => {
-                console.log("now entry: "+entry.latex);
+                //console.log("now entry: "+entry.latex);
                 drawExpressionEntry(entry);
-
-                try {
-                    
-                } catch(error){
-                    console.warn(error.message);
-                    //if(error.)
-                    reloadExpressionEntry(entry);
-                }
             });
             
             // end timer
@@ -928,11 +920,11 @@
             console.assert(instructions != undefined, image);
 
             if(instructions.length === 0 || instructions.length === undefined){
-                console.warn("blank image");
+                //console.warn("blank image");
                 return;
             }
 
-            console.log("now drawing instructions "+instructions.length);
+            //console.log("now drawing instructions "+instructions.length);
             
             ctx.beginPath();
             ctx.lineWidth = 3;
@@ -954,16 +946,16 @@
                 //   ctx.strokeStyle = instruction[1]
                 // }
                 
-                let x = toScreenCoordsX(translateX(instruction[1]));
-                let y = toScreenCoordsY(translateY(instruction[2]));
+                let x = toScreenCoordsX(instruction[1]);
+                let y = toScreenCoordsY(instruction[2]);
                 
                 //Translate based on past/vs/current 
                 
-                if(y < 0) y = -window.innerHeight;
-                if(y>window.innerHeight) y = 2*window.innerHeight;
+                //if(y < 0) y = -window.innerHeight;
+                //if(y>window.innerHeight) y = 2*window.innerHeight;
                 
-                if(x<0) x = -window.innerWidth;
-                if(x>window.innerWidth) x = 2*window.innerWidth;
+                //if(x<0) x = -window.innerWidth;
+                //if(x>window.innerWidth) x = 2*window.innerWidth;
                 
                 if(instruction[0]) {
                     //ctx.strokeRect(xprev,yprev, xprev-x, yprev-y);
@@ -974,8 +966,8 @@
                     ctx.moveTo(x,y);
                 }
                 
-                xprev=x;
-                yprev=y;
+                //xprev=x;
+                //yprev=y;
             }
             
             ctx.stroke();
