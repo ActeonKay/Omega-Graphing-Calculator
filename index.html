@@ -128,6 +128,13 @@
     
     <script type="module">
         import {
+            toScreenCoordsX,
+            toScreenCoordsY,
+            toGraphCoordsX,
+            toGraphCoordsY
+        } from "./graph-utils.js";
+
+        import {
             typesetExpression,
             testExpressionTypeset,
             typesetTokens,
@@ -173,6 +180,9 @@
         const canvas = document.getElementById('c');
         const ctx = canvas.getContext('2d');
         const fpsDisplay = document.getElementById('fps');
+
+        // --- Workers ---
+        const renderWorker = new Worker(new URL("./worker/render-worker.js", import.meta.url), {type: "module"});
         
         // --- Options ---
         const showQuadOutlines = false;
@@ -206,11 +216,11 @@
         let lastMouseX = 0;
         let lastMouseY = 0;
         const exprColors = [
-        "seagreen",
-        "coral",
-        "cornflowerblue",
-        "lightcoral",
-        "mediumaquamarine"
+            "seagreen",
+            "coral",
+            "cornflowerblue",
+            "lightcoral",
+            "mediumaquamarine"
         ];
         ctx.font = graphFont;
         
@@ -520,64 +530,55 @@
             if(entry === undefined || entry.type === ExpressionEntryType.INVALID || (!entry.visible)){
                 return;
             }
-            
-            const expression = entry.expression;
-            
-            if(expression.type === ExpressionType.EVALUATION || expression.type === ExpressionType.ASSIGNMENT_INDIRECT){
-                if(evalResult) drawResult(evalResult);
-                return;
-            }
-            
-            if(entry.rendering){
-                console.log('rendering already');
-                return;
-            }
-            
-            const maxY = toGraphCoordsY(0);
-            const minY = toGraphCoordsY(window.innerHeight);
-            
-            const minX = toGraphCoordsX(0);
-            const maxX = toGraphCoordsX(window.innerWidth);
-            
-            let xCount = window.innerWidth;
-            let yCount = window.innerHeight;
-            
-            let renderFunction = null;
-            switch(expression.type){
-                case ExpressionType.EXPLICIT_X: 
-                renderFunction = generateInstructionsForCartesianXofY; 
-                break;
-                case ExpressionType.EXPLICIT_Y: 
-                renderFunction = generateInstructionsForCartesianYofX; 
-                break;
-                case ExpressionType.IMPLICIT: 
-                renderFunction = generateInstructionsForCartesianImplicit; 
-                let xCount = 32;
-                let yCount = 32;
-                break;
-            }
-            
-            if(renderFunction === null) return;
-            
-            const viewport = {minX, maxX, minY, maxY, scaleX, scaleY, xCount, yCount}; //note: shorthand
 
-            try{
-                entry.image = generateImage(expression, viewport, renderFunction);
-            }catch(e){
-                entry.image = blankExpressionImage();
-            }
-
-            return;
-            
-            entry.rendering = true;
-            generateImage(expression, viewport, renderFunction)
-            .then(image => {
-                //console.log('.then')
-                entry.image = image;
-                entry.rendering = false;
-            });
+            updateScene(entry, evalResult, getViewport());
         }
 
+        async function updateScene(entry, evalResult, viewport){
+            try{
+                entry.rendering = true;
+
+                const image = await calculateImage(entry, evalResult, viewport);
+                
+                saveImage(image, entry);
+                drawExpressionEntry(entry);
+            }catch(error){
+                console.error("Image generation failed: ",error);
+            } finally{
+                entry.rendering = false;
+            }
+        }
+        
+        function saveImage(image, entry){
+            entry.image = image;
+        }
+
+        function calculateImage(entry, evalResult, viewport){
+            return new Promise((resolve, reject) => {
+                const requestId = crypto.randomUUID();
+
+                function handleMessage(event){
+                    const message = event.data;
+                    if(message.requestId !== requestId) return;
+
+                    renderWorker.removeEventListener("message", handleMessage);
+
+                    if(message.type === "success"){
+                        resolve(message.image);
+                    }else{
+                        reject(new Error(message.error));
+                    }
+                }
+
+                renderWorker.addEventListener("message",handleMessage);
+
+                renderWorker.postMessage({
+                    type: "render",
+                    requestId,
+                    entry, evalResult, viewport
+                });
+            })
+        }
 
         function reloadExpressionEntry(entry){
             const depEqRow = document.getElementById(expRowId+entry.id);
@@ -826,21 +827,16 @@
             
             fpsDisplay.innerHTML = "frame (ms)= " + Math.floor(time);
         }
-                
-        function toGraphCoordsX(x){
-            return (x/window.innerWidth-0.5)*scaleX+offsetX;
-        }
-        
-        function toGraphCoordsY(y){
-            return (0.5-y/window.innerHeight)*scaleY+offsetY;
-        }
-        
-        function toScreenCoordsX(x) {
-            return ((x-offsetX)/(scaleX)+0.5)*window.innerWidth;
-        }
-        
-        function toScreenCoordsY(y) {
-            return (-(y-offsetY)/(scaleY)+0.5)*window.innerHeight;
+
+        function getViewport(){
+            return {
+                width: window.innerWidth,
+                height: window.innerHeight,
+                scaleX,
+                scaleY,
+                offsetX,
+                offsetY
+            };
         }
         
         function evaluateQuad(quad){
@@ -853,18 +849,20 @@
                 console.log("invalid replace data");
                 return;
             }
+
+            const viewport = getViewport();
             
-            let x1 = toGraphCoordsX(quad.minX);
-            let x2 = toGraphCoordsX(quad.maxX);
-            let y1 = toGraphCoordsY(quad.minY);
-            let y2 = toGraphCoordsY(quad.maxY);
+            let x1 = toGraphCoordsX(quad.minX, viewport);
+            let x2 = toGraphCoordsX(quad.maxX, viewport);
+            let y1 = toGraphCoordsY(quad.minY, viewport);
+            let y2 = toGraphCoordsY(quad.maxY, viewport);
             
             throw new Error("Param replacement is not yet working for this expression");
             return;
             
             return evaluateExpression(
-            currentExpression,
-            new Map([["x",{value: x1}],["y",{value: y1}]])
+                currentExpression,
+                new Map([["x",{value: x1}],["y",{value: y1}]])
             );
             
         }
@@ -894,8 +892,10 @@
         }
         
         function drawPoint(x,y,fill){
-            const screenX = toScreenCoordsX(x);
-            const screenY = toScreenCoordsY(y);
+            const viewport = getViewport();
+
+            const screenX = toScreenCoordsX(x, viewport);
+            const screenY = toScreenCoordsY(y, viewport);
             ctx.beginPath();
             ctx.lineWidth = 3;
             ctx.strokeStyle = currentExpression.color;
@@ -907,31 +907,32 @@
         }
         
         function drawFromImage(image, color){
-            //
-            const originalX = image.x;
-            const originalY = image.y;
-            const originalScaleX = image.scaleX;
-            const originalScaleY = image.scaleY;
+            // const originalX = image.x;
+            // const originalY = image.y;
+            // const originalScaleX = image.scaleX;
+            // const originalScaleY = image.scaleY;
             
-            const translateX = (x) => x; //((x + offsetX)/scaleX * originalScaleX) + originalX;
-            const translateY = (y) => y; //((y + originalY)/scaleY * originalScaleY) - offsetY;
+            // const translateX = (x) => x; //((x + offsetX)/scaleX * originalScaleX) + originalX;
+            // const translateY = (y) => y; //((y + originalY)/scaleY * originalScaleY) - offsetY;
+
+            const viewport = getViewport();
             
             const instructions = image.instructions;
             console.assert(instructions != undefined, image);
 
             if(instructions.length === 0 || instructions.length === undefined){
-                //console.warn("blank image");
+                console.warn("blank image");
                 return;
             }
 
-            //console.log("now drawing instructions "+instructions.length);
+            console.log("now drawing instructions["+instructions.length+"]");
             
             ctx.beginPath();
             ctx.lineWidth = 3;
             ctx.lineCap = "round";
             ctx.strokeStyle = color;
             
-            let xprev = toScreenCoordsX(instructions[0][1]), yprev = toScreenCoordsY(instructions[0][2]);
+            let xprev = toScreenCoordsX(instructions[0][1], viewport), yprev = toScreenCoordsY(instructions[0][2], viewport);
             ctx.moveTo(xprev,yprev);
             
             for(let i = 0; i < instructions.length; i++){
@@ -946,8 +947,8 @@
                 //   ctx.strokeStyle = instruction[1]
                 // }
                 
-                let x = toScreenCoordsX(instruction[1]);
-                let y = toScreenCoordsY(instruction[2]);
+                let x = toScreenCoordsX(instruction[1], viewport);
+                let y = toScreenCoordsY(instruction[2], viewport);
                 
                 //Translate based on past/vs/current 
                 
@@ -1029,19 +1030,21 @@
             ctx.fillStyle = "#000";
             
             const gridLineDensity = 0.25;
+
+            const viewport = getViewport();
             
             //Find visible graph coordinate bounds
-            const graphLeft   = toGraphCoordsX(0);
-            const graphRight  = toGraphCoordsX(window.innerWidth);
-            const graphTop    = toGraphCoordsY(0);
-            const graphBottom = toGraphCoordsY(window.innerHeight);
+            const graphLeft   = toGraphCoordsX(0, viewport);
+            const graphRight  = toGraphCoordsX(window.innerWidth, viewport);
+            const graphTop    = toGraphCoordsY(0, viewport);
+            const graphBottom = toGraphCoordsY(window.innerHeight, viewport);
             
             //Compute grid spacing in graph units
             let scaleMagnitudeX = Math.log10(scaleX);
             let scaleMagnitudeY = Math.log10(scaleY);
             
-            const xAxis = toScreenCoordsY(0);
-            const yAxis = toScreenCoordsX(0);
+            const xAxis = toScreenCoordsY(0, viewport);
+            const yAxis = toScreenCoordsX(0, viewport);
             
             //Adjust grid line density based on aspect ratio
             let xRatio = 1;
@@ -1070,7 +1073,7 @@
             //Draw minor vertical grid lines
             ctx.beginPath();
             for(let gx = startXMinor; gx <= endXMinor; gx += minorGridScaleX) {
-                const sx = toScreenCoordsX(gx);
+                const sx = toScreenCoordsX(gx, viewport);
                 ctx.moveTo(sx, 0);
                 ctx.lineTo(sx, window.innerHeight);
             }
@@ -1079,7 +1082,7 @@
             //Draw minor horizontal grid lines
             ctx.beginPath();
             for(let gy = startYMinor; gy <= endYMinor; gy += minorGridScaleY) {
-                const sy = toScreenCoordsY(gy);
+                const sy = toScreenCoordsY(gy, viewport);
                 ctx.moveTo(0, sy);
                 ctx.lineTo(window.innerWidth, sy);
             }
@@ -1110,7 +1113,7 @@
             
             //Draw vertical grid lines
             for (let gx = startX; gx <= endX; gx += majorGridScaleX) {
-                const sx = toScreenCoordsX(gx);
+                const sx = toScreenCoordsX(gx, viewport);
                 ctx.moveTo(sx, 0);
                 ctx.lineTo(sx, window.innerHeight);
                 
@@ -1128,7 +1131,7 @@
             
             //Draw horizontal grid lines
             for (let gy = startY; gy <= endY; gy += majorGridScaleY) {
-                const sy = toScreenCoordsY(gy);
+                const sy = toScreenCoordsY(gy, viewport);
                 ctx.moveTo(0, sy);
                 ctx.lineTo(window.innerWidth, sy);
                 
@@ -1202,17 +1205,19 @@
             e.preventDefault(); // prevent page scroll
             
             if(isDragging) return;
+
+            const viewport = getViewport();
             
             const zoomSpeed = 1.07; // how fast to zoom
             const mantissaLength = 23; // 52?
             //const xPrecision = 2**(Math.floor(Math.log2(offsetX))-(mantissaLength));
             //const yPrecision = 2**(Math.floor(Math.log2(offsetY))-(mantissaLength));
             
-            let mouseGraphX = toGraphCoordsX(e.offsetX);
-            let mouseGraphY = toGraphCoordsY(e.offsetY);
+            let mouseGraphX = toGraphCoordsX(e.offsetX, viewport);
+            let mouseGraphY = toGraphCoordsY(e.offsetY, viewport);
             
-            const xAxis = toScreenCoordsX(0);
-            const yAxis = toScreenCoordsY(0);
+            const xAxis = toScreenCoordsX(0, viewport);
+            const yAxis = toScreenCoordsY(0, viewport);
             
             //Zoom snapping to axes
             if(e.offsetX-xAxis < 10 && e.offsetX-xAxis > -10) mouseGraphX = 0;
