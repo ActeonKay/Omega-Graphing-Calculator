@@ -166,26 +166,26 @@ function isValidVariableToken(NSPToken){
  * @returns {bool}
  */ 
 function isFunctionDefinition(tokensNSP){
-    if(tokensNSP.length < 3) return "false1";
+    if(tokensNSP.length < 3) return false;
 
-    if(!isValidVariableToken(tokensNSP[0])) return "false2";
+    if(!isValidVariableToken(tokensNSP[0])) return false;
 
     const isLeftBracket = (t) => t.string in BracketByLatex && BracketByLatex[t.string].code % 2 === 0;
     const isRightBracket = (t) => t.string in BracketByLatex && BracketByLatex[t.string].code % 2 === 1;
 
-    if(!isLeftBracket(tokensNSP[1])) return "false3";
+    if(!isLeftBracket(tokensNSP[1])) return false;
 
     let i = 2;
     while(i<tokensNSP.length-1){
         const paramToken = tokensNSP[i];
-        if(!isValidVariableToken(paramToken)) return "false4";
+        if(!isValidVariableToken(paramToken)) return false;
 
         if(isRightBracket(tokensNSP[i+1])){
-            if(i+1 !== tokensNSP.length-1) return "false5"; //there are extra tokens after the closing parenthesis
+            if(i+1 !== tokensNSP.length-1) return false; //there are extra tokens after the closing parenthesis
             return true;
         }
 
-        if(tokensNSP[i+1].string !== ",") return "false6"; //throw new Error("Unexpected token in function definition: " + tokensNSP[i+1].string);
+        if(tokensNSP[i+1].string !== ",") return false;
 
         i += 2;
     }
